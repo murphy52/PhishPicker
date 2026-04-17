@@ -11,6 +11,11 @@ set -euo pipefail
 #      the renamed file on their own), but it acts as an explicit readiness
 #      handshake and future hook for model reloads.
 
+on_error() {
+  ~/bin/notify "Phishpicker: ingest-and-ship failed at line $1" "Phishpicker ingest error" 2>/dev/null || true
+}
+trap 'on_error $LINENO' ERR
+
 REPO_DIR="${REPO_DIR:-$HOME/phishpicker}"
 NAS_DATA_DIR="${NAS_DATA_DIR:-/volume/phishpicker/data}"
 NAS_APP_DIR="${NAS_APP_DIR:-/volume/phishpicker/app}"
