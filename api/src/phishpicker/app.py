@@ -1,4 +1,6 @@
 import hmac
+import json
+import logging
 import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, closing
@@ -16,7 +18,10 @@ from phishpicker.live import (
     delete_last_song,
     get_live_show,
 )
+from phishpicker.model.scorer import load_runtime_scorer
 from phishpicker.predict import predict_next
+
+log = logging.getLogger(__name__)
 
 
 # Per-request connections (not shared on app.state). sqlite3.Connection is
@@ -46,6 +51,10 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.settings = settings
+        app.state.model_path = settings.data_dir / "model.lgb"
+        app.state.metrics_path = settings.data_dir / "metrics.json"
+        app.state.scorer = load_runtime_scorer(app.state.model_path)
+        log.info("loaded scorer: %s", app.state.scorer.name)
         yield
 
     app = FastAPI(title="Phishpicker", lifespan=lifespan)
@@ -71,7 +80,7 @@ def create_app() -> FastAPI:
         set_number: str
 
     @app.get("/meta")
-    def meta(conn: sqlite3.Connection = Depends(get_read)):  # noqa: B008
+    def meta(request: Request, conn: sqlite3.Connection = Depends(get_read)):  # noqa: B008
         shows = conn.execute("SELECT COUNT(*) FROM shows").fetchone()[0]
         songs = conn.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
         latest = conn.execute("SELECT MAX(show_date) FROM shows").fetchone()[0]
@@ -81,7 +90,18 @@ def create_app() -> FastAPI:
             "latest_show_date": latest,
             "data_snapshot_at": datetime.now(UTC).isoformat(),
             "version": "0.1.0-skeleton",
+            "scorer": request.app.state.scorer.name,
         }
+
+    @app.get("/about")
+    def about(request: Request):
+        path = request.app.state.metrics_path
+        if not path.exists():
+            raise HTTPException(
+                status_code=503,
+                detail="metrics not yet produced — training has not run",
+            )
+        return json.loads(path.read_text())
 
     @app.get("/songs")
     def songs(conn: sqlite3.Connection = Depends(get_read)):  # noqa: B008
@@ -124,15 +144,22 @@ def create_app() -> FastAPI:
         expected = request.app.state.settings.admin_token
         if not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
             raise HTTPException(status_code=401, detail="invalid admin token")
-        return {"reloaded": True}
+        request.app.state.scorer = load_runtime_scorer(request.app.state.model_path)
+        log.info("reloaded scorer: %s", request.app.state.scorer.name)
+        return {"reloaded": True, "scorer": request.app.state.scorer.name}
 
     @app.get("/predict/{show_id}")
     def predict(
         show_id: str,
+        request: Request,
         top_n: int = 20,
         read: sqlite3.Connection = Depends(get_read),  # noqa: B008
         live: sqlite3.Connection = Depends(get_live),  # noqa: B008
     ):
-        return {"candidates": predict_next(read, live, show_id, top_n=top_n)}
+        return {
+            "candidates": predict_next(
+                read, live, show_id, top_n=top_n, scorer=request.app.state.scorer
+            )
+        }
 
     return app

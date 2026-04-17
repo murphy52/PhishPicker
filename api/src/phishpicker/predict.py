@@ -1,8 +1,7 @@
 import sqlite3
 
-from phishpicker.model.heuristic import Context, score
 from phishpicker.model.rules import apply_post_rules
-from phishpicker.model.stats import compute_song_stats
+from phishpicker.model.scorer import HeuristicScorer, Scorer
 
 
 def predict_next(
@@ -10,7 +9,16 @@ def predict_next(
     live_conn: sqlite3.Connection,
     live_show_id: str,
     top_n: int = 20,
+    scorer: Scorer | None = None,
 ) -> list[dict]:
+    """Predict the next song for a live show.
+
+    If `scorer` is not supplied, falls back to the heuristic — keeps existing
+    callers (and tests) working without plumbing the scorer through every site.
+    """
+    if scorer is None:
+        scorer = HeuristicScorer()
+
     show = live_conn.execute(
         "SELECT show_date, venue_id, current_set FROM live_show WHERE show_id = ?",
         (live_show_id,),
@@ -24,18 +32,21 @@ def predict_next(
         (live_show_id,),
     ).fetchall()
     played_ids = {r["song_id"] for r in played}
-    position = sum(1 for r in played if r["set_number"] == show["current_set"]) + 1
+    played_list = [r["song_id"] for r in played]
 
     song_ids = [r["song_id"] for r in read_conn.execute("SELECT song_id FROM songs").fetchall()]
     if not song_ids:
         return []
 
-    stats = compute_song_stats(
-        read_conn, show_date=show["show_date"], venue_id=show["venue_id"], song_ids=song_ids
+    scored = scorer.score_candidates(
+        conn=read_conn,
+        show_date=show["show_date"],
+        venue_id=show["venue_id"],
+        played_songs=played_list,
+        current_set=show["current_set"],
+        candidate_song_ids=song_ids,
     )
-    ctx = Context(current_set=show["current_set"], current_position=position)
 
-    scored = [(sid, score(stats[sid], ctx)) for sid in song_ids]
     scored = apply_post_rules(scored, played_tonight=played_ids)
     # Filter out zero-score candidates — they are not viable predictions.
     scored = [(sid, s) for sid, s in scored if s > 0.0]

@@ -10,6 +10,7 @@ ignore = ["E501"]
 # convention. N806/N803 object to these as non-lowercase.
 "src/phishpicker/train/**" = ["N806", "N803"]
 "src/phishpicker/model/lightgbm_scorer.py" = ["N806", "N803"]
+"src/phishpicker/model/scorer.py" = ["N806", "N803"]
 "tests/train/**" = ["N806", "N803"]
 "tests/model/test_lightgbm_scorer.py" = ["N806", "N803"]
 
