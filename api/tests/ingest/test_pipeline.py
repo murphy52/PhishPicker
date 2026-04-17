@@ -25,7 +25,7 @@ def test_full_ingest_populates_all_tables(
         text=(fixtures_dir / "phishnet_shows_sample.json").read_text(),
     )
     httpx_mock.add_response(
-        url="https://api.phish.net/v5/setlists/get.json?apikey=test-key&showid=1234567",
+        url="https://api.phish.net/v5/setlists/showid/1234567.json?apikey=test-key",
         text=(fixtures_dir / "phishnet_setlist_show1234567.json").read_text(),
     )
 
@@ -82,12 +82,12 @@ def test_setlist_fetch_failure_does_not_abort_ingest(
     )
     # First show's setlist succeeds
     httpx_mock.add_response(
-        url="https://api.phish.net/v5/setlists/get.json?apikey=test-key&showid=1234567",
+        url="https://api.phish.net/v5/setlists/showid/1234567.json?apikey=test-key",
         text=(fixtures_dir / "phishnet_setlist_show1234567.json").read_text(),
     )
     # Second show's setlist fails with a 503
     httpx_mock.add_response(
-        url="https://api.phish.net/v5/setlists/get.json?apikey=test-key&showid=1234568",
+        url="https://api.phish.net/v5/setlists/showid/1234568.json?apikey=test-key",
         status_code=503,
     )
 
