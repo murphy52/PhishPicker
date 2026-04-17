@@ -23,13 +23,22 @@ def upsert_setlist_songs(conn: sqlite3.Connection, setlist: list[dict]) -> int:
     """Replace a show's setlist atomically.
 
     DELETE+INSERT so phish.net corrections that remove a row don't leave orphans.
+    Stubs any song_id missing from the songs table using the setlist row's
+    `song` name — phish.net's songs.json list doesn't always include every
+    songid referenced by setlists (aliases / deprecated / typos).
     """
     if not setlist:
         return 0
     show_ids = {row["showid"] for row in setlist}
+    now = datetime.now(UTC).isoformat()
     with conn:
         for sid in show_ids:
             conn.execute("DELETE FROM setlist_songs WHERE show_id = ?", (sid,))
+        for row in setlist:
+            conn.execute(
+                "INSERT OR IGNORE INTO songs (song_id, name, first_seen_at) VALUES (?, ?, ?)",
+                (row["songid"], row.get("song") or f"#{row['songid']}", now),
+            )
         conn.executemany(
             """
             INSERT INTO setlist_songs

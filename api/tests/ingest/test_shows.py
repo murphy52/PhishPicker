@@ -63,6 +63,21 @@ def test_upsert_setlist_songs_is_idempotent(tmp_path: Path, fixtures_dir: Path):
     assert rows[1]["trans_mark"] == ">"
 
 
+def test_upsert_setlist_stubs_missing_songs(tmp_path: Path):
+    """phish.net's songs.json isn't exhaustive — setlists can reference a
+    songid that never appeared in the songs dump. Must auto-stub."""
+    conn = open_db(tmp_path / "t.db")
+    apply_schema(conn)
+    upsert_show(conn, {"showid": 777, "showdate": "2024-01-01", "venueid": None, "tourid": None})
+    # song_id 999 is NOT in songs table yet.
+    upsert_setlist_songs(
+        conn,
+        [{"showid": 777, "set": "1", "position": 1, "songid": 999, "song": "Ghost", "trans_mark": ","}],
+    )
+    row = conn.execute("SELECT name FROM songs WHERE song_id = 999").fetchone()
+    assert row["name"] == "Ghost"
+
+
 def test_upsert_setlist_normalizes_encore_to_uppercase(tmp_path: Path):
     """phish.net returns 'e' for encore but the schema CHECK requires 'E'."""
     conn = open_db(tmp_path / "t.db")
