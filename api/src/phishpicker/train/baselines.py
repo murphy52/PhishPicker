@@ -15,7 +15,7 @@ import numpy as np
 from phishpicker.model.heuristic import Context
 from phishpicker.model.heuristic import score as heuristic_score
 from phishpicker.model.stats import compute_song_stats
-from phishpicker.train.eval import FoldResult, WalkForwardResult
+from phishpicker.train.eval import FoldResult, WalkForwardResult, _build_result
 
 Scorer = Callable[
     [sqlite3.Connection, str, str, int | None, list[int], str, list[int]],
@@ -97,30 +97,18 @@ def evaluate_scorer(
             heldout_show_date=cutoff,
             train_cutoff_date=cutoff,
         )
-        for r in setlist:
+        for slot_idx, r in enumerate(setlist, start=1):
             positive = int(r["song_id"])
             pool = [s for s in all_song_ids if s not in played]
             scores = scorer(conn, cutoff, cutoff, sh["venue_id"], played, r["set_number"], pool)
             order = np.argsort(-scores)
             rank = int(np.where([pool[i] == positive for i in order])[0][0]) + 1
             fold.ranks.append(rank)
+            fold.slot_positions.append(slot_idx)
             all_ranks.append(rank)
             played.append(positive)
         for k in (1, 5, 20):
             fold.top_k_hits[k] = sum(1 for rk in fold.ranks if rk <= k) / max(1, len(fold.ranks))
         fold_results.append(fold)
 
-    def topk(k: int) -> float:
-        if not all_ranks:
-            return 0.0
-        return sum(1 for rk in all_ranks if rk <= k) / len(all_ranks)
-
-    mrr = float(np.mean([1.0 / r for r in all_ranks])) if all_ranks else 0.0
-    return WalkForwardResult(
-        fold_results=fold_results,
-        top1=topk(1),
-        top5=topk(5),
-        top20=topk(20),
-        mrr=mrr,
-        n_slots=len(all_ranks),
-    )
+    return _build_result(fold_results, all_ranks)

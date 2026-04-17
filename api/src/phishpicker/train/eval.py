@@ -12,10 +12,19 @@ That happens naturally here because build_feature_rows is called with
 
 import sqlite3
 from dataclasses import dataclass, field
+from functools import partial
 
 import numpy as np
 
 from phishpicker.train.build import build_feature_rows
+from phishpicker.train.metrics import (
+    bootstrap_ci,
+    by_slot_position,
+    topk_hit_rate,
+)
+from phishpicker.train.metrics import (
+    mrr as mrr_fn,
+)
 from phishpicker.train.trainer import train_ranker
 
 
@@ -25,6 +34,7 @@ class FoldResult:
     heldout_show_date: str
     train_cutoff_date: str
     ranks: list[int] = field(default_factory=list)
+    slot_positions: list[int] = field(default_factory=list)
     top_k_hits: dict[int, float] = field(default_factory=dict)
 
 
@@ -36,6 +46,11 @@ class WalkForwardResult:
     top20: float
     mrr: float
     n_slots: int
+    top1_ci: tuple[float, float] = (0.0, 0.0)
+    top5_ci: tuple[float, float] = (0.0, 0.0)
+    top20_ci: tuple[float, float] = (0.0, 0.0)
+    mrr_ci: tuple[float, float] = (0.0, 0.0)
+    by_slot: dict[int, dict[str, float]] = field(default_factory=dict)
 
 
 def walk_forward_eval(
@@ -87,7 +102,7 @@ def walk_forward_eval(
             heldout_show_date=cutoff,
             train_cutoff_date=cutoff,
         )
-        for r in setlist:
+        for slot_idx, r in enumerate(setlist, start=1):
             positive = int(r["song_id"])
             pool = [s for s in all_song_ids if s not in played]
             rows = build_feature_rows(
@@ -104,23 +119,49 @@ def walk_forward_eval(
             order = np.argsort(-scores)
             rank = int(np.where([pool[i] == positive for i in order])[0][0]) + 1
             fold.ranks.append(rank)
+            fold.slot_positions.append(slot_idx)
             all_ranks.append(rank)
             played.append(positive)
         for k in (1, 5, 20):
             fold.top_k_hits[k] = sum(1 for rk in fold.ranks if rk <= k) / max(1, len(fold.ranks))
         fold_results.append(fold)
 
-    def topk(k: int) -> float:
-        if not all_ranks:
-            return 0.0
-        return sum(1 for rk in all_ranks if rk <= k) / len(all_ranks)
+    return _build_result(fold_results, all_ranks, seed=seed)
 
-    mrr = float(np.mean([1.0 / r for r in all_ranks])) if all_ranks else 0.0
+
+def _build_result(
+    fold_results: list[FoldResult],
+    all_ranks: list[int],
+    seed: int = 0,
+    n_resamples: int = 1000,
+) -> WalkForwardResult:
+    """Shared between walk_forward_eval and baselines.evaluate_scorer."""
+    all_slot_positions: list[int] = []
+    for fold in fold_results:
+        all_slot_positions.extend(fold.slot_positions)
+
+    top1_ci = bootstrap_ci(
+        all_ranks, partial(topk_hit_rate, k=1), n_resamples=n_resamples, seed=seed
+    )
+    top5_ci = bootstrap_ci(
+        all_ranks, partial(topk_hit_rate, k=5), n_resamples=n_resamples, seed=seed
+    )
+    top20_ci = bootstrap_ci(
+        all_ranks, partial(topk_hit_rate, k=20), n_resamples=n_resamples, seed=seed
+    )
+    mrr_ci = bootstrap_ci(all_ranks, mrr_fn, n_resamples=n_resamples, seed=seed)
+    by_slot = by_slot_position(all_ranks, all_slot_positions) if all_slot_positions else {}
+
     return WalkForwardResult(
         fold_results=fold_results,
-        top1=topk(1),
-        top5=topk(5),
-        top20=topk(20),
-        mrr=mrr,
+        top1=topk_hit_rate(all_ranks, 1),
+        top5=topk_hit_rate(all_ranks, 5),
+        top20=topk_hit_rate(all_ranks, 20),
+        mrr=mrr_fn(all_ranks),
         n_slots=len(all_ranks),
+        top1_ci=top1_ci,
+        top5_ci=top5_ci,
+        top20_ci=top20_ci,
+        mrr_ci=mrr_ci,
+        by_slot=by_slot,
     )

@@ -61,4 +61,21 @@ def test_walk_forward_each_fold_has_rank_per_slot(small_train_db):
     )
     for fold in r.fold_results:
         assert len(fold.ranks) == 4  # 4 songs per show in the fixture
+        assert len(fold.slot_positions) == 4
         assert all(rk >= 1 for rk in fold.ranks)
+
+
+def test_walk_forward_reports_ci_and_per_slot(small_train_db):
+    r = walk_forward_eval(
+        small_train_db,
+        n_holdout_shows=3,
+        negatives_per_positive=3,
+        num_iterations=10,
+        seed=0,
+    )
+    assert r.top1_ci[0] <= r.top1 <= r.top1_ci[1] + 1e-9
+    assert r.mrr_ci[0] <= r.mrr <= r.mrr_ci[1] + 1e-9
+    # 4 slots per show in the fixture.
+    assert set(r.by_slot.keys()) == {1, 2, 3, 4}
+    for slot_metrics in r.by_slot.values():
+        assert 0.0 <= slot_metrics["top1"] <= 1.0
