@@ -15,6 +15,7 @@ from phishpicker.live import (
     delete_last_song,
     get_live_show,
 )
+from phishpicker.predict import predict_next
 
 
 # Per-request connections (not shared on app.state). sqlite3.Connection is
@@ -113,5 +114,14 @@ def create_app() -> FastAPI:
     def set_boundary(body: SetBoundary, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
         ok = advance_set(conn, body.show_id, body.set_number)
         return {"updated": ok}
+
+    @app.get("/predict/{show_id}")
+    def predict(
+        show_id: str,
+        top_n: int = 20,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        return {"candidates": predict_next(read, live, show_id, top_n=top_n)}
 
     return app
