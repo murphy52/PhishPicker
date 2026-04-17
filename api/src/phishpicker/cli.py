@@ -12,6 +12,24 @@ def main() -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init-db", help="initialize local sqlite databases")
     sub.add_parser("ingest", help="full phish.net ingest")
+
+    p_train = sub.add_parser("train", help="training commands")
+    train_sub = p_train.add_subparsers(dest="train_cmd", required=True)
+    p_run = train_sub.add_parser("run", help="train + eval + ship artifacts")
+    p_run.add_argument("--cutoff", default=None, help="YYYY-MM-DD (default: day after latest show)")
+    p_run.add_argument("--holdout", type=int, default=20)
+    p_run.add_argument("--negatives", type=int, default=50)
+    p_run.add_argument("--freq-negatives", type=int, default=None)
+    p_run.add_argument("--uniform-negatives", type=int, default=None)
+    p_run.add_argument("--iterations", type=int, default=300)
+    p_run.add_argument("--half-life-years", type=float, default=7.0)
+    p_run.add_argument("--seed", type=int, default=0)
+    p_run.add_argument(
+        "--override",
+        action="store_true",
+        help="ship even if MRR regressed beyond tolerance",
+    )
+
     args = parser.parse_args()
 
     s = Settings()  # type: ignore[call-arg]
@@ -29,6 +47,38 @@ def main() -> int:
             conn = open_db(s.db_path)
             stats = run_full_ingest(conn, client)
         print(f"Ingest complete: {stats}")
+        return 0
+
+    if args.cmd == "train" and args.train_cmd == "run":
+        from phishpicker.train.runner import run_training
+
+        conn = open_db(s.db_path, read_only=True)
+        result = run_training(
+            conn,
+            data_dir=s.data_dir,
+            cutoff_date=args.cutoff,
+            n_holdout_shows=args.holdout,
+            negatives_per_positive=args.negatives,
+            freq_negatives=args.freq_negatives,
+            uniform_negatives=args.uniform_negatives,
+            num_iterations=args.iterations,
+            half_life_years=args.half_life_years,
+            seed=args.seed,
+            override_ship_gate=args.override,
+        )
+        if not result.get("wrote_artifacts"):
+            print(
+                f"Ship gate blocked: new_mrr={result['new_mrr']:.3f} "
+                f"(reason={result['reason']}). Re-run with --override to force."
+            )
+            return 2
+        print(
+            f"Trained on {result['n_shows_trained_on']} shows. "
+            f"Holdout: Top-1={result['top1']:.3f} "
+            f"Top-5={result['top5']:.3f} "
+            f"MRR={result['mrr']:.3f} "
+            f"(n={result['n_slots']})"
+        )
         return 0
 
     return 1
