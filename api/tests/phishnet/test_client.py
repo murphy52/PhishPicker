@@ -28,7 +28,7 @@ def test_fetch_all_shows(client: PhishNetClient, httpx_mock: HTTPXMock, fixtures
 def test_fetch_setlist(client: PhishNetClient, httpx_mock: HTTPXMock, fixtures_dir: Path):
     body = (fixtures_dir / "phishnet_setlist_show1234567.json").read_text()
     httpx_mock.add_response(
-        url="https://api.phish.net/v5/setlists/get.json?apikey=test-key&showid=1234567",
+        url="https://api.phish.net/v5/setlists/showid/1234567.json?apikey=test-key",
         text=body,
     )
     setlist = client.fetch_setlist(1234567)
