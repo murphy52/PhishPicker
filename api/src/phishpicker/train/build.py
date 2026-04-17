@@ -24,6 +24,7 @@ def build_feature_rows(
     candidate_song_ids: list[int],
     show_id: int = 0,
     bigram_cache: dict[tuple[int, int], float] | None = None,
+    all_show_dates: list[str] | None = None,
 ) -> list[FeatureRow]:
     """Emit one FeatureRow per candidate song at the given slot.
 
@@ -32,7 +33,13 @@ def build_feature_rows(
     during training where we compute bigrams once per fold.
     """
     ctx = compute_show_context(conn, show_date=show_date, venue_id=venue_id)
-    stats = compute_song_stats(conn, show_date, venue_id, candidate_song_ids)
+    stats = compute_song_stats(
+        conn,
+        show_date,
+        venue_id,
+        candidate_song_ids,
+        all_show_dates=all_show_dates,
+    )
 
     prev_song_id = played_songs[-1] if played_songs else MISSING_INT
     slot_number = len(played_songs) + 1

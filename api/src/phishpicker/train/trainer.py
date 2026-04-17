@@ -31,6 +31,7 @@ def train_ranker(
     half_life_years: float | None = 7.0,
 ) -> tuple[lgb.Booster, list[str], int]:
     bigram_cache = compute_bigram_probs(conn, cutoff_date=cutoff_date)
+    all_show_dates = sorted(r[0] for r in conn.execute("SELECT show_date FROM shows"))
 
     X_rows: list[list[float]] = []
     y: list[int] = []
@@ -55,6 +56,7 @@ def train_ranker(
             candidate_song_ids=candidate_ids,
             show_id=tg.show_id,
             bigram_cache=bigram_cache,
+            all_show_dates=all_show_dates,
         )
         w = _recency_weight(tg.show_date, cutoff_date, half_life_years)
         for r in rows:

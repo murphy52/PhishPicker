@@ -103,15 +103,11 @@ def run_training(
     # 4. Ship gate.
     metrics_path = Path(data_dir) / "metrics.json"
     gate_passed = ship_gate_check(new_mrr=wf.mrr, previous_metrics_path=metrics_path)
-    if not gate_passed and not override_ship_gate:
-        return {
-            "ship_gate_passed": False,
-            "reason": "mrr_regression_exceeds_tolerance",
-            "new_mrr": wf.mrr,
-            "wrote_artifacts": False,
-        }
 
-    # 5. Atomic artifact write.
+    # 5. Build the full metrics dict regardless of gate status so we never
+    # throw away hours of compute. On block we write to a staging path for
+    # inspection; only on pass (or override) do we replace the production
+    # artifacts.
     n_shows = conn.execute("SELECT COUNT(*) FROM shows").fetchone()[0]
     metrics = {
         "trained_at": datetime.now(UTC).isoformat(),
@@ -137,10 +133,26 @@ def run_training(
 
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
+
+    if not gate_passed and not override_ship_gate:
+        # Preserve results at staging paths so the user can inspect + decide
+        # whether to promote with --override.
+        staging_metrics = data_dir / "metrics.blocked.json"
+        staging_model = data_dir / "model.blocked.lgb"
+        save_model_artifact(staging_model, booster, cols)
+        staging_metrics.write_text(json.dumps(metrics, indent=2))
+        return {
+            **metrics,
+            "reason": "mrr_regression_exceeds_tolerance",
+            "wrote_artifacts": False,
+            "staging_metrics_path": str(staging_metrics),
+            "staging_model_path": str(staging_model),
+        }
+
+    # 6. Atomic artifact write (gate passed or override).
     model_path = data_dir / "model.lgb"
     tmp_model = data_dir / "model.lgb.tmp"
     save_model_artifact(tmp_model, booster, cols)
-    # Atomic rename for both the booster text file and its .meta.json sidecar.
     os.replace(tmp_model, model_path)
     os.replace(
         tmp_model.with_suffix(".meta.json"),

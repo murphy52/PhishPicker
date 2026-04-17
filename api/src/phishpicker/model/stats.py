@@ -1,3 +1,4 @@
+import bisect
 import sqlite3
 from datetime import date, timedelta
 
@@ -26,6 +27,7 @@ def compute_song_stats(
     show_date: str,
     venue_id: int | None,
     song_ids: list[int],
+    all_show_dates: list[str] | None = None,
 ) -> dict[int, SongStats]:
     """Compute SongStats for song_ids as of show_date (strictly before).
 
@@ -86,12 +88,20 @@ def compute_song_stats(
             ).fetchall()
         )
 
+    # Pull the full sorted show_date list once per call (tiny — ~5000 rows in
+    # 2026) and use bisect for O(log N) lookup. Previously this was a DB query
+    # per (song, call) pair, which scaled to ~1B queries on a full walk-forward
+    # training run. Callers that amortize across many calls can pass in the
+    # list themselves.
+    if all_show_dates is None:
+        all_show_dates = [r[0] for r in conn.execute("SELECT show_date FROM shows")]
+        all_show_dates.sort()
+    _show_idx = bisect.bisect_left(all_show_dates, show_date)
+
     def shows_between(from_date: str) -> int:
-        r = conn.execute(
-            "SELECT COUNT(*) FROM shows WHERE show_date > ? AND show_date < ?",
-            (from_date, show_date),
-        ).fetchone()
-        return int(r[0])
+        # Count shows with `from_date < show_date_row < show_date`.
+        left = bisect.bisect_right(all_show_dates, from_date)
+        return max(0, _show_idx - left)
 
     role_rows = conn.execute(
         f"""

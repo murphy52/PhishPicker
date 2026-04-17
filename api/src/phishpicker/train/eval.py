@@ -78,6 +78,10 @@ def walk_forward_eval(
     holdout = list(reversed(holdout))  # chronological order for readability
 
     all_song_ids = [r["song_id"] for r in conn.execute("SELECT song_id FROM songs")]
+    # Precompute sorted show_dates once per walk-forward run — compute_song_stats
+    # uses this for O(log N) shows_between lookups instead of SQL-per-song.
+    all_show_dates = sorted(r[0] for r in conn.execute("SELECT show_date FROM shows"))
+
     fold_results: list[FoldResult] = []
     all_ranks: list[int] = []
 
@@ -126,6 +130,7 @@ def walk_forward_eval(
                 current_set=r["set_number"],
                 candidate_song_ids=pool,
                 show_id=int(sh["show_id"]),
+                all_show_dates=all_show_dates,
             )
             X = np.asarray([fr.to_vector() for fr in rows], dtype=np.float32)
             scores = booster.predict(X)

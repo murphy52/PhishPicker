@@ -58,10 +58,22 @@ def frequency_scorer(_conn_unused: sqlite3.Connection | None = None) -> Scorer:
 
 
 def heuristic_scorer() -> Scorer:
-    """Wraps phishpicker.model.heuristic.score so it fits the Scorer protocol."""
+    """Wraps phishpicker.model.heuristic.score so it fits the Scorer protocol.
+
+    Caches the sorted show_date list the first time it's invoked so
+    compute_song_stats can use O(log N) bisect lookups rather than per-song
+    SQL counts.
+    """
+    cache: dict[str, list[str]] = {}
 
     def _f(conn, cutoff_date, show_date, venue_id, played, current_set, candidates):
-        stats = compute_song_stats(conn, show_date, venue_id, candidates)
+        if "show_dates" not in cache:
+            cache["show_dates"] = sorted(
+                r[0] for r in conn.execute("SELECT show_date FROM shows")
+            )
+        stats = compute_song_stats(
+            conn, show_date, venue_id, candidates, all_show_dates=cache["show_dates"]
+        )
         ctx = Context(current_set=current_set, current_position=len(played) + 1)
         return np.array([heuristic_score(stats[sid], ctx) for sid in candidates])
 
