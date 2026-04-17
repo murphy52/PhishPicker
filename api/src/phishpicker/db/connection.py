@@ -2,6 +2,7 @@ import sqlite3
 from pathlib import Path
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
+LIVE_SCHEMA_PATH = Path(__file__).parent / "live_schema.sql"
 
 
 def open_db(path: Path, read_only: bool = False) -> sqlite3.Connection:
@@ -21,4 +22,9 @@ def open_db(path: Path, read_only: bool = False) -> sqlite3.Connection:
 def apply_schema(conn: sqlite3.Connection) -> None:
     sql = SCHEMA_PATH.read_text()
     conn.executescript(sql)
+    conn.commit()
+
+
+def apply_live_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(LIVE_SCHEMA_PATH.read_text())
     conn.commit()
