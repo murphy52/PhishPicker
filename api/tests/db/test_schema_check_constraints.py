@@ -6,7 +6,9 @@ import pytest
 from phishpicker.db.connection import apply_live_schema, apply_schema, open_db
 
 
-def test_setlist_songs_rejects_invalid_set_number(tmp_path: Path) -> None:
+def test_setlist_songs_accepts_arbitrary_set_number(tmp_path: Path) -> None:
+    """CHECK dropped — we trust the ingest to normalize. Values like 'E2'
+    (double encore) and 'S' (soundcheck) from phish.net must round-trip."""
     conn = open_db(tmp_path / "p.db")
     apply_schema(conn)
     conn.execute("INSERT INTO songs (song_id, name, first_seen_at) VALUES (1, 'X', '2020-01-01')")
@@ -14,10 +16,11 @@ def test_setlist_songs_rejects_invalid_set_number(tmp_path: Path) -> None:
         "INSERT INTO shows (show_id, show_date, fetched_at) "
         "VALUES (1, '2020-01-01', '2020-01-01T00:00:00Z')"
     )
-    with pytest.raises(sqlite3.IntegrityError):
+    for value in ("E", "E2", "E3", "S", "1", "2", "3", "4"):
         conn.execute(
-            "INSERT INTO setlist_songs (show_id, set_number, position, song_id) "
-            "VALUES (1, 'e', 1, 1)"
+            "INSERT OR REPLACE INTO setlist_songs "
+            "(show_id, set_number, position, song_id) VALUES (?, ?, 1, 1)",
+            (1, value),
         )
 
 

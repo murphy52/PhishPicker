@@ -45,7 +45,13 @@ CREATE INDEX IF NOT EXISTS idx_shows_venue ON shows(venue_id);
 
 CREATE TABLE IF NOT EXISTS setlist_songs (
     show_id INTEGER NOT NULL REFERENCES shows(show_id),
-    set_number TEXT NOT NULL CHECK (set_number IN ('1','2','3','4','E')),
+    -- No CHECK constraint: phish.net uses '1'..'4', 'E' (encore), plus
+    -- occasional 'E2'/'E3' (double/triple encore) and 'S' (soundcheck).
+    -- Rather than enumerate every corner, we trust the ingest to normalize
+    -- (lowercase→uppercase) and accept whatever comes in. Downstream code
+    -- matches known labels via equality; unknown labels fall through as
+    -- generic "some set" which is fine for feature extraction.
+    set_number TEXT NOT NULL,
     position INTEGER NOT NULL,
     song_id INTEGER NOT NULL REFERENCES songs(song_id),
     trans_mark TEXT NOT NULL DEFAULT ',',     -- ',', '>', '->'
