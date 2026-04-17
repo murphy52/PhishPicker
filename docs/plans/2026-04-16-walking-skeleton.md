@@ -457,9 +457,7 @@ git commit -m "chore: scaffold next.js frontend project
 ```python
 from pathlib import Path
 
-import pytest
-
-from phishpicker.db.connection import open_db, apply_schema
+from phishpicker.db.connection import apply_schema, open_db
 
 
 def test_schema_creates_expected_tables(tmp_path: Path) -> None:
