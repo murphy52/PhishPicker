@@ -1,9 +1,10 @@
+import hmac
 import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, closing
 from datetime import UTC, datetime
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
 
 from phishpicker.config import Settings
@@ -114,6 +115,13 @@ def create_app() -> FastAPI:
     def set_boundary(body: SetBoundary, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
         ok = advance_set(conn, body.show_id, body.set_number)
         return {"updated": ok}
+
+    @app.post("/internal/reload")
+    def internal_reload(request: Request, x_admin_token: str = Header(None)):  # noqa: B008
+        expected = request.app.state.settings.admin_token
+        if not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
+            raise HTTPException(status_code=401, detail="invalid admin token")
+        return {"reloaded": True}
 
     @app.get("/predict/{show_id}")
     def predict(
