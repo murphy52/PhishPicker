@@ -26,15 +26,20 @@ class PhishNetClient:
         # Put apikey FIRST so generated URLs have predictable query-string order
         # (matters for test URL matching in pytest-httpx).
         params = {"apikey": self._api_key, **params}
-        r = self._client.get(f"{self._base_url}/{path}", params=params)
-        r.raise_for_status()
+        try:
+            r = self._client.get(f"{self._base_url}/{path}", params=params)
+            r.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise PhishNetError(f"HTTP {exc.response.status_code} from {path}") from exc
+        except httpx.RequestError as exc:
+            raise PhishNetError(f"Request failed for {path}: {exc}") from exc
         body = r.json()
         if body.get("error"):
             raise PhishNetError(body.get("error_message") or "phish.net error")
         return body.get("data", [])
 
-    def fetch_shows_since(self, show_date: str) -> list[dict]:
-        """All shows (caller filters by date). v5's filter syntax varies; start permissive."""
+    def fetch_all_shows(self) -> list[dict]:
+        """Fetch all shows from phish.net, unfiltered. v5 returns full history."""
         return self._get("shows.json", {"order_by": "showdate", "direction": "desc"})
 
     def fetch_setlist(self, show_id: int) -> list[dict]:
