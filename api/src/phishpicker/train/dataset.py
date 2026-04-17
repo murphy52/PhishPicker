@@ -26,15 +26,40 @@ class TrainingGroup:
 def iter_training_groups(
     conn: sqlite3.Connection,
     cutoff_date: str,
-    negatives_per_positive: int = 50,
+    negatives_per_positive: int | None = 50,
+    freq_negatives: int | None = None,
+    uniform_negatives: int | None = None,
     seed: int = 0,
 ) -> Iterator[TrainingGroup]:
     """Yield one TrainingGroup per slot of every show strictly before cutoff_date.
 
-    Negatives are sampled uniformly from songs not yet played in that show.
+    Two sampling modes:
+    - Uniform only: pass `negatives_per_positive`; all negatives are uniform.
+    - Stratified: pass `freq_negatives` + `uniform_negatives`; negatives are a
+      concatenation of frequency-weighted + uniform samples (per carry-forward
+      §1: frequency-only sampling skews the model toward popular songs).
+
+    If both modes are supplied, stratified wins.
     """
     rng = random.Random(seed)
     all_song_ids = [r["song_id"] for r in conn.execute("SELECT song_id FROM songs")]
+
+    if freq_negatives is not None or uniform_negatives is not None:
+        fn = freq_negatives or 0
+        un = uniform_negatives or 0
+        stratified = True
+        song_freq = dict(
+            conn.execute(
+                "SELECT song_id, COUNT(*) AS n FROM setlist_songs ss "
+                "JOIN shows s USING (show_id) WHERE s.show_date < ? GROUP BY song_id",
+                (cutoff_date,),
+            ).fetchall()
+        )
+    else:
+        fn = un = 0
+        stratified = False
+        song_freq = {}
+
     shows = conn.execute(
         """
         SELECT show_id, show_date, venue_id
@@ -57,8 +82,13 @@ def iter_training_groups(
         for idx, row in enumerate(setlist, start=1):
             positive = int(row["song_id"])
             pool = [s for s in all_song_ids if s != positive and s not in played]
-            k = min(negatives_per_positive, len(pool))
-            negatives = tuple(rng.sample(pool, k)) if k > 0 else ()
+
+            if stratified:
+                negatives = _stratified_sample(rng, pool, song_freq, fn, un)
+            else:
+                k = min(negatives_per_positive or 0, len(pool))
+                negatives = tuple(rng.sample(pool, k)) if k > 0 else ()
+
             yield TrainingGroup(
                 show_id=int(sh["show_id"]),
                 show_date=sh["show_date"],
@@ -70,3 +100,38 @@ def iter_training_groups(
                 negative_song_ids=negatives,
             )
             played.append(positive)
+
+
+def _stratified_sample(
+    rng: random.Random,
+    pool: list[int],
+    song_freq: dict[int, int],
+    n_freq: int,
+    n_uniform: int,
+) -> tuple[int, ...]:
+    if not pool:
+        return ()
+    picked: list[int] = []
+    available = list(pool)
+
+    # Frequency-weighted sampling without replacement.
+    weights = [song_freq.get(s, 0) + 1 for s in available]  # +1 keeps rare songs drawable
+    for _ in range(min(n_freq, len(available))):
+        total = sum(weights)
+        if total == 0:
+            break
+        r = rng.random() * total
+        acc = 0.0
+        for i, w in enumerate(weights):
+            acc += w
+            if acc >= r:
+                picked.append(available[i])
+                available.pop(i)
+                weights.pop(i)
+                break
+
+    # Uniform sampling from what's left.
+    k = min(n_uniform, len(available))
+    if k > 0:
+        picked.extend(rng.sample(available, k))
+    return tuple(picked)
