@@ -61,3 +61,22 @@ def test_upsert_setlist_songs_is_idempotent(tmp_path: Path, fixtures_dir: Path):
     assert len(rows) == 2
     # position 2 has trans_mark ">"
     assert rows[1]["trans_mark"] == ">"
+
+
+def test_upsert_setlist_normalizes_encore_to_uppercase(tmp_path: Path):
+    """phish.net returns 'e' for encore but the schema CHECK requires 'E'."""
+    conn = open_db(tmp_path / "t.db")
+    apply_schema(conn)
+    conn.execute(
+        "INSERT INTO songs (song_id, name, first_seen_at) VALUES (200, 'Slave', '2024-01-01')"
+    )
+    conn.commit()
+    upsert_show(conn, {"showid": 999, "showdate": "2024-01-01", "venueid": None, "tourid": None})
+    upsert_setlist_songs(
+        conn,
+        [{"showid": 999, "set": "e", "position": 1, "songid": 200, "trans_mark": ","}],
+    )
+    row = conn.execute(
+        "SELECT set_number FROM setlist_songs WHERE show_id = 999"
+    ).fetchone()
+    assert row["set_number"] == "E"

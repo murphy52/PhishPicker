@@ -39,7 +39,10 @@ def upsert_setlist_songs(conn: sqlite3.Connection, setlist: list[dict]) -> int:
             [
                 (
                     row["showid"],
-                    str(row["set"]),
+                    # phish.net uses lowercase 'e' for encore; the schema
+                    # CHECK constraint requires uppercase 'E'. Normalize here
+                    # so the rest of the codebase can assume upper-case.
+                    str(row["set"]).upper(),
                     int(row["position"]),
                     row["songid"],
                     row.get("trans_mark") or ",",
