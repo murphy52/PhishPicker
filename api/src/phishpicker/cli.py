@@ -16,6 +16,11 @@ def main() -> int:
     p_train = sub.add_parser("train", help="training commands")
     train_sub = p_train.add_subparsers(dest="train_cmd", required=True)
     p_run = train_sub.add_parser("run", help="train + eval + ship artifacts")
+    p_ab = train_sub.add_parser("ab-era", help="A/B: era-only vs era+recency weighting")
+    p_ab.add_argument("--holdout", type=int, default=20)
+    p_ab.add_argument("--negatives", type=int, default=50)
+    p_ab.add_argument("--iterations", type=int, default=300)
+    p_ab.add_argument("--seed", type=int, default=0)
     p_run.add_argument("--cutoff", default=None, help="YYYY-MM-DD (default: day after latest show)")
     p_run.add_argument("--holdout", type=int, default=20)
     p_run.add_argument("--negatives", type=int, default=50)
@@ -47,6 +52,22 @@ def main() -> int:
             conn = open_db(s.db_path)
             stats = run_full_ingest(conn, client)
         print(f"Ingest complete: {stats}")
+        return 0
+
+    if args.cmd == "train" and args.train_cmd == "ab-era":
+        import json
+
+        from phishpicker.train.experiments import era_ab_experiment
+
+        conn = open_db(s.db_path, read_only=True)
+        result = era_ab_experiment(
+            conn,
+            n_holdout_shows=args.holdout,
+            negatives_per_positive=args.negatives,
+            num_iterations=args.iterations,
+            seed=args.seed,
+        )
+        print(json.dumps(result, indent=2))
         return 0
 
     if args.cmd == "train" and args.train_cmd == "run":
