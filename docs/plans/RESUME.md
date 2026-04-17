@@ -1,71 +1,52 @@
-# Resume Point — 2026-04-16
+# Resume Point — 2026-04-17
 
-Session paused mid-execution. Pick up here next time.
+Walking skeleton complete. All 20 tasks committed and tagged v0.1.0-skeleton.
 
 ## Current state
 
 - **Branch:** `main`
-- **HEAD:** `86a8682` — `feat: /predict endpoint with heuristic scoring and hard-rule filter`
-- **Test suite:** `cd api && uv run pytest -v` → 57 passing
-- **Ruff:** `cd api && uv run ruff check .` → clean
+- **Tag:** `v0.1.0-skeleton`
+- **API tests:** `cd api && uv run pytest -q` → 60 passing
+- **Web tests:** `cd web && npm test` → 48 passing
+- **Web build:** `cd web && npm run build` → clean (standalone output)
 - **Working tree:** clean
 
-## Progress (16 of 21 implementation tasks complete)
+## Tasks complete (all 20)
 
-| Plan task | Commit(s) | Status |
+| Task | Description | Status |
 |---|---|---|
-| Task 0 — Repo hygiene | `00295d6` | ✅ |
-| Task 1 — Python backend scaffold | `e79172a` | ✅ |
-| Task 2 — Next.js frontend scaffold | `176ce52` | ✅ |
-| Task 3 — SQLite schema | `e25812e` + fixes | ✅ |
-| Task 4 — Live-show schema | `f57cda9` | ✅ |
-| Extra — CHECK constraints | `ac92896` | ✅ |
-| Task 5 — phish.net API client | `46733c9` + `b0945b1` | ✅ |
-| Task 6 — Ingestion songs/venues | `9be3bdd` | ✅ |
-| Task 7 — Ingestion shows/setlists + derived fields | `261279d` | ✅ |
-| Task 8 — Orchestrator + CLI | `8525f30` | ✅ |
-| Task 9 — Heuristic scorer | `6cb83a3` | ✅ |
-| Task 10 — Stats extractor | `e502c81` | ✅ |
-| Task 11 — Hard-rule post-processor | `f5e195f` | ✅ |
-| Task 12 — FastAPI app + /meta | `acc91bf` | ✅ |
-| Task 13 — /songs + live-show endpoints | `7c9ee8b` | ✅ |
-| Task 14 — /predict endpoint | `86a8682` | ✅ |
-| Tasks 15–20 | — | ⏳ pending |
+| Task 0 | Repo hygiene | ✅ |
+| Task 1 | Python backend scaffold | ✅ |
+| Task 2 | Next.js frontend scaffold | ✅ |
+| Task 3 | SQLite schema | ✅ |
+| Task 4 | Live-show schema | ✅ |
+| Task 5 | phish.net API client | ✅ |
+| Task 6 | Ingestion songs/venues | ✅ |
+| Task 7 | Ingestion shows/setlists + derived fields | ✅ |
+| Task 8 | Orchestrator + CLI | ✅ |
+| Task 9 | Heuristic scorer | ✅ |
+| Task 10 | Stats extractor | ✅ |
+| Task 11 | Hard-rule post-processor | ✅ |
+| Task 12 | FastAPI app + /meta | ✅ |
+| Task 13 | /songs + live-show endpoints | ✅ |
+| Task 14 | /predict endpoint | ✅ |
+| Task 15 | Web proxy + song search + songs lib | ✅ |
+| Task 16 | Live-show UI (leaderboard, played strip, add-song sheet) | ✅ |
+| Task 17 | Dockerfiles + docker-compose stack | ✅ |
+| Task 18 | Mac mini ingest-and-ship script + /internal/reload | ✅ |
+| Task 19 | Deployment docs | ✅ |
+| Task 20 | E2E smoke validation (local verified; NAS+Cloudflare pending manual) | ✅ |
 
-## Next actions on resume
+## Pending manual verification (requires NAS + Cloudflare access)
 
-1. Verify clean state:
-   ```bash
-   cd /Users/David/phishpicker
-   git log --oneline | head -3   # HEAD = 86a8682
-   git status                    # clean
-   cd api && uv run pytest -v    # 57 passing
-   ```
+- `docker compose up -d` on NAS → visit through Cloudflare tunnel
+- `/meta` shows non-zero shows_count after first ingest
+- Phone browser: start show, add songs, leaderboard re-ranks
+- Undo, set boundary, refresh persistence
+- Predict latency <500ms on NAS
 
-2. Continue with Task 15 — Web proxy + song search (Next.js).
+## Next plans
 
-3. **Read the plan carefully before dispatching Task 15 and 16** — they have deferred TODOs from the Task 2 frontend review embedded in their descriptions.
-
-4. Continue subagent-driven pattern.
-
-## Remaining tasks (from the plan)
-
-- Task 15 — Web proxy + song search (`web/src/app/api/[...path]/route.ts` + `web/src/lib/songs.ts`)
-- Task 16 — Web live-show UI (`web/src/app/page.tsx` + components)
-- Task 17 — Dockerfiles + compose
-- Task 18 — Mac mini ship script
-- Task 19 — Deployment docs
-- Task 20 — E2E smoke validation
-
-## Key reference files
-
-- `docs/plans/2026-04-16-phishpicker-design.md` — full design
-- `docs/plans/2026-04-16-walking-skeleton.md` — implementation plan
-
-## Known caveats for upcoming tasks
-
-- **Next.js 16** (plan assumed 15): async `params` pattern applies in Task 15 route handlers.
-- **Tasks 15 & 16** have deferred fixes from the Task 2 frontend scaffold review — read plan carefully before dispatching.
-- **Tour stubs**: pipeline inserts `[stub] tour N` rows. Future real tour loader must use `ON CONFLICT DO UPDATE`.
-- **No pagination guard** on phish.net shows — add count sanity check before first real ingest.
-- **API key**: `.env` has 19-char `PHISHNET_API_KEY` — verify completeness before first real ingest.
+See end of `docs/plans/2026-04-16-walking-skeleton.md` for carry-forward notes.
+The next plan should cover the LightGBM model (feature engineering, training
+pipeline, walk-forward eval, ship gate, /about metrics display).
