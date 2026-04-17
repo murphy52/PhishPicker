@@ -11,7 +11,7 @@ from phishpicker.phishnet.client import PhishNetClient, PhishNetError
 logger = logging.getLogger(__name__)
 
 
-def _upsert_tour_stubs(conn: sqlite3.Connection, shows: list[dict]) -> None:
+def upsert_tour_stubs(conn: sqlite3.Connection, shows: list[dict]) -> None:
     """Insert placeholder tour rows for any tour_id referenced by shows.
 
     Uses INSERT OR IGNORE so real tour data inserted by a future tours loader
@@ -40,7 +40,7 @@ def run_full_ingest(conn: sqlite3.Connection, client: PhishNetClient) -> dict:
     n_venues = upsert_venues(conn, venues)
 
     shows = client.fetch_all_shows()
-    _upsert_tour_stubs(conn, shows)
+    upsert_tour_stubs(conn, shows)
 
     n_shows = 0
     n_setlist = 0

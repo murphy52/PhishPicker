@@ -23,6 +23,7 @@ def seeded_client(tmp_path, monkeypatch, fixtures_dir) -> Iterator[TestClient]:
     # Seed both DBs before the app loads them.
     from phishpicker.db.connection import apply_live_schema, apply_schema, open_db
     from phishpicker.ingest.derive import recompute_run_and_tour_positions
+    from phishpicker.ingest.pipeline import upsert_tour_stubs
     from phishpicker.ingest.shows import upsert_setlist_songs, upsert_show
     from phishpicker.ingest.songs import upsert_songs
     from phishpicker.ingest.venues import upsert_venues
@@ -35,7 +36,9 @@ def seeded_client(tmp_path, monkeypatch, fixtures_dir) -> Iterator[TestClient]:
     # Small fixture: Chalk Dust (100), Tweezer (101), MSG (500), one 2024-07-21 show.
     upsert_songs(db, json.loads((fixtures_dir / "phishnet_songs_sample.json").read_text())["data"])
     upsert_venues(db, json.loads((fixtures_dir / "phishnet_venues_sample.json").read_text())["data"])
-    for show in json.loads((fixtures_dir / "phishnet_shows_sample.json").read_text())["data"]:
+    shows_data = json.loads((fixtures_dir / "phishnet_shows_sample.json").read_text())["data"]
+    upsert_tour_stubs(db, shows_data)
+    for show in shows_data:
         upsert_show(db, show)
     upsert_setlist_songs(
         db, json.loads((fixtures_dir / "phishnet_setlist_show1234567.json").read_text())["data"]

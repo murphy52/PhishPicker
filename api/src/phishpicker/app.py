@@ -4,9 +4,17 @@ from contextlib import asynccontextmanager, closing
 from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI
+from pydantic import BaseModel
 
 from phishpicker.config import Settings
 from phishpicker.db.connection import open_db
+from phishpicker.live import (
+    advance_set,
+    append_song,
+    create_live_show,
+    delete_last_song,
+    get_live_show,
+)
 
 
 # Per-request connections (not shared on app.state). sqlite3.Connection is
@@ -46,6 +54,20 @@ def create_app() -> FastAPI:
     app.state.get_read = get_read
     app.state.get_live = get_live
 
+    class LiveShowCreate(BaseModel):
+        show_date: str
+        venue_id: int | None = None
+
+    class LiveSongAppend(BaseModel):
+        show_id: str
+        song_id: int
+        set_number: str
+        trans_mark: str = ","
+
+    class SetBoundary(BaseModel):
+        show_id: str
+        set_number: str
+
     @app.get("/meta")
     def meta(conn: sqlite3.Connection = Depends(get_read)):  # noqa: B008
         shows = conn.execute("SELECT COUNT(*) FROM shows").fetchone()[0]
@@ -58,5 +80,38 @@ def create_app() -> FastAPI:
             "data_snapshot_at": datetime.now(UTC).isoformat(),
             "version": "0.1.0-skeleton",
         }
+
+    @app.get("/songs")
+    def songs(conn: sqlite3.Connection = Depends(get_read)):  # noqa: B008
+        rows = conn.execute("SELECT song_id, name, original_artist FROM songs ORDER BY name").fetchall()
+        return [dict(r) for r in rows]
+
+    @app.post("/live/show")
+    def create_show(body: LiveShowCreate, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
+        show_id = create_live_show(conn, body.show_date, body.venue_id)
+        return {"show_id": show_id}
+
+    @app.get("/live/show/{show_id}")
+    def get_show(show_id: str, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
+        show = get_live_show(conn, show_id)
+        if show is None:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="show not found")
+        return show
+
+    @app.post("/live/song")
+    def add_song(body: LiveSongAppend, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
+        order = append_song(conn, body.show_id, body.song_id, body.set_number, body.trans_mark)
+        return {"entered_order": order}
+
+    @app.delete("/live/song/last")
+    def undo_last(show_id: str, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
+        ok = delete_last_song(conn, show_id)
+        return {"deleted": ok}
+
+    @app.post("/live/set-boundary")
+    def set_boundary(body: SetBoundary, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
+        ok = advance_set(conn, body.show_id, body.set_number)
+        return {"updated": ok}
 
     return app
