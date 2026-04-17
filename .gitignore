@@ -1,0 +1,26 @@
+# data
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.pkl
+*.joblib
+# secrets
+.env
+.env.local
+phishnet-api-key.txt
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+# node
+node_modules/
+.next/
+dist/
+# editors
+.DS_Store
+.vscode/
+.idea/
