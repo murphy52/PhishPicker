@@ -9,7 +9,9 @@ tells the running service to re-open the new model.
 """
 
 import json
+import logging
 import os
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,6 +28,7 @@ from phishpicker.train.ship_gate import ship_gate_check
 from phishpicker.train.trainer import train_ranker
 
 MODEL_VERSION = "0.2.0-lightgbm"
+log = logging.getLogger(__name__)
 
 
 def _result_summary(r: WalkForwardResult) -> dict:
@@ -63,7 +66,20 @@ def run_training(
         latest = row[0] if row and row[0] else None
         cutoff_date = _plus_one_day(latest) if latest else datetime.now(UTC).date().isoformat()
 
+    run_t0 = time.monotonic()
+    log.info(
+        "starting training run: cutoff=%s holdout=%d iterations=%d negatives=%s+%s (or %s)",
+        cutoff_date,
+        n_holdout_shows,
+        num_iterations,
+        freq_negatives,
+        uniform_negatives,
+        negatives_per_positive,
+    )
+
     # 1. Production model: trained on ALL data (cutoff = day after latest show).
+    log.info("stage 1/3: fitting production model on all data")
+    t0 = time.monotonic()
     booster, cols, n_groups_prod = train_ranker(
         conn,
         cutoff_date=cutoff_date,
@@ -74,8 +90,11 @@ def run_training(
         half_life_years=half_life_years,
         seed=seed,
     )
+    log.info("stage 1/3 done: %d groups in %.1fs", n_groups_prod, time.monotonic() - t0)
 
     # 2. Walk-forward evaluation (reports holdout metrics).
+    log.info("stage 2/3: walk-forward eval (%d folds)", n_holdout_shows)
+    t0 = time.monotonic()
     wf = walk_forward_eval(
         conn,
         n_holdout_shows=n_holdout_shows,
@@ -86,8 +105,18 @@ def run_training(
         half_life_years=half_life_years,
         seed=seed,
     )
+    log.info(
+        "stage 2/3 done: n_slots=%d Top-1=%.3f Top-5=%.3f MRR=%.3f in %.1fs",
+        wf.n_slots,
+        wf.top1,
+        wf.top5,
+        wf.mrr,
+        time.monotonic() - t0,
+    )
 
     # 3. Baselines on same holdout.
+    log.info("stage 3/3: baselines (random, frequency, heuristic)")
+    t0 = time.monotonic()
     baselines = {
         "random": _result_summary(
             evaluate_scorer(conn, random_scorer(seed=seed), n_holdout_shows=n_holdout_shows)
@@ -99,6 +128,7 @@ def run_training(
             evaluate_scorer(conn, heuristic_scorer(), n_holdout_shows=n_holdout_shows)
         ),
     }
+    log.info("stage 3/3 done in %.1fs", time.monotonic() - t0)
 
     # 4. Ship gate.
     metrics_path = Path(data_dir) / "metrics.json"
@@ -141,6 +171,13 @@ def run_training(
         staging_model = data_dir / "model.blocked.lgb"
         save_model_artifact(staging_model, booster, cols)
         staging_metrics.write_text(json.dumps(metrics, indent=2))
+        log.warning(
+            "ship gate BLOCKED: mrr=%.3f. Staged to %s / %s (total %.1fs)",
+            wf.mrr,
+            staging_model,
+            staging_metrics,
+            time.monotonic() - run_t0,
+        )
         return {
             **metrics,
             "reason": "mrr_regression_exceeds_tolerance",
@@ -163,6 +200,12 @@ def run_training(
     tmp_metrics.write_text(json.dumps(metrics, indent=2))
     os.replace(tmp_metrics, metrics_path)
 
+    log.info(
+        "shipped: model=%s metrics=%s (total %.1fs)",
+        model_path,
+        metrics_path,
+        time.monotonic() - run_t0,
+    )
     return {**metrics, "wrote_artifacts": True}
 
 

@@ -1,10 +1,22 @@
 import argparse
+import logging
 import sys
 
 from phishpicker.config import Settings
 from phishpicker.db.connection import apply_live_schema, apply_schema, open_db
 from phishpicker.ingest.pipeline import run_full_ingest
 from phishpicker.phishnet.client import PhishNetClient
+
+
+def _configure_logging() -> None:
+    """Basic stderr logging with timestamps — helps long-running `train run`
+    show progress instead of looking hung for 45+ minutes."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,
+    )
 
 
 def main() -> int:
@@ -36,6 +48,7 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+    _configure_logging()
 
     s = Settings()  # type: ignore[call-arg]
 

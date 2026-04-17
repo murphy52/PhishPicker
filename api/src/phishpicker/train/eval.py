@@ -10,7 +10,9 @@ That happens naturally here because build_feature_rows is called with
 `show_date = heldout_show_date` and reads fresh DB rows.
 """
 
+import logging
 import sqlite3
+import time
 from dataclasses import dataclass, field
 from functools import partial
 
@@ -26,6 +28,8 @@ from phishpicker.train.metrics import (
     mrr as mrr_fn,
 )
 from phishpicker.train.trainer import train_ranker
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -85,8 +89,16 @@ def walk_forward_eval(
     fold_results: list[FoldResult] = []
     all_ranks: list[int] = []
 
-    for sh in holdout:
+    for fold_idx, sh in enumerate(holdout, start=1):
         cutoff = sh["show_date"]
+        fold_t0 = time.monotonic()
+        log.info(
+            "fold %d/%d: training up to %s (show_id=%d)",
+            fold_idx,
+            len(holdout),
+            cutoff,
+            sh["show_id"],
+        )
         booster, _, n_groups = train_ranker(
             conn,
             cutoff_date=cutoff,
@@ -143,6 +155,15 @@ def walk_forward_eval(
         for k in (1, 5, 20):
             fold.top_k_hits[k] = sum(1 for rk in fold.ranks if rk <= k) / max(1, len(fold.ranks))
         fold_results.append(fold)
+        log.info(
+            "fold %d/%d done in %.1fs: %d slots, Top-1=%.3f Top-5=%.3f",
+            fold_idx,
+            len(holdout),
+            time.monotonic() - fold_t0,
+            len(fold.ranks),
+            fold.top_k_hits.get(1, 0.0),
+            fold.top_k_hits.get(5, 0.0),
+        )
 
     return _build_result(fold_results, all_ranks, seed=seed)
 
