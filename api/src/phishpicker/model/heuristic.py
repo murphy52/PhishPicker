@@ -10,9 +10,9 @@ class SongStats:
     shows_since_last_played_anywhere: int | None  # None = never played
     shows_since_last_played_here: int | None
     played_already_this_run: bool
-    opener_score: float   # expected [0.0, 1.0]
-    encore_score: float   # expected [0.0, 1.0]
-    middle_score: float   # expected [0.0, 1.0]
+    opener_score: float  # expected [0.0, 1.0]
+    encore_score: float  # expected [0.0, 1.0]
+    middle_score: float  # expected [0.0, 1.0]
 
     def __post_init__(self) -> None:
         for name in ("opener_score", "encore_score", "middle_score"):
@@ -23,7 +23,7 @@ class SongStats:
 
 @dataclass(frozen=True)
 class Context:
-    current_set: str       # '1','2','3','E'
+    current_set: str  # '1','2','3','E'
     current_position: int  # next slot we're filling (1 = opener)
 
 

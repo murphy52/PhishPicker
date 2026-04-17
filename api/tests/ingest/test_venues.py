@@ -11,7 +11,9 @@ def test_upsert_venues_inserts_new(tmp_path: Path, fixtures_dir: Path):
     data = json.loads((fixtures_dir / "phishnet_venues_sample.json").read_text())["data"]
     n = upsert_venues(conn, data)
     assert n == 1
-    rows = conn.execute("SELECT venue_id, name, city, state, country FROM venues ORDER BY venue_id").fetchall()
+    rows = conn.execute(
+        "SELECT venue_id, name, city, state, country FROM venues ORDER BY venue_id"
+    ).fetchall()
     assert rows[0]["venue_id"] == 500
     assert rows[0]["name"] == "Madison Square Garden"
 

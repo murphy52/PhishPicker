@@ -8,7 +8,9 @@ from phishpicker.ingest.pipeline import run_full_ingest
 from phishpicker.phishnet.client import PhishNetClient
 
 
-def test_full_ingest_populates_all_tables(tmp_path: Path, fixtures_dir: Path, httpx_mock: HTTPXMock):
+def test_full_ingest_populates_all_tables(
+    tmp_path: Path, fixtures_dir: Path, httpx_mock: HTTPXMock
+):
     # Mock all four phish.net endpoints using existing fixtures
     httpx_mock.add_response(
         url="https://api.phish.net/v5/songs.json?apikey=test-key",
@@ -57,13 +59,15 @@ def test_setlist_fetch_failure_does_not_abort_ingest(
     tmp_path: Path, fixtures_dir: Path, httpx_mock: HTTPXMock
 ):
     """A transient setlist error on one show should be logged and skipped; other shows succeed."""
-    two_shows = json.dumps({
-        "error": False,
-        "data": [
-            {"showid": 1234567, "showdate": "2024-07-21", "venueid": 500, "tourid": 77},
-            {"showid": 1234568, "showdate": "2024-07-22", "venueid": 500, "tourid": 77},
-        ],
-    })
+    two_shows = json.dumps(
+        {
+            "error": False,
+            "data": [
+                {"showid": 1234567, "showdate": "2024-07-21", "venueid": 500, "tourid": 77},
+                {"showid": 1234568, "showdate": "2024-07-22", "venueid": 500, "tourid": 77},
+            ],
+        }
+    )
     httpx_mock.add_response(
         url="https://api.phish.net/v5/songs.json?apikey=test-key",
         text=(fixtures_dir / "phishnet_songs_sample.json").read_text(),

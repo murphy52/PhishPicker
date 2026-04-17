@@ -49,12 +49,16 @@ def predict_next(
     normalized = [(sid, s, s / total) for sid, s in top]
 
     top_ids = [sid for sid, _, _ in normalized]
-    names = dict(
-        read_conn.execute(
-            f"SELECT song_id, name FROM songs WHERE song_id IN ({','.join('?' * len(top_ids))})",
-            top_ids,
-        ).fetchall()
-    ) if top_ids else {}
+    names = (
+        dict(
+            read_conn.execute(
+                f"SELECT song_id, name FROM songs WHERE song_id IN ({','.join('?' * len(top_ids))})",
+                top_ids,
+            ).fetchall()
+        )
+        if top_ids
+        else {}
+    )
     return [
         {"song_id": sid, "name": names.get(sid, f"#{sid}"), "score": s, "probability": p}
         for sid, s, p in normalized

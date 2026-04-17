@@ -12,7 +12,9 @@ def test_upsert_show_inserts_new(tmp_path: Path):
     conn.execute("INSERT INTO tours (tour_id, name) VALUES (77, 'Summer 2024')")
     conn.commit()
     upsert_show(conn, {"showid": 1234567, "showdate": "2024-07-21", "venueid": 500, "tourid": 77})
-    row = conn.execute("SELECT show_id, show_date, venue_id, tour_id FROM shows WHERE show_id = 1234567").fetchone()
+    row = conn.execute(
+        "SELECT show_id, show_date, venue_id, tour_id FROM shows WHERE show_id = 1234567"
+    ).fetchone()
     assert row is not None
     assert row["show_date"] == "2024-07-21"
     assert row["venue_id"] == 500
@@ -38,12 +40,18 @@ def test_upsert_setlist_songs_is_idempotent(tmp_path: Path, fixtures_dir: Path):
     # Seed required FK rows
     conn.execute("INSERT INTO venues (venue_id, name) VALUES (500, 'Madison Square Garden')")
     conn.execute("INSERT INTO tours (tour_id, name) VALUES (77, 'Summer 2024')")
-    conn.execute("INSERT INTO songs (song_id, name, first_seen_at) VALUES (100, 'Chalk Dust Torture', '2024-01-01')")
-    conn.execute("INSERT INTO songs (song_id, name, first_seen_at) VALUES (101, 'Tweezer', '2024-01-01')")
+    conn.execute(
+        "INSERT INTO songs (song_id, name, first_seen_at) VALUES (100, 'Chalk Dust Torture', '2024-01-01')"
+    )
+    conn.execute(
+        "INSERT INTO songs (song_id, name, first_seen_at) VALUES (101, 'Tweezer', '2024-01-01')"
+    )
     conn.commit()
     upsert_show(conn, {"showid": 1234567, "showdate": "2024-07-21", "venueid": 500, "tourid": 77})
 
-    setlist_data = json.loads((fixtures_dir / "phishnet_setlist_show1234567.json").read_text())["data"]
+    setlist_data = json.loads((fixtures_dir / "phishnet_setlist_show1234567.json").read_text())[
+        "data"
+    ]
     upsert_setlist_songs(conn, setlist_data)
     upsert_setlist_songs(conn, setlist_data)
 

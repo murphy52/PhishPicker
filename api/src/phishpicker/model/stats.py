@@ -140,7 +140,9 @@ def compute_song_stats(
             song_id=sid,
             times_played_last_12mo=last_12mo_counts.get(sid, 0),
             total_plays_ever=total_plays.get(sid, 0),
-            shows_since_last_played_anywhere=shows_between(last_anywhere) if last_anywhere else None,
+            shows_since_last_played_anywhere=shows_between(last_anywhere)
+            if last_anywhere
+            else None,
             shows_since_last_played_here=shows_between(last_here) if last_here else None,
             played_already_this_run=sid in played_this_run,
             opener_score=r["opener"],

@@ -138,15 +138,16 @@ def test_compute_song_stats_role_scores(conn: sqlite3.Connection) -> None:
         [(1, "2024-07-18"), (2, "2024-07-19"), (3, "2024-07-20"), (4, "2024-07-21")], start=1
     ):
         _seed_show(conn, sid, d, 500, 77)
-    _seed_setlist_song(conn, 1, 100, set_number="1", position=1)   # opener
-    _seed_setlist_song(conn, 2, 100, set_number="E", position=1)   # encore
-    _seed_setlist_song(conn, 3, 100, set_number="2", position=3)   # mid-set
-    _seed_setlist_song(conn, 4, 100, set_number="2", position=5)   # mid-set
+    _seed_setlist_song(conn, 1, 100, set_number="1", position=1)  # opener
+    _seed_setlist_song(conn, 2, 100, set_number="E", position=1)  # encore
+    _seed_setlist_song(conn, 3, 100, set_number="2", position=3)  # mid-set
+    _seed_setlist_song(conn, 4, 100, set_number="2", position=5)  # mid-set
     conn.commit()
 
     stats = compute_song_stats(conn, "2024-07-22", 500, [100])
 
     import pytest
+
     assert stats[100].opener_score == pytest.approx(1 / 4)
     assert stats[100].encore_score == pytest.approx(1 / 4)
     assert stats[100].middle_score == pytest.approx(2 / 4)

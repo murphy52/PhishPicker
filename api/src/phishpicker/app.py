@@ -85,7 +85,9 @@ def create_app() -> FastAPI:
 
     @app.get("/songs")
     def songs(conn: sqlite3.Connection = Depends(get_read)):  # noqa: B008
-        rows = conn.execute("SELECT song_id, name, original_artist FROM songs ORDER BY name").fetchall()
+        rows = conn.execute(
+            "SELECT song_id, name, original_artist FROM songs ORDER BY name"
+        ).fetchall()
         return [dict(r) for r in rows]
 
     @app.post("/live/show")
@@ -98,6 +100,7 @@ def create_app() -> FastAPI:
         show = get_live_show(conn, show_id)
         if show is None:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="show not found")
         return show
 

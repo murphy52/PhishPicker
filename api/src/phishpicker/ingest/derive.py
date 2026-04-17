@@ -8,8 +8,7 @@ def recompute_run_and_tour_positions(conn: sqlite3.Connection) -> None:
     A 'run' is consecutive-day shows at the same venue (gap <= 1 day).
     """
     rows = conn.execute(
-        "SELECT show_id, show_date, venue_id, tour_id FROM shows "
-        "ORDER BY show_date, show_id"
+        "SELECT show_id, show_date, venue_id, tour_id FROM shows ORDER BY show_date, show_id"
     ).fetchall()
 
     current_run: list[tuple[int, str, int]] = []

@@ -11,7 +11,9 @@ def test_upsert_songs_inserts_new(tmp_path: Path, fixtures_dir: Path):
     data = json.loads((fixtures_dir / "phishnet_songs_sample.json").read_text())["data"]
     n = upsert_songs(conn, data)
     assert n == 2
-    rows = conn.execute("SELECT song_id, name, original_artist FROM songs ORDER BY song_id").fetchall()
+    rows = conn.execute(
+        "SELECT song_id, name, original_artist FROM songs ORDER BY song_id"
+    ).fetchall()
     assert rows[0]["song_id"] == 100
     assert rows[0]["name"] == "Chalk Dust Torture"
 

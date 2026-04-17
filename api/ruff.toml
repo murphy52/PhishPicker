@@ -7,9 +7,11 @@ ignore = ["E501"]
 
 [lint.per-file-ignores]
 # Capital X for feature matrices, y for labels, X_rows for row buffer — ML
-# convention. N806 objects to these as non-lowercase.
-"src/phishpicker/train/**" = ["N806"]
-"tests/train/**" = ["N806"]
+# convention. N806/N803 object to these as non-lowercase.
+"src/phishpicker/train/**" = ["N806", "N803"]
+"src/phishpicker/model/lightgbm_scorer.py" = ["N806", "N803"]
+"tests/train/**" = ["N806", "N803"]
+"tests/model/test_lightgbm_scorer.py" = ["N806", "N803"]
 
 [format]
 quote-style = "double"

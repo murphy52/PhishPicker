@@ -23,11 +23,10 @@ def env_with_db(monkeypatch, tmp_path, small_train_db):
 
 def test_train_run_writes_model_and_metrics(env_with_db):
     # Drive the CLI by importing main() directly to share the monkeypatched env.
-    import phishpicker.cli as cli
-
-    rc = cli.main.__wrapped__ if hasattr(cli.main, "__wrapped__") else cli.main
     # argparse reads sys.argv; patch it.
     import sys as _sys
+
+    import phishpicker.cli as cli
 
     _sys.argv = [
         "phishpicker",

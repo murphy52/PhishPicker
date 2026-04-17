@@ -43,12 +43,10 @@ def append_song(
     trans_mark: str = ",",
 ) -> int:
     now = datetime.now(UTC).isoformat()
-    next_order = (
-        conn.execute(
-            "SELECT COALESCE(MAX(entered_order), 0) + 1 FROM live_songs WHERE show_id = ?",
-            (show_id,),
-        ).fetchone()[0]
-    )
+    next_order = conn.execute(
+        "SELECT COALESCE(MAX(entered_order), 0) + 1 FROM live_songs WHERE show_id = ?",
+        (show_id,),
+    ).fetchone()[0]
     conn.execute(
         "INSERT INTO live_songs (show_id, entered_order, song_id, set_number, trans_mark, entered_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",

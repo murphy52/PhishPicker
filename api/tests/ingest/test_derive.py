@@ -31,8 +31,12 @@ def test_run_position_for_msg_run(tmp_path: Path, fixtures_dir: Path):
 def test_null_venue_shows_do_not_group_into_run(tmp_path: Path):
     conn = open_db(tmp_path / "t.db")
     apply_schema(conn)
-    upsert_show(conn, {"showid": 5000001, "showdate": "2024-08-01", "venueid": None, "tourid": None})
-    upsert_show(conn, {"showid": 5000002, "showdate": "2024-08-02", "venueid": None, "tourid": None})
+    upsert_show(
+        conn, {"showid": 5000001, "showdate": "2024-08-01", "venueid": None, "tourid": None}
+    )
+    upsert_show(
+        conn, {"showid": 5000002, "showdate": "2024-08-02", "venueid": None, "tourid": None}
+    )
     recompute_run_and_tour_positions(conn)
     rows = conn.execute(
         "SELECT run_position, run_length FROM shows ORDER BY show_date, show_id"
