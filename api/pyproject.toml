@@ -9,6 +9,10 @@ dependencies = [
     "pydantic-settings>=2.6",
     "python-dotenv>=1.0",
     "uvicorn[standard]>=0.32",
+    "lightgbm>=4.5,<5",
+    "numpy>=2.0,<3",
+    "pandas>=2.2,<3",
+    "scikit-learn>=1.5,<2",
 ]
 
 [project.optional-dependencies]
