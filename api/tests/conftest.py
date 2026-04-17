@@ -35,7 +35,9 @@ def seeded_client(tmp_path, monkeypatch, fixtures_dir) -> Iterator[TestClient]:
 
     # Small fixture: Chalk Dust (100), Tweezer (101), MSG (500), one 2024-07-21 show.
     upsert_songs(db, json.loads((fixtures_dir / "phishnet_songs_sample.json").read_text())["data"])
-    upsert_venues(db, json.loads((fixtures_dir / "phishnet_venues_sample.json").read_text())["data"])
+    upsert_venues(
+        db, json.loads((fixtures_dir / "phishnet_venues_sample.json").read_text())["data"]
+    )
     shows_data = json.loads((fixtures_dir / "phishnet_shows_sample.json").read_text())["data"]
     upsert_tour_stubs(db, shows_data)
     for show in shows_data:
@@ -51,3 +53,49 @@ def seeded_client(tmp_path, monkeypatch, fixtures_dir) -> Iterator[TestClient]:
 
     with TestClient(create_app()) as client:
         yield client
+
+
+@pytest.fixture
+def small_train_db(tmp_path):
+    """30 shows, 5 songs. Song 1 always opens set 1; song 2 always closes;
+    songs 3/4 fill the middle; song 5 is never played.
+
+    Enough signal for a LambdaRank trained for 50+ rounds to rank
+    song 1 > song 5 for the opener slot. Shared between tests/train and
+    tests/model so the model's save/load tests can reuse a real booster.
+    """
+    from phishpicker.db.connection import apply_schema, open_db
+
+    c = open_db(tmp_path / "train.db")
+    apply_schema(c)
+    c.executescript(
+        """
+        INSERT INTO songs (song_id, name, first_seen_at) VALUES
+            (1, 'A', '2020-01-01'), (2, 'B', '2020-01-01'),
+            (3, 'C', '2020-01-01'), (4, 'D', '2020-01-01'),
+            (5, 'E', '2020-01-01');
+        """
+    )
+    for i in range(30):
+        show_id = 100 + i
+        month = (i % 12) + 1
+        day = (i % 27) + 1
+        show_date = f"2024-{month:02d}-{day:02d}"
+        c.execute(
+            "INSERT INTO shows (show_id, show_date, fetched_at) VALUES (?, ?, ?)",
+            (show_id, show_date, show_date),
+        )
+        c.executemany(
+            "INSERT INTO setlist_songs (show_id, set_number, position, song_id) VALUES (?,?,?,?)",
+            [
+                (show_id, "1", 1, 1),
+                (show_id, "1", 2, 3),
+                (show_id, "1", 3, 4),
+                (show_id, "1", 4, 2),
+            ],
+        )
+    c.commit()
+    try:
+        yield c
+    finally:
+        c.close()
