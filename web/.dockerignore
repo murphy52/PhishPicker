@@ -1,0 +1,7 @@
+node_modules
+.next
+*.md
+vitest.config.ts
+vitest.setup.ts
+**/*.test.ts
+**/*.test.tsx

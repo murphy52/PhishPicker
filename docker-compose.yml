@@ -1,0 +1,40 @@
+services:
+  api:
+    build: ./api
+    volumes:
+      - /volume/phishpicker/data:/data
+    environment:
+      PHISHPICKER_DATA_DIR: /data
+      # ${VAR:?} fails fast if the var isn't set — prevents the silent-empty-key footgun.
+      PHISHNET_API_KEY: ${PHISHNET_API_KEY:?PHISHNET_API_KEY must be set in .env}
+      PHISHPICKER_ADMIN_TOKEN: ${PHISHPICKER_ADMIN_TOKEN:?PHISHPICKER_ADMIN_TOKEN must be set in .env}
+    networks: [internal]
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request,sys;
+          sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/meta').status==200 else 1)"
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  web:
+    build: ./web
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    # Bind to loopback — Cloudflare tunnel / Authentik reaches this via docker
+    # bridge or host 127.0.0.1; port 3000 is not exposed on the LAN.
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge

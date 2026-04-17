@@ -1,0 +1,10 @@
+.git
+.venv
+node_modules
+.next
+*.db
+data/
+.env
+.env.local
+docs/
+scripts/
