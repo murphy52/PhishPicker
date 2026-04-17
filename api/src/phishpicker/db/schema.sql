@@ -45,7 +45,7 @@ CREATE INDEX IF NOT EXISTS idx_shows_venue ON shows(venue_id);
 
 CREATE TABLE IF NOT EXISTS setlist_songs (
     show_id INTEGER NOT NULL REFERENCES shows(show_id),
-    set_number TEXT NOT NULL,                 -- '1','2','3','E'
+    set_number TEXT NOT NULL CHECK (set_number IN ('1','2','3','4','E')),
     position INTEGER NOT NULL,
     song_id INTEGER NOT NULL REFERENCES songs(song_id),
     trans_mark TEXT NOT NULL DEFAULT ',',     -- ',', '>', '->'

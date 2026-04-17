@@ -543,7 +543,7 @@ CREATE INDEX IF NOT EXISTS idx_shows_venue ON shows(venue_id);
 
 CREATE TABLE IF NOT EXISTS setlist_songs (
     show_id INTEGER NOT NULL REFERENCES shows(show_id),
-    set_number TEXT NOT NULL,                 -- '1','2','3','E'
+    set_number TEXT NOT NULL CHECK (set_number IN ('1','2','3','4','E')),
     position INTEGER NOT NULL,
     song_id INTEGER NOT NULL REFERENCES songs(song_id),
     trans_mark TEXT NOT NULL DEFAULT ',',     -- ',', '>', '->'
@@ -648,7 +648,7 @@ CREATE TABLE IF NOT EXISTS live_show (
     show_date TEXT NOT NULL,
     venue_id INTEGER,
     started_at TEXT NOT NULL,
-    current_set TEXT NOT NULL DEFAULT '1',   -- '1','2','3','E'
+    current_set TEXT NOT NULL DEFAULT '1' CHECK (current_set IN ('1','2','3','4','E')),
     reconciled_at TEXT
 );
 
@@ -656,7 +656,7 @@ CREATE TABLE IF NOT EXISTS live_songs (
     show_id TEXT NOT NULL REFERENCES live_show(show_id) ON DELETE CASCADE,
     entered_order INTEGER NOT NULL,
     song_id INTEGER NOT NULL,
-    set_number TEXT NOT NULL,
+    set_number TEXT NOT NULL CHECK (set_number IN ('1','2','3','4','E')),
     trans_mark TEXT NOT NULL DEFAULT ',',
     entered_at TEXT NOT NULL,
     PRIMARY KEY (show_id, entered_order)
