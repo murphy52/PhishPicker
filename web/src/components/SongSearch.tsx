@@ -2,12 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Fuse from "fuse.js";
+import type { Song } from "@/lib/songs";
 
-export interface Song {
-  song_id: number;
-  name: string;
-  original_artist: string | null;
-}
+export type { Song };
 
 interface Props {
   songs: Song[];
@@ -30,6 +27,11 @@ export function SongSearch({ songs, onSelect }: Props) {
         type="text"
         aria-label="Search songs"
         placeholder="Search songs…"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        enterKeyHint="search"
+        inputMode="search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
