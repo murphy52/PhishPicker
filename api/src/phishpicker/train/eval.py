@@ -111,7 +111,13 @@ def walk_forward_eval(
         )
         for slot_idx, r in enumerate(setlist, start=1):
             positive = int(r["song_id"])
-            pool = [s for s in all_song_ids if s not in played]
+            # Rank the positive against ALL songs, not just not-yet-played.
+            # Two reasons: (1) shows legitimately repeat songs (reprises), so
+            # the positive may already be in `played`; (2) production applies
+            # hard-rules post-processing separately — eval should measure the
+            # raw model signal including how well `played_already_this_run`
+            # features suppress repeats.
+            pool = list(all_song_ids)
             rows = build_feature_rows(
                 conn,
                 show_date=cutoff,

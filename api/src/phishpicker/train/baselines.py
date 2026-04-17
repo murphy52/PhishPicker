@@ -106,7 +106,8 @@ def evaluate_scorer(
         )
         for slot_idx, r in enumerate(setlist, start=1):
             positive = int(r["song_id"])
-            pool = [s for s in all_song_ids if s not in played]
+            # Same rationale as eval.walk_forward_eval — rank against all songs.
+            pool = list(all_song_ids)
             scores = scorer(conn, cutoff, cutoff, sh["venue_id"], played, r["set_number"], pool)
             order = np.argsort(-scores)
             rank = int(np.where([pool[i] == positive for i in order])[0][0]) + 1
