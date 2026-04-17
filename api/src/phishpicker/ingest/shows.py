@@ -31,6 +31,15 @@ def upsert_setlist_songs(conn: sqlite3.Connection, setlist: list[dict]) -> int:
         return 0
     show_ids = {row["showid"] for row in setlist}
     now = datetime.now(UTC).isoformat()
+    # Dedupe on (show_id, set, position). phish.net occasionally ships
+    # duplicate slot rows in a setlist (ambiguous entries for old shows).
+    # Keeping the last wins; the difference between duplicates is typically
+    # just a trans_mark variant.
+    deduped: dict[tuple[int, str, int], dict] = {}
+    for row in setlist:
+        key = (row["showid"], str(row["set"]).upper(), int(row["position"]))
+        deduped[key] = row
+    setlist = list(deduped.values())
     with conn:
         for sid in show_ids:
             conn.execute("DELETE FROM setlist_songs WHERE show_id = ?", (sid,))

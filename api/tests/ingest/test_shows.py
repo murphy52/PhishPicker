@@ -63,6 +63,35 @@ def test_upsert_setlist_songs_is_idempotent(tmp_path: Path, fixtures_dir: Path):
     assert rows[1]["trans_mark"] == ">"
 
 
+def test_upsert_setlist_dedupes_duplicate_slots(tmp_path: Path):
+    """phish.net occasionally ships two rows for the same (show, set, position)
+    on old ambiguous shows. We keep the last entry rather than let the
+    UNIQUE constraint abort the whole ingest."""
+    conn = open_db(tmp_path / "t.db")
+    apply_schema(conn)
+    conn.execute(
+        "INSERT INTO songs (song_id, name, first_seen_at) VALUES (1, 'A', '2024-01-01')"
+    )
+    conn.execute(
+        "INSERT INTO songs (song_id, name, first_seen_at) VALUES (2, 'B', '2024-01-01')"
+    )
+    conn.commit()
+    upsert_show(conn, {"showid": 555, "showdate": "1989-01-01", "venueid": None, "tourid": None})
+    upsert_setlist_songs(
+        conn,
+        [
+            {"showid": 555, "set": "1", "position": 1, "songid": 1, "song": "A", "trans_mark": ","},
+            {"showid": 555, "set": "1", "position": 1, "songid": 2, "song": "B", "trans_mark": ">"},
+        ],
+    )
+    rows = conn.execute(
+        "SELECT song_id, trans_mark FROM setlist_songs WHERE show_id = 555"
+    ).fetchall()
+    assert len(rows) == 1
+    # Last one wins.
+    assert rows[0]["song_id"] == 2
+
+
 def test_upsert_setlist_stubs_missing_songs(tmp_path: Path):
     """phish.net's songs.json isn't exhaustive — setlists can reference a
     songid that never appeared in the songs dump. Must auto-stub."""
