@@ -1,0 +1,76 @@
+"""Unified feature builder called by both training and serving.
+
+Training calls this per (show, slot); serving calls it once per /predict.
+Going through a single function guarantees training-serving parity by
+construction.
+"""
+
+import sqlite3
+
+from phishpicker.model.stats import compute_song_stats
+from phishpicker.train.bigrams import compute_bigram_probs
+from phishpicker.train.context import compute_show_context
+from phishpicker.train.features import MISSING_INT, FeatureRow
+
+SET_NUMBER_TO_INT = {"1": 1, "2": 2, "3": 3, "4": 4, "E": 4}
+
+
+def build_feature_rows(
+    conn: sqlite3.Connection,
+    show_date: str,
+    venue_id: int | None,
+    played_songs: list[int],
+    current_set: str,
+    candidate_song_ids: list[int],
+    show_id: int = 0,
+    bigram_cache: dict[tuple[int, int], float] | None = None,
+) -> list[FeatureRow]:
+    """Emit one FeatureRow per candidate song at the given slot.
+
+    show_id=0 is used for live shows not yet ingested into the shows table.
+    bigram_cache, if supplied, skips the per-call bigram computation — critical
+    during training where we compute bigrams once per fold.
+    """
+    ctx = compute_show_context(conn, show_date=show_date, venue_id=venue_id)
+    stats = compute_song_stats(conn, show_date, venue_id, candidate_song_ids)
+
+    prev_song_id = played_songs[-1] if played_songs else MISSING_INT
+    slot_number = len(played_songs) + 1
+    current_set_int = SET_NUMBER_TO_INT.get(current_set, 1)
+
+    if bigram_cache is None:
+        bigram_cache = compute_bigram_probs(conn, cutoff_date=show_date)
+
+    rows: list[FeatureRow] = []
+    for sid in candidate_song_ids:
+        s = stats[sid]
+        bigram_p = (
+            bigram_cache.get((prev_song_id, sid), 0.0) if prev_song_id != MISSING_INT else 0.0
+        )
+        row = FeatureRow.empty(song_id=sid, show_id=show_id, slot_number=slot_number)
+        row.total_plays_ever = s.total_plays_ever
+        row.plays_last_12mo = s.times_played_last_12mo
+        row.shows_since_last_played_anywhere = (
+            s.shows_since_last_played_anywhere
+            if s.shows_since_last_played_anywhere is not None
+            else MISSING_INT
+        )
+        row.shows_since_last_at_venue = (
+            s.shows_since_last_played_here
+            if s.shows_since_last_played_here is not None
+            else MISSING_INT
+        )
+        row.played_already_this_run = int(s.played_already_this_run)
+        row.opener_score = s.opener_score
+        row.encore_score = s.encore_score
+        row.middle_rate = s.middle_score
+        row.current_set = current_set_int
+        row.set_position = slot_number
+        row.prev_song_id = prev_song_id
+        row.bigram_prev_to_this = bigram_p
+        row.day_of_week = ctx.day_of_week
+        row.month = ctx.month
+        row.era = ctx.era
+        row.tour_position = ctx.tour_position
+        rows.append(row)
+    return rows
