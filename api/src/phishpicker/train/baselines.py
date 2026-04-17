@@ -73,9 +73,16 @@ def evaluate_scorer(
     scorer: Scorer,
     n_holdout_shows: int = 20,
 ) -> WalkForwardResult:
+    # Mirror walk_forward_eval — skip future-dated placeholder shows with no
+    # setlist rows yet.
     holdout = conn.execute(
-        "SELECT show_id, show_date, venue_id FROM shows "
-        "ORDER BY show_date DESC, show_id DESC LIMIT ?",
+        """
+        SELECT s.show_id, s.show_date, s.venue_id
+        FROM shows s
+        WHERE EXISTS (SELECT 1 FROM setlist_songs ss WHERE ss.show_id = s.show_id)
+        ORDER BY s.show_date DESC, s.show_id DESC
+        LIMIT ?
+        """,
         (n_holdout_shows,),
     ).fetchall()
     holdout = list(reversed(holdout))

@@ -63,9 +63,16 @@ def walk_forward_eval(
     half_life_years: float | None = 7.0,
     seed: int = 0,
 ) -> WalkForwardResult:
+    # Only hold out shows that actually have setlist data — phish.net lists
+    # future-dated placeholder shows that haven't happened yet.
     holdout = conn.execute(
-        "SELECT show_id, show_date, venue_id FROM shows "
-        "ORDER BY show_date DESC, show_id DESC LIMIT ?",
+        """
+        SELECT s.show_id, s.show_date, s.venue_id
+        FROM shows s
+        WHERE EXISTS (SELECT 1 FROM setlist_songs ss WHERE ss.show_id = s.show_id)
+        ORDER BY s.show_date DESC, s.show_id DESC
+        LIMIT ?
+        """,
         (n_holdout_shows,),
     ).fetchall()
     holdout = list(reversed(holdout))  # chronological order for readability

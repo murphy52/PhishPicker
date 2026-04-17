@@ -54,7 +54,12 @@ def run_training(
     """Train, evaluate, and (if gate passes) write artifacts. Returns the
     metrics dict that was persisted."""
     if cutoff_date is None:
-        row = conn.execute("SELECT MAX(show_date) FROM shows").fetchone()
+        # Use the latest show *with a setlist*, not just the latest show — phish.net
+        # lists future-dated placeholders with no setlist rows yet.
+        row = conn.execute(
+            "SELECT MAX(s.show_date) FROM shows s "
+            "WHERE EXISTS (SELECT 1 FROM setlist_songs ss WHERE ss.show_id = s.show_id)"
+        ).fetchone()
         latest = row[0] if row and row[0] else None
         cutoff_date = _plus_one_day(latest) if latest else datetime.now(UTC).date().isoformat()
 

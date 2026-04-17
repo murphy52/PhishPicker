@@ -65,6 +65,26 @@ def test_walk_forward_each_fold_has_rank_per_slot(small_train_db):
         assert all(rk >= 1 for rk in fold.ranks)
 
 
+def test_walk_forward_skips_future_dated_empty_shows(small_train_db):
+    """phish.net lists future-dated placeholder shows with no setlist rows.
+    Holdout selection must skip those or walk-forward yields n_slots=0."""
+    # Insert a future placeholder show with no setlist rows.
+    small_train_db.execute(
+        "INSERT INTO shows (show_id, show_date, fetched_at) VALUES (9999, '2099-12-31', '2099-12-31')"
+    )
+    small_train_db.commit()
+    r = walk_forward_eval(
+        small_train_db,
+        n_holdout_shows=1,
+        negatives_per_positive=3,
+        num_iterations=10,
+        seed=0,
+    )
+    # The one holdout show should be the latest one with setlist data, NOT 2099.
+    assert r.n_slots > 0
+    assert r.fold_results[0].heldout_show_id != 9999
+
+
 def test_walk_forward_reports_ci_and_per_slot(small_train_db):
     r = walk_forward_eval(
         small_train_db,
