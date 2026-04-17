@@ -155,10 +155,15 @@ export default function Home() {
 
       {showId && <AddSongSheet songs={songs} onAdd={handleAdd} />}
 
-      <footer className="px-4 py-3 text-xs text-neutral-600 border-t border-neutral-900">
-        {meta
-          ? `${meta.shows_count} shows · ${meta.songs_count} songs · v${meta.version}`
-          : "Loading…"}
+      <footer className="px-4 py-3 text-xs text-neutral-600 border-t border-neutral-900 flex justify-between items-center">
+        <span>
+          {meta
+            ? `${meta.shows_count} shows · ${meta.songs_count} songs · v${meta.version}`
+            : "Loading…"}
+        </span>
+        <a href="/about" className="text-neutral-500 hover:text-indigo-400">
+          about
+        </a>
       </footer>
     </div>
   );
