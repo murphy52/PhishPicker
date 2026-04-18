@@ -273,3 +273,39 @@ def test_run_position_pulled_from_shows_row(conn):
         show_id=1002,
     )
     assert rows[0].run_position == 2
+
+
+def test_segue_mark_in_populated(conn):
+    """prev_trans_mark translates to segue_mark_in: ','=0, '>'=1, '->'=2."""
+    rows_comma = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[1],
+        current_set="1",
+        candidate_song_ids=[2],
+        prev_trans_mark=",",
+    )
+    assert rows_comma[0].segue_mark_in == 0
+
+    rows_seg = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[1],
+        current_set="1",
+        candidate_song_ids=[2],
+        prev_trans_mark=">",
+    )
+    assert rows_seg[0].segue_mark_in == 1
+
+    rows_tight = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[1],
+        current_set="1",
+        candidate_song_ids=[2],
+        prev_trans_mark="->",
+    )
+    assert rows_tight[0].segue_mark_in == 2

@@ -14,6 +14,7 @@ from phishpicker.train.extended_stats import compute_bustout_score, compute_exte
 from phishpicker.train.features import MISSING_INT, FeatureRow
 
 SET_NUMBER_TO_INT = {"1": 1, "2": 2, "3": 3, "4": 4, "E": 4}
+SEGUE_MARK_TO_INT = {",": 0, ">": 1, "->": 2}
 
 
 def build_feature_rows(
@@ -26,6 +27,7 @@ def build_feature_rows(
     show_id: int = 0,
     bigram_cache: dict[tuple[int, int], float] | None = None,
     all_show_dates: list[str] | None = None,
+    prev_trans_mark: str = ",",
 ) -> list[FeatureRow]:
     """Emit one FeatureRow per candidate song at the given slot.
 
@@ -111,6 +113,7 @@ def build_feature_rows(
         row.run_position = run_position_value
         row.tour_opener_rate = e.tour_opener_rate
         row.tour_closer_rate = e.tour_closer_rate
+        row.segue_mark_in = SEGUE_MARK_TO_INT.get(prev_trans_mark, 0)
 
         rows.append(row)
     return rows

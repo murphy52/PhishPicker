@@ -27,12 +27,14 @@ def predict_next(
         return []
 
     played = live_conn.execute(
-        "SELECT song_id, entered_order, set_number FROM live_songs "
+        "SELECT song_id, entered_order, set_number, trans_mark FROM live_songs "
         "WHERE show_id = ? ORDER BY entered_order",
         (live_show_id,),
     ).fetchall()
     played_ids = {r["song_id"] for r in played}
     played_list = [r["song_id"] for r in played]
+    # trans_mark on the last played song points into the slot we're predicting.
+    prev_trans_mark = played[-1]["trans_mark"] if played else ","
 
     song_ids = [r["song_id"] for r in read_conn.execute("SELECT song_id FROM songs").fetchall()]
     if not song_ids:
@@ -45,6 +47,7 @@ def predict_next(
         played_songs=played_list,
         current_set=show["current_set"],
         candidate_song_ids=song_ids,
+        prev_trans_mark=prev_trans_mark,
     )
 
     scored = apply_post_rules(scored, played_tonight=played_ids)

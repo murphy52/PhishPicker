@@ -114,12 +114,13 @@ def walk_forward_eval(
             continue
 
         setlist = conn.execute(
-            "SELECT set_number, position, song_id FROM setlist_songs "
+            "SELECT set_number, position, song_id, trans_mark FROM setlist_songs "
             "WHERE show_id = ? ORDER BY set_number, position",
             (sh["show_id"],),
         ).fetchall()
 
         played: list[int] = []
+        prev_trans_mark = ","
         fold = FoldResult(
             heldout_show_id=int(sh["show_id"]),
             heldout_show_date=cutoff,
@@ -143,6 +144,7 @@ def walk_forward_eval(
                 candidate_song_ids=pool,
                 show_id=int(sh["show_id"]),
                 all_show_dates=all_show_dates,
+                prev_trans_mark=prev_trans_mark,
             )
             X = np.asarray([fr.to_vector() for fr in rows], dtype=np.float32)
             scores = booster.predict(X)
@@ -152,6 +154,7 @@ def walk_forward_eval(
             fold.slot_positions.append(slot_idx)
             all_ranks.append(rank)
             played.append(positive)
+            prev_trans_mark = r["trans_mark"] or ","
         for k in (1, 5, 20):
             fold.top_k_hits[k] = sum(1 for rk in fold.ranks if rk <= k) / max(1, len(fold.ranks))
         fold_results.append(fold)

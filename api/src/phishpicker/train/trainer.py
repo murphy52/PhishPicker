@@ -71,6 +71,7 @@ def train_ranker(
             show_id=tg.show_id,
             bigram_cache=bigram_cache,
             all_show_dates=all_show_dates,
+            prev_trans_mark=tg.prev_trans_mark,
         )
         w = _recency_weight(tg.show_date, cutoff_date, half_life_years)
         for r in rows:
