@@ -8,6 +8,11 @@ COPY src ./src
 RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim
+# LightGBM links against libgomp (OpenMP runtime) at import time.
+# python:*-slim omits it, so add here.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app /app
 ENV PATH="/app/.venv/bin:$PATH" PHISHPICKER_DATA_DIR=/data
