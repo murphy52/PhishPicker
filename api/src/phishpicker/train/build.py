@@ -10,6 +10,7 @@ import sqlite3
 from phishpicker.model.stats import compute_song_stats
 from phishpicker.train.bigrams import compute_bigram_probs
 from phishpicker.train.context import compute_show_context
+from phishpicker.train.extended_stats import compute_bustout_score, compute_extended_stats
 from phishpicker.train.features import MISSING_INT, FeatureRow
 
 SET_NUMBER_TO_INT = {"1": 1, "2": 2, "3": 3, "4": 4, "E": 4}
@@ -40,6 +41,7 @@ def build_feature_rows(
         candidate_song_ids,
         all_show_dates=all_show_dates,
     )
+    ext = compute_extended_stats(conn, show_date, venue_id, candidate_song_ids)
 
     prev_song_id = played_songs[-1] if played_songs else MISSING_INT
     slot_number = len(played_songs) + 1
@@ -48,9 +50,23 @@ def build_feature_rows(
     if bigram_cache is None:
         bigram_cache = compute_bigram_probs(conn, cutoff_date=show_date)
 
+    # run_position is a show-level column; pull once here when show_id resolves
+    # to an ingested row. Live shows (show_id=0) keep the FeatureRow default.
+    run_pos_row = (
+        conn.execute("SELECT run_position FROM shows WHERE show_id = ?", (show_id,)).fetchone()
+        if show_id
+        else None
+    )
+    run_position_value = (
+        int(run_pos_row["run_position"])
+        if run_pos_row and run_pos_row["run_position"] is not None
+        else 1
+    )
+
     rows: list[FeatureRow] = []
     for sid in candidate_song_ids:
         s = stats[sid]
+        e = ext[sid]
         bigram_p = (
             bigram_cache.get((prev_song_id, sid), 0.0) if prev_song_id != MISSING_INT else 0.0
         )
@@ -79,5 +95,22 @@ def build_feature_rows(
         row.month = ctx.month
         row.era = ctx.era
         row.tour_position = ctx.tour_position
+
+        # Extended batch: set-role refinements, venue affinity, metadata,
+        # bust-out gap, days-since.
+        row.set1_opener_rate = e.set1_opener_rate
+        row.set2_opener_rate = e.set2_opener_rate
+        row.closer_score = e.closer_score
+        row.encore_rate = e.encore_rate
+        row.times_at_venue = e.times_at_venue
+        row.venue_debut_affinity = e.venue_debut_affinity
+        row.debut_year = e.debut_year
+        row.is_cover = e.is_cover
+        row.days_since_last_played_anywhere = e.days_since_last_played_anywhere
+        row.bustout_score = compute_bustout_score(s.shows_since_last_played_anywhere)
+        row.run_position = run_position_value
+        row.tour_opener_rate = e.tour_opener_rate
+        row.tour_closer_rate = e.tour_closer_rate
+
         rows.append(row)
     return rows
