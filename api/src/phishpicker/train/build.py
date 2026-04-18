@@ -43,7 +43,26 @@ def build_feature_rows(
         candidate_song_ids,
         all_show_dates=all_show_dates,
     )
-    ext = compute_extended_stats(conn, show_date, venue_id, candidate_song_ids)
+    # Resolve tour_id: if show_id is populated (training, or a live show whose
+    # row already exists), read shows.tour_id directly. Otherwise fall back to
+    # the date-range match via tours.start_date/end_date (sparse today — stubs
+    # omit dates — but useful once we ingest real tour metadata).
+    tour_id: int | None = None
+    if show_id:
+        r = conn.execute("SELECT tour_id FROM shows WHERE show_id = ?", (show_id,)).fetchone()
+        if r and r["tour_id"] is not None:
+            tour_id = int(r["tour_id"])
+    if tour_id is None:
+        r = conn.execute(
+            "SELECT tour_id FROM tours "
+            "WHERE start_date IS NOT NULL AND end_date IS NOT NULL "
+            "AND start_date <= ? AND end_date >= ? LIMIT 1",
+            (show_date, show_date),
+        ).fetchone()
+        if r:
+            tour_id = int(r["tour_id"])
+
+    ext = compute_extended_stats(conn, show_date, venue_id, candidate_song_ids, tour_id=tour_id)
 
     prev_song_id = played_songs[-1] if played_songs else MISSING_INT
     slot_number = len(played_songs) + 1
@@ -113,6 +132,8 @@ def build_feature_rows(
         row.run_position = run_position_value
         row.tour_opener_rate = e.tour_opener_rate
         row.tour_closer_rate = e.tour_closer_rate
+        row.times_this_tour = e.times_this_tour
+        row.shows_since_last_played_this_tour = e.shows_since_last_played_this_tour
         row.segue_mark_in = SEGUE_MARK_TO_INT.get(prev_trans_mark, 0)
 
         rows.append(row)

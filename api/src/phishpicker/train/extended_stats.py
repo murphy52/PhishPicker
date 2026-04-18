@@ -32,6 +32,8 @@ class ExtendedStats:
     days_since_last_played_anywhere: int = -1
     tour_opener_rate: float = 0.0
     tour_closer_rate: float = 0.0
+    times_this_tour: int = 0
+    shows_since_last_played_this_tour: int = -1
 
 
 def compute_extended_stats(
@@ -39,8 +41,15 @@ def compute_extended_stats(
     show_date: str,
     venue_id: int | None,
     candidate_song_ids: list[int],
+    tour_id: int | None = None,
 ) -> dict[int, ExtendedStats]:
-    """Return {song_id: ExtendedStats} for the candidates as of show_date."""
+    """Return {song_id: ExtendedStats} for the candidates as of show_date.
+
+    `tour_id` scopes the tour-rotation features (times_this_tour,
+    shows_since_last_played_this_tour). If None, those fields keep their
+    sentinel defaults — live shows that can't resolve a tour_id just see
+    zeros.
+    """
     if not candidate_song_ids:
         return {}
 
@@ -156,6 +165,52 @@ def compute_extended_stats(
         total = max(1, r["total"] or 1)
         e.tour_opener_rate = (r["tour_openers"] or 0) / total
         e.tour_closer_rate = (r["tour_closers"] or 0) / total
+
+    # 4b. Tour-rotation features (times_this_tour, shows_since_last_played_this_tour).
+    # Scoped to the supplied tour_id. For Phish, which famously rarely repeats
+    # within a tour, these should carry strong negative signal when high.
+    if tour_id is not None:
+        times_this_tour = dict(
+            conn.execute(
+                f"""
+                SELECT ss.song_id, COUNT(*) AS n
+                FROM setlist_songs ss JOIN shows s USING (show_id)
+                WHERE ss.song_id IN ({placeholders})
+                  AND s.tour_id = ? AND s.show_date < ?
+                GROUP BY ss.song_id
+                """,
+                [*candidate_song_ids, tour_id, show_date],
+            ).fetchall()
+        )
+        last_in_tour = dict(
+            conn.execute(
+                f"""
+                SELECT ss.song_id, MAX(s.show_date) AS last_date
+                FROM setlist_songs ss JOIN shows s USING (show_id)
+                WHERE ss.song_id IN ({placeholders})
+                  AND s.tour_id = ? AND s.show_date < ?
+                GROUP BY ss.song_id
+                """,
+                [*candidate_song_ids, tour_id, show_date],
+            ).fetchall()
+        )
+        # Shows-between: use per-tour show list via bisect.
+        tour_show_dates = sorted(
+            r[0]
+            for r in conn.execute(
+                "SELECT show_date FROM shows WHERE tour_id = ? AND show_date < ?",
+                (tour_id, show_date),
+            )
+        )
+        import bisect as _bisect
+
+        cutoff_idx = len(tour_show_dates)  # all are strictly < show_date
+        for sid in candidate_song_ids:
+            out[sid].times_this_tour = times_this_tour.get(sid, 0)
+            last = last_in_tour.get(sid)
+            if last:
+                left = _bisect.bisect_right(tour_show_dates, last)
+                out[sid].shows_since_last_played_this_tour = max(0, cutoff_idx - left)
 
     # 4. Days-since-last-played (calendar recency distinct from shows-since).
     last_rows = conn.execute(

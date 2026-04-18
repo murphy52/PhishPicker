@@ -309,3 +309,38 @@ def test_segue_mark_in_populated(conn):
         prev_trans_mark="->",
     )
     assert rows_tight[0].segue_mark_in == 2
+
+
+def test_times_this_tour_scoped_to_tour(conn):
+    """Chalk Dust played in show 1001 (tour 10) and 1003 (tour 10). When we
+    ask from inside tour 10 (via show_id=1002 which is tour 10), we should see
+    1 prior play in this tour (show 1001; 1003 is same tour but after 1002 =
+    not prior)."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2023-10-02",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+        show_id=1002,  # in tour 10
+    )
+    # Only show 1001 (tour 10, before 2023-10-02) plays Chalk Dust.
+    assert rows[0].times_this_tour == 1
+
+
+def test_shows_since_last_played_this_tour_counts_tour_shows(conn):
+    """Shows-since is within-tour only. Chalk Dust played in 1001 on
+    2023-10-01. In show 1002 (2023-10-02, same tour), 0 tour-shows between."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2023-10-02",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+        show_id=1002,
+    )
+    # 1001 is the last play; no tour shows strictly between 2023-10-01 and
+    # 2023-10-02 (neither endpoint).
+    assert rows[0].shows_since_last_played_this_tour == 0
