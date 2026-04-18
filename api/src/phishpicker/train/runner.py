@@ -139,6 +139,19 @@ def run_training(
     # inspection; only on pass (or override) do we replace the production
     # artifacts.
     n_shows = conn.execute("SELECT COUNT(*) FROM shows").fetchone()[0]
+
+    # LightGBM's gain-based feature importance. Surfacing it in metrics.json
+    # lets /about (or ad-hoc analysis) show which features actually pulled
+    # weight — crucial for iteration decisions like "is it worth plumbing
+    # tour_id through live shows?"
+    try:
+        gains = booster.feature_importance(importance_type="gain")
+        feature_importance = {
+            col: float(gain) for col, gain in zip(cols, gains, strict=True)
+        }
+    except Exception:  # pragma: no cover — booster API is stable but defensive
+        feature_importance = {}
+
     metrics = {
         "trained_at": datetime.now(UTC).isoformat(),
         "cutoff_date": cutoff_date,
@@ -159,6 +172,7 @@ def run_training(
         "ship_gate_passed": gate_passed,
         "model_version": MODEL_VERSION,
         "feature_columns": list(FEATURE_COLUMNS),
+        "feature_importance_gain": feature_importance,
     }
 
     data_dir = Path(data_dir)
