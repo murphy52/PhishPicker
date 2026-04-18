@@ -28,7 +28,22 @@ def upsert_tour_stubs(conn: sqlite3.Connection, shows: list[dict]) -> None:
     conn.commit()
 
 
-def run_full_ingest(conn: sqlite3.Connection, client: PhishNetClient) -> dict:
+PHISH_ARTIST_ID = 1
+
+
+def run_full_ingest(
+    conn: sqlite3.Connection,
+    client: PhishNetClient,
+    artist_id: int | None = PHISH_ARTIST_ID,
+) -> dict:
+    """Ingest all data from phish.net into `conn`.
+
+    By default filters to artist_id=1 (Phish proper). phish.net's `/shows.json`
+    returns side-project gigs (Trey Anastasio Band, Mike Gordon Band, etc.) too;
+    including them contaminates the training corpus because a Trey-solo opener
+    like "Tilting" gets ranked above Phish openers. Pass artist_id=None to skip
+    the filter.
+    """
     # apply_schema is called here defensively so callers that skip `init-db`
     # still get a valid schema; all DDL uses CREATE IF NOT EXISTS so it is idempotent.
     apply_schema(conn)
@@ -40,6 +55,8 @@ def run_full_ingest(conn: sqlite3.Connection, client: PhishNetClient) -> dict:
     n_venues = upsert_venues(conn, venues)
 
     shows = client.fetch_all_shows()
+    if artist_id is not None:
+        shows = [s for s in shows if s.get("artistid") == artist_id]
     upsert_tour_stubs(conn, shows)
 
     n_shows = 0

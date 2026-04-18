@@ -63,8 +63,22 @@ def test_setlist_fetch_failure_does_not_abort_ingest(
         {
             "error": False,
             "data": [
-                {"showid": 1234567, "showdate": "2024-07-21", "venueid": 500, "tourid": 77},
-                {"showid": 1234568, "showdate": "2024-07-22", "venueid": 500, "tourid": 77},
+                {
+                    "showid": 1234567,
+                    "showdate": "2024-07-21",
+                    "venueid": 500,
+                    "tourid": 77,
+                    "artistid": 1,
+                    "artist_name": "Phish",
+                },
+                {
+                    "showid": 1234568,
+                    "showdate": "2024-07-22",
+                    "venueid": 500,
+                    "tourid": 77,
+                    "artistid": 1,
+                    "artist_name": "Phish",
+                },
             ],
         }
     )
@@ -99,3 +113,116 @@ def test_setlist_fetch_failure_does_not_abort_ingest(
     assert stats["shows"] == 2
     # Only the successful setlist rows were inserted
     assert conn.execute("SELECT count(*) FROM setlist_songs").fetchone()[0] == 2
+
+
+def test_ingest_filters_non_phish_shows_by_default(
+    tmp_path: Path, fixtures_dir: Path, httpx_mock: HTTPXMock
+):
+    """Default artist_id=1 excludes side-project shows (Trey, Mike Gordon, etc)."""
+    mixed = json.dumps(
+        {
+            "error": False,
+            "data": [
+                {
+                    "showid": 100,
+                    "showdate": "2024-07-01",
+                    "venueid": 500,
+                    "tourid": 77,
+                    "artistid": 1,
+                    "artist_name": "Phish",
+                },
+                {
+                    "showid": 101,
+                    "showdate": "2024-07-02",
+                    "venueid": 500,
+                    "tourid": 77,
+                    "artistid": 2,
+                    "artist_name": "Trey Anastasio",
+                },
+            ],
+        }
+    )
+    httpx_mock.add_response(
+        url="https://api.phish.net/v5/songs.json?apikey=test-key",
+        text=(fixtures_dir / "phishnet_songs_sample.json").read_text(),
+    )
+    httpx_mock.add_response(
+        url="https://api.phish.net/v5/venues.json?apikey=test-key",
+        text=(fixtures_dir / "phishnet_venues_sample.json").read_text(),
+    )
+    httpx_mock.add_response(
+        url="https://api.phish.net/v5/shows.json?apikey=test-key&order_by=showdate&direction=desc",
+        text=mixed,
+    )
+    httpx_mock.add_response(
+        url="https://api.phish.net/v5/setlists/showid/100.json?apikey=test-key",
+        text='{"error": false, "data": []}',
+    )
+
+    conn = open_db(tmp_path / "test.db")
+    with PhishNetClient(api_key="test-key", base_url="https://api.phish.net/v5") as client:
+        stats = run_full_ingest(conn, client)
+
+    # Only the Phish show was ingested.
+    assert stats["shows"] == 1
+    shows_in_db = conn.execute("SELECT show_id FROM shows").fetchall()
+    assert [row["show_id"] for row in shows_in_db] == [100]
+
+
+def test_ingest_artist_id_none_keeps_all_shows(
+    tmp_path: Path, fixtures_dir: Path, httpx_mock: HTTPXMock
+):
+    """Passing artist_id=None disables the filter (for multi-artist ingests)."""
+    mixed = json.dumps(
+        {
+            "error": False,
+            "data": [
+                {
+                    "showid": 200,
+                    "showdate": "2024-07-01",
+                    "venueid": 500,
+                    "tourid": 77,
+                    "artistid": 1,
+                    "artist_name": "Phish",
+                },
+                {
+                    "showid": 201,
+                    "showdate": "2024-07-02",
+                    "venueid": 500,
+                    "tourid": 77,
+                    "artistid": 2,
+                    "artist_name": "Trey Anastasio",
+                },
+            ],
+        }
+    )
+    for path in (
+        "songs.json?apikey=test-key",
+        "venues.json?apikey=test-key",
+    ):
+        httpx_mock.add_response(
+            url=f"https://api.phish.net/v5/{path}",
+            text=(
+                fixtures_dir
+                / (
+                    "phishnet_songs_sample.json"
+                    if "songs" in path
+                    else "phishnet_venues_sample.json"
+                )
+            ).read_text(),
+        )
+    httpx_mock.add_response(
+        url="https://api.phish.net/v5/shows.json?apikey=test-key&order_by=showdate&direction=desc",
+        text=mixed,
+    )
+    for sid in (200, 201):
+        httpx_mock.add_response(
+            url=f"https://api.phish.net/v5/setlists/showid/{sid}.json?apikey=test-key",
+            text='{"error": false, "data": []}',
+        )
+
+    conn = open_db(tmp_path / "test.db")
+    with PhishNetClient(api_key="test-key", base_url="https://api.phish.net/v5") as client:
+        stats = run_full_ingest(conn, client, artist_id=None)
+
+    assert stats["shows"] == 2

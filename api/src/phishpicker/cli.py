@@ -23,7 +23,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="phishpicker")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init-db", help="initialize local sqlite databases")
-    sub.add_parser("ingest", help="full phish.net ingest")
+    p_ingest = sub.add_parser("ingest", help="full phish.net ingest")
+    p_ingest.add_argument(
+        "--artist-id",
+        type=int,
+        default=1,
+        help="only ingest shows by this artist (1=Phish, 2=Trey Anastasio, "
+        "6=Mike Gordon, 7=Jon Fishman, 9=Page McConnell; 0 = all artists)",
+    )
 
     p_train = sub.add_parser("train", help="training commands")
     train_sub = p_train.add_subparsers(dest="train_cmd", required=True)
@@ -61,10 +68,11 @@ def main() -> int:
         return 0
 
     if args.cmd == "ingest":
+        artist = None if args.artist_id == 0 else args.artist_id
         with PhishNetClient(api_key=s.phishnet_api_key, base_url=s.phishnet_base_url) as client:
             conn = open_db(s.db_path)
-            stats = run_full_ingest(conn, client)
-        print(f"Ingest complete: {stats}")
+            stats = run_full_ingest(conn, client, artist_id=artist)
+        print(f"Ingest complete (artist_id={artist}): {stats}")
         return 0
 
     if args.cmd == "train" and args.train_cmd == "ab-era":
