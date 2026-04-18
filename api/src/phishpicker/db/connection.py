@@ -11,10 +11,15 @@ def open_db(path: Path, read_only: bool = False) -> sqlite3.Connection:
     if read_only:
         uri = f"file:{path}?mode=ro"
         conn = sqlite3.connect(uri, uri=True)
+        # Don't set journal_mode=WAL on a read-only connection — PRAGMA
+        # journal_mode writes to the DB header and fails with
+        # 'attempt to write a readonly database'. WAL mode is set once
+        # when the DB is written by the ingest pipeline.
+        conn.execute("PRAGMA foreign_keys = ON")
     else:
         conn = sqlite3.connect(path)
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
     conn.row_factory = sqlite3.Row
     return conn
 
