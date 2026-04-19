@@ -7,7 +7,7 @@ construction.
 
 import sqlite3
 
-from phishpicker.model.stats import compute_song_stats
+from phishpicker.model.stats import compute_song_stats, find_run_bounds
 from phishpicker.train.bigrams import compute_bigram_probs
 from phishpicker.train.context import compute_show_context
 from phishpicker.train.extended_stats import compute_bustout_score, compute_extended_stats
@@ -36,13 +36,6 @@ def build_feature_rows(
     during training where we compute bigrams once per fold.
     """
     ctx = compute_show_context(conn, show_date=show_date, venue_id=venue_id)
-    stats = compute_song_stats(
-        conn,
-        show_date,
-        venue_id,
-        candidate_song_ids,
-        all_show_dates=all_show_dates,
-    )
     # Resolve tour_id: if show_id is populated (training, or a live show whose
     # row already exists), read shows.tour_id directly. Otherwise fall back to
     # the date-range match via tours.start_date/end_date (sparse today — stubs
@@ -62,7 +55,22 @@ def build_feature_rows(
         if r:
             tour_id = int(r["tour_id"])
 
-    ext = compute_extended_stats(conn, show_date, venue_id, candidate_song_ids, tour_id=tour_id)
+    stats = compute_song_stats(
+        conn,
+        show_date,
+        venue_id,
+        candidate_song_ids,
+        all_show_dates=all_show_dates,
+        tour_id=tour_id,
+    )
+    ext = compute_extended_stats(
+        conn,
+        show_date,
+        venue_id,
+        candidate_song_ids,
+        tour_id=tour_id,
+        all_show_dates=all_show_dates,
+    )
 
     prev_song_id = played_songs[-1] if played_songs else MISSING_INT
     slot_number = len(played_songs) + 1
@@ -71,17 +79,13 @@ def build_feature_rows(
     if bigram_cache is None:
         bigram_cache = compute_bigram_probs(conn, cutoff_date=show_date)
 
-    # run_position is a show-level column; pull once here when show_id resolves
-    # to an ingested row. Live shows (show_id=0) keep the FeatureRow default.
-    run_pos_row = (
-        conn.execute("SELECT run_position FROM shows WHERE show_id = ?", (show_id,)).fetchone()
-        if show_id
-        else None
+    # run_position + run_length_total via find_run_bounds — also handles live
+    # shows (no show_id row yet) by date-adjacency walk with tour_id constraint.
+    _, _, run_position_value, run_length_value = find_run_bounds(
+        conn, venue_id=venue_id, show_date=show_date, tour_id=tour_id
     )
-    run_position_value = (
-        int(run_pos_row["run_position"])
-        if run_pos_row and run_pos_row["run_position"] is not None
-        else 1
+    frac_run_remaining_value = (
+        (run_length_value - run_position_value) / run_length_value if run_length_value else 0.0
     )
 
     rows: list[FeatureRow] = []
@@ -130,11 +134,16 @@ def build_feature_rows(
         row.days_since_last_played_anywhere = e.days_since_last_played_anywhere
         row.bustout_score = compute_bustout_score(s.shows_since_last_played_anywhere)
         row.run_position = run_position_value
+        row.run_length_total = run_length_value
+        row.frac_run_remaining = frac_run_remaining_value
         row.tour_opener_rate = e.tour_opener_rate
         row.tour_closer_rate = e.tour_closer_rate
         row.times_this_tour = e.times_this_tour
         row.shows_since_last_played_this_tour = e.shows_since_last_played_this_tour
         row.segue_mark_in = SEGUE_MARK_TO_INT.get(prev_trans_mark, 0)
+        row.shows_since_last_set1_opener = e.shows_since_last_set1_opener
+        row.shows_since_last_any_opener_role = e.shows_since_last_any_opener_role
+        row.avg_set_position_when_played = e.avg_set_position_when_played
 
         rows.append(row)
     return rows

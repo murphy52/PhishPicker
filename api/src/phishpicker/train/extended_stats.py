@@ -34,6 +34,9 @@ class ExtendedStats:
     tour_closer_rate: float = 0.0
     times_this_tour: int = 0
     shows_since_last_played_this_tour: int = -1
+    shows_since_last_set1_opener: int = -1
+    shows_since_last_any_opener_role: int = -1
+    avg_set_position_when_played: float = -1.0
 
 
 def compute_extended_stats(
@@ -42,6 +45,7 @@ def compute_extended_stats(
     venue_id: int | None,
     candidate_song_ids: list[int],
     tour_id: int | None = None,
+    all_show_dates: list[str] | None = None,
 ) -> dict[int, ExtendedStats]:
     """Return {song_id: ExtendedStats} for the candidates as of show_date.
 
@@ -68,7 +72,7 @@ def compute_extended_stats(
     rows = conn.execute(
         f"""
         WITH set_maxes AS (
-            SELECT show_id, set_number, MAX(position) AS max_pos
+            SELECT show_id, set_number, MAX(position) AS max_pos, MIN(position) AS min_pos
             FROM setlist_songs GROUP BY show_id, set_number
         ),
         tour_maxes AS (
@@ -88,7 +92,15 @@ def compute_extended_stats(
             SUM(CASE WHEN s.venue_id = ? THEN 1 ELSE 0 END) AS venue_plays,
             SUM(CASE WHEN s.tour_id = ? THEN 1 ELSE 0 END) AS times_this_tour_n,
             MAX(s.show_date) AS last_date,
-            MAX(CASE WHEN s.tour_id = ? THEN s.show_date END) AS last_in_tour_date
+            MAX(CASE WHEN s.tour_id = ? THEN s.show_date END) AS last_in_tour_date,
+            -- A: last time this song was the set-1 opener specifically.
+            MAX(CASE WHEN ss.set_number='1' AND ss.position=1
+                     THEN s.show_date END) AS last_set1_opener_date,
+            -- B: last time it held ANY opener role — first song of any set, or the encore.
+            MAX(CASE WHEN ss.position = sm.min_pos
+                     THEN s.show_date END) AS last_any_opener_date,
+            -- C: mean show-global position across all plays (warm-up vs jam-vehicle proxy).
+            AVG(ss.position) AS avg_position
         FROM setlist_songs ss
         JOIN shows s USING (show_id)
         JOIN set_maxes sm ON sm.show_id = ss.show_id AND sm.set_number = ss.set_number
@@ -100,6 +112,21 @@ def compute_extended_stats(
     ).fetchall()
 
     show_d = date.fromisoformat(show_date)
+
+    # Precompute sorted show_dates for shows-since-X bisect lookups. Caller
+    # can pass this in to amortize across many build_feature_rows calls.
+    if all_show_dates is None:
+        all_show_dates = sorted(r[0] for r in conn.execute("SELECT show_date FROM shows"))
+    import bisect as _bisect
+
+    show_idx = _bisect.bisect_left(all_show_dates, show_date)
+
+    def _shows_since(last_d: str | None) -> int:
+        if not last_d:
+            return -1
+        left = _bisect.bisect_right(all_show_dates, last_d)
+        return max(0, show_idx - left)
+
     for r in rows:
         e = out[r["song_id"]]
         total = max(1, r["total"] or 1)
@@ -116,13 +143,17 @@ def compute_extended_stats(
         last = r["last_date"]
         if last:
             e.days_since_last_played_anywhere = (show_d - date.fromisoformat(last)).days
+        # New A/B/C.
+        e.shows_since_last_set1_opener = _shows_since(r["last_set1_opener_date"])
+        e.shows_since_last_any_opener_role = _shows_since(r["last_any_opener_date"])
+        avg_pos = r["avg_position"]
+        if avg_pos is not None:
+            e.avg_set_position_when_played = float(avg_pos)
 
     # For shows_since_last_played_this_tour we need the SHOWS count between
     # the song's last in-tour play and the cutoff — not a row count. Bisect
     # over the tour's show_date list is the cheapest way.
     if tour_id is not None:
-        import bisect as _bisect
-
         tour_show_dates = sorted(
             r[0]
             for r in conn.execute(

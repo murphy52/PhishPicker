@@ -40,6 +40,8 @@ class FeatureRow:
     shows_since_last_at_venue: int = MISSING_INT
     played_already_this_run: int = 0
     run_position: int = 1
+    run_length_total: int = 1
+    frac_run_remaining: float = 0.0
     venue_debut_affinity: float = 0.0
 
     # 4. Tour
@@ -58,6 +60,11 @@ class FeatureRow:
     prev_song_id: int = MISSING_INT
     bigram_prev_to_this: float = 0.0
     segue_mark_in: int = 0
+    # Opener-rotation signals — "haven't opened with it since Charleston" heuristic.
+    shows_since_last_set1_opener: int = MISSING_INT
+    shows_since_last_any_opener_role: int = MISSING_INT
+    # Warm-up / jam-vehicle proxy — low value = early-slot song, high = late-show jam.
+    avg_set_position_when_played: float = MISSING_FLOAT
 
     # 6. Temporal / era
     day_of_week: int = 0

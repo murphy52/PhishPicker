@@ -344,3 +344,116 @@ def test_shows_since_last_played_this_tour_counts_tour_shows(conn):
     # 1001 is the last play; no tour shows strictly between 2023-10-01 and
     # 2023-10-02 (neither endpoint).
     assert rows[0].shows_since_last_played_this_tour == 0
+
+
+def test_shows_since_last_set1_opener(conn):
+    """Chalk Dust opened set 1 in show 1001 (2023-10-01) and 1003 (2023-11-15).
+    By cutoff 2024-07-01 the last time it opened was 2023-11-15. Count
+    intervening shows (1004 on 2024-06-01) → 1."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    # Exactly one show (1004) strictly after 1003 and strictly before 2024-07-01.
+    assert rows[0].shows_since_last_set1_opener == 1
+
+
+def test_shows_since_last_any_opener_role_includes_set2_opener(conn):
+    """Tweezer opened set 2 in show 1002 (2023-10-02). That's its only
+    opener-role appearance. By cutoff 2024-07-01: 2 intervening shows
+    (1003, 1004).
+
+    NOTE: Show 1004 has Tweezer as the SOLE set-1 row (pos=5 but also the
+    min-position of its set since it's the only entry), so under our
+    definition of opener-role=position-is-min-of-set, Tweezer counts as
+    1004's set-1 opener. Its last opener-role is 2024-06-01 → 0 intervening
+    shows before 2024-07-01."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[2],
+    )
+    assert rows[0].shows_since_last_any_opener_role == 0
+
+
+def test_avg_set_position_when_played_low_for_opener_song(conn):
+    """Chalk Dust plays at positions 1, 2, 1 (per our fixture). AVG = 4/3."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].avg_set_position_when_played == pytest.approx(4 / 3)
+
+
+def test_run_length_total_counts_all_shows_in_run(conn):
+    """Show 1002 is part of a 2-show MSG run (1001-1002). run_length_total=2."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2023-10-02",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+        show_id=1002,
+    )
+    assert rows[0].run_length_total == 2
+    # position 2 of 2 → 0% remaining
+    assert rows[0].frac_run_remaining == pytest.approx(0.0)
+
+
+def test_run_length_for_live_show_appended_to_existing_run(conn):
+    """Live show on 2023-10-03 at MSG — gap=1 day from 1002 → same run.
+    Run should be 1001, 1002, then our live 2023-10-03 = length 3."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2023-10-03",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].run_length_total == 3
+    assert rows[0].run_position == 3
+    assert rows[0].frac_run_remaining == pytest.approx(0.0)
+
+
+def test_run_gap_of_2_days_is_still_same_run(conn):
+    """Relaxed _find_run_start: 1 off-night between adjacent shows still
+    counts as one run. Live show 2023-10-04 (gap of 2 days from 1002)
+    should still see 1001 + 1002 + itself = 3."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2023-10-04",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].run_length_total == 3
+    assert rows[0].run_position == 3
+
+
+def test_run_gap_of_3_days_breaks_the_run(conn):
+    """A 3-day gap is beyond the relaxed threshold; the live show starts a
+    new run (run_length=1)."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2023-10-05",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].run_length_total == 1
+    assert rows[0].run_position == 1
