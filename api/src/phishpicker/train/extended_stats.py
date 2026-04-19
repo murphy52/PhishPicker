@@ -56,28 +56,50 @@ def compute_extended_stats(
     placeholders = ",".join("?" * len(candidate_song_ids))
     out: dict[int, ExtendedStats] = {sid: ExtendedStats() for sid in candidate_song_ids}
 
-    # 1. set-role counts in one query, with closer detection via set-max window.
+    # ONE big aggregate query covering every per-song feature that's a counts-
+    # or max-over-setlist_songs-joined-shows. This is the hot path during
+    # training: called ~65k times per walk-forward refit. Earlier iteration
+    # ran 5-7 separate queries that each rescanned the same join → cut the
+    # hot path by ~3x by fusing them.
+    #
+    # NULL-safe: venue_id and tour_id may be None. SQLite's `=` on NULL
+    # returns NULL (falsy under SUM CASE), which is exactly what we want —
+    # no special-casing needed.
     rows = conn.execute(
         f"""
         WITH set_maxes AS (
             SELECT show_id, set_number, MAX(position) AS max_pos
-            FROM setlist_songs
-            GROUP BY show_id, set_number
+            FROM setlist_songs GROUP BY show_id, set_number
+        ),
+        tour_maxes AS (
+            SELECT tour_id, MAX(tour_position) AS max_pos
+            FROM shows WHERE tour_id IS NOT NULL GROUP BY tour_id
         )
         SELECT ss.song_id,
+            COUNT(*) AS total,
             SUM(CASE WHEN ss.set_number='1' AND ss.position=1 THEN 1 ELSE 0 END) AS set1_openers,
             SUM(CASE WHEN ss.set_number='2' AND ss.position=1 THEN 1 ELSE 0 END) AS set2_openers,
             SUM(CASE WHEN ss.set_number='E' THEN 1 ELSE 0 END) AS encores,
             SUM(CASE WHEN sm.max_pos = ss.position THEN 1 ELSE 0 END) AS closers,
-            COUNT(*) AS total
+            SUM(CASE WHEN s.tour_id IS NOT NULL AND s.tour_position = 1
+                     THEN 1 ELSE 0 END) AS tour_openers,
+            SUM(CASE WHEN tm.max_pos IS NOT NULL AND s.tour_position = tm.max_pos
+                     THEN 1 ELSE 0 END) AS tour_closers,
+            SUM(CASE WHEN s.venue_id = ? THEN 1 ELSE 0 END) AS venue_plays,
+            SUM(CASE WHEN s.tour_id = ? THEN 1 ELSE 0 END) AS times_this_tour_n,
+            MAX(s.show_date) AS last_date,
+            MAX(CASE WHEN s.tour_id = ? THEN s.show_date END) AS last_in_tour_date
         FROM setlist_songs ss
         JOIN shows s USING (show_id)
         JOIN set_maxes sm ON sm.show_id = ss.show_id AND sm.set_number = ss.set_number
+        LEFT JOIN tour_maxes tm ON tm.tour_id = s.tour_id
         WHERE ss.song_id IN ({placeholders}) AND s.show_date < ?
         GROUP BY ss.song_id
         """,
-        [*candidate_song_ids, show_date],
+        [venue_id, tour_id, tour_id, *candidate_song_ids, show_date],
     ).fetchall()
+
+    show_d = date.fromisoformat(show_date)
     for r in rows:
         e = out[r["song_id"]]
         total = max(1, r["total"] or 1)
@@ -85,41 +107,38 @@ def compute_extended_stats(
         e.set2_opener_rate = (r["set2_openers"] or 0) / total
         e.encore_rate = (r["encores"] or 0) / total
         e.closer_score = (r["closers"] or 0) / total
+        e.tour_opener_rate = (r["tour_openers"] or 0) / total
+        e.tour_closer_rate = (r["tour_closers"] or 0) / total
+        e.times_at_venue = r["venue_plays"] or 0
+        e.venue_debut_affinity = (r["venue_plays"] or 0) / total
+        if tour_id is not None:
+            e.times_this_tour = r["times_this_tour_n"] or 0
+        last = r["last_date"]
+        if last:
+            e.days_since_last_played_anywhere = (show_d - date.fromisoformat(last)).days
 
-    # 2. times_at_venue + derived venue_debut_affinity.
-    if venue_id is not None:
-        venue_counts = dict(
-            conn.execute(
-                f"""
-                SELECT ss.song_id, COUNT(*) AS n
-                FROM setlist_songs ss JOIN shows s USING (show_id)
-                WHERE ss.song_id IN ({placeholders})
-                  AND s.show_date < ? AND s.venue_id = ?
-                GROUP BY ss.song_id
-                """,
-                [*candidate_song_ids, show_date, venue_id],
-            ).fetchall()
+    # For shows_since_last_played_this_tour we need the SHOWS count between
+    # the song's last in-tour play and the cutoff — not a row count. Bisect
+    # over the tour's show_date list is the cheapest way.
+    if tour_id is not None:
+        import bisect as _bisect
+
+        tour_show_dates = sorted(
+            r[0]
+            for r in conn.execute(
+                "SELECT show_date FROM shows WHERE tour_id = ? AND show_date < ?",
+                (tour_id, show_date),
+            )
         )
-    else:
-        venue_counts = {}
-    total_counts = dict(
-        conn.execute(
-            f"""
-            SELECT ss.song_id, COUNT(*) AS n
-            FROM setlist_songs ss JOIN shows s USING (show_id)
-            WHERE ss.song_id IN ({placeholders}) AND s.show_date < ?
-            GROUP BY ss.song_id
-            """,
-            [*candidate_song_ids, show_date],
-        ).fetchall()
-    )
-    for sid in candidate_song_ids:
-        n_v = venue_counts.get(sid, 0)
-        n_total = total_counts.get(sid, 0)
-        out[sid].times_at_venue = n_v
-        out[sid].venue_debut_affinity = (n_v / n_total) if n_total > 0 else 0.0
+        cutoff_idx = len(tour_show_dates)
+        for r in rows:
+            last_in_tour = r["last_in_tour_date"]
+            if last_in_tour:
+                left = _bisect.bisect_right(tour_show_dates, last_in_tour)
+                out[r["song_id"]].shows_since_last_played_this_tour = max(0, cutoff_idx - left)
 
-    # 3. Song metadata (debut_year, is_cover) — one query over songs table.
+    # Song metadata lives on a different table (songs) — one extra lightweight
+    # query. Small enough to leave separate.
     meta = conn.execute(
         f"SELECT song_id, debut_date, original_artist FROM songs WHERE song_id IN ({placeholders})",
         candidate_song_ids,
@@ -133,102 +152,6 @@ def compute_extended_stats(
             except ValueError:
                 pass
         e.is_cover = 1 if r["original_artist"] else 0
-
-    # 4a. Tour-opener / tour-closer rates. "Tour opener" = show with
-    # tour_position=1; "tour closer" = show with tour_position = max for
-    # that tour_id. Uses historical shows only (show_date < cutoff).
-    tour_role_rows = conn.execute(
-        f"""
-        WITH tour_maxes AS (
-            SELECT tour_id, MAX(tour_position) AS max_pos
-            FROM shows WHERE tour_id IS NOT NULL GROUP BY tour_id
-        )
-        SELECT ss.song_id,
-            -- Only count tour-openers/closers where the show belongs to a
-            -- real tour (tour_id NOT NULL). One-off guest appearances have
-            -- tour_id=NULL and would otherwise inflate these rates.
-            SUM(CASE WHEN s.tour_id IS NOT NULL AND s.tour_position = 1
-                     THEN 1 ELSE 0 END) AS tour_openers,
-            SUM(CASE WHEN tm.max_pos IS NOT NULL AND s.tour_position = tm.max_pos
-                     THEN 1 ELSE 0 END) AS tour_closers,
-            COUNT(*) AS total
-        FROM setlist_songs ss
-        JOIN shows s USING (show_id)
-        LEFT JOIN tour_maxes tm ON tm.tour_id = s.tour_id
-        WHERE ss.song_id IN ({placeholders}) AND s.show_date < ?
-        GROUP BY ss.song_id
-        """,
-        [*candidate_song_ids, show_date],
-    ).fetchall()
-    for r in tour_role_rows:
-        e = out[r["song_id"]]
-        total = max(1, r["total"] or 1)
-        e.tour_opener_rate = (r["tour_openers"] or 0) / total
-        e.tour_closer_rate = (r["tour_closers"] or 0) / total
-
-    # 4b. Tour-rotation features (times_this_tour, shows_since_last_played_this_tour).
-    # Scoped to the supplied tour_id. For Phish, which famously rarely repeats
-    # within a tour, these should carry strong negative signal when high.
-    if tour_id is not None:
-        times_this_tour = dict(
-            conn.execute(
-                f"""
-                SELECT ss.song_id, COUNT(*) AS n
-                FROM setlist_songs ss JOIN shows s USING (show_id)
-                WHERE ss.song_id IN ({placeholders})
-                  AND s.tour_id = ? AND s.show_date < ?
-                GROUP BY ss.song_id
-                """,
-                [*candidate_song_ids, tour_id, show_date],
-            ).fetchall()
-        )
-        last_in_tour = dict(
-            conn.execute(
-                f"""
-                SELECT ss.song_id, MAX(s.show_date) AS last_date
-                FROM setlist_songs ss JOIN shows s USING (show_id)
-                WHERE ss.song_id IN ({placeholders})
-                  AND s.tour_id = ? AND s.show_date < ?
-                GROUP BY ss.song_id
-                """,
-                [*candidate_song_ids, tour_id, show_date],
-            ).fetchall()
-        )
-        # Shows-between: use per-tour show list via bisect.
-        tour_show_dates = sorted(
-            r[0]
-            for r in conn.execute(
-                "SELECT show_date FROM shows WHERE tour_id = ? AND show_date < ?",
-                (tour_id, show_date),
-            )
-        )
-        import bisect as _bisect
-
-        cutoff_idx = len(tour_show_dates)  # all are strictly < show_date
-        for sid in candidate_song_ids:
-            out[sid].times_this_tour = times_this_tour.get(sid, 0)
-            last = last_in_tour.get(sid)
-            if last:
-                left = _bisect.bisect_right(tour_show_dates, last)
-                out[sid].shows_since_last_played_this_tour = max(0, cutoff_idx - left)
-
-    # 4. Days-since-last-played (calendar recency distinct from shows-since).
-    last_rows = conn.execute(
-        f"""
-        SELECT ss.song_id, MAX(s.show_date) AS last_date
-        FROM setlist_songs ss JOIN shows s USING (show_id)
-        WHERE ss.song_id IN ({placeholders}) AND s.show_date < ?
-        GROUP BY ss.song_id
-        """,
-        [*candidate_song_ids, show_date],
-    ).fetchall()
-    show_d = date.fromisoformat(show_date)
-    for r in last_rows:
-        last = r["last_date"]
-        if last:
-            out[r["song_id"]].days_since_last_played_anywhere = (
-                show_d - date.fromisoformat(last)
-            ).days
 
     return out
 
