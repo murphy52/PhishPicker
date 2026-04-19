@@ -68,9 +68,7 @@ def heuristic_scorer() -> Scorer:
 
     def _f(conn, cutoff_date, show_date, venue_id, played, current_set, candidates):
         if "show_dates" not in cache:
-            cache["show_dates"] = sorted(
-                r[0] for r in conn.execute("SELECT show_date FROM shows")
-            )
+            cache["show_dates"] = sorted(r[0] for r in conn.execute("SELECT show_date FROM shows"))
         stats = compute_song_stats(
             conn, show_date, venue_id, candidates, all_show_dates=cache["show_dates"]
         )

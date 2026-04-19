@@ -47,6 +47,27 @@ def main() -> int:
         help="highlight slots where rank differs by >= N between models",
     )
 
+    p_smoke = sub.add_parser(
+        "nightly-smoke",
+        help="replay yesterday's setlist against the deployed model and log ranks",
+    )
+    p_smoke.add_argument(
+        "--date",
+        default=None,
+        help="show date YYYY-MM-DD (default: yesterday UTC)",
+    )
+    p_smoke.add_argument(
+        "--output",
+        default=None,
+        help="JSONL output path (default: {data_dir}/nightly-predictions.jsonl)",
+    )
+    p_smoke.add_argument("--top-k", type=int, default=10)
+    p_smoke.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="re-run a date even if already recorded",
+    )
+
     p_train = sub.add_parser("train", help="training commands")
     train_sub = p_train.add_subparsers(dest="train_cmd", required=True)
     p_run = train_sub.add_parser("run", help="train + eval + ship artifacts")
@@ -109,6 +130,44 @@ def main() -> int:
             print(f"replay failed: {exc}", file=sys.stderr)
             return 2
         _print_replay(result)
+        return 0
+
+    if args.cmd == "nightly-smoke":
+        from datetime import UTC, date, datetime, timedelta
+        from pathlib import Path
+
+        from phishpicker.model.scorer import load_runtime_scorer
+        from phishpicker.nightly_smoke import run_nightly_smoke
+
+        target_date = args.date or (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
+        # Validate format — surfacing a nice error beats SQLite barfing later.
+        date.fromisoformat(target_date)
+
+        output_path = Path(args.output) if args.output else s.data_dir / "nightly-predictions.jsonl"
+
+        scorer = load_runtime_scorer(s.data_dir / "model.lgb")
+        conn = open_db(s.db_path, read_only=True)
+        with PhishNetClient(api_key=s.phishnet_api_key, base_url=s.phishnet_base_url) as client:
+            result = run_nightly_smoke(
+                conn=conn,
+                client=client,
+                scorer=scorer,
+                date=target_date,
+                output_path=output_path,
+                top_k=args.top_k,
+                overwrite=args.overwrite,
+            )
+
+        if result["status"] == "no-setlist":
+            print(f"smoke {target_date}: no setlist yet")
+            return 0
+        if result["status"] == "skipped":
+            print(
+                f"smoke {target_date}: show {result['show_id']} already recorded "
+                "(pass --overwrite to redo)"
+            )
+            return 0
+        print(result["summary"])
         return 0
 
     if args.cmd == "train" and args.train_cmd == "ab-era":

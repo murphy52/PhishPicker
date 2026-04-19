@@ -69,12 +69,8 @@ def test_upsert_setlist_dedupes_duplicate_slots(tmp_path: Path):
     UNIQUE constraint abort the whole ingest."""
     conn = open_db(tmp_path / "t.db")
     apply_schema(conn)
-    conn.execute(
-        "INSERT INTO songs (song_id, name, first_seen_at) VALUES (1, 'A', '2024-01-01')"
-    )
-    conn.execute(
-        "INSERT INTO songs (song_id, name, first_seen_at) VALUES (2, 'B', '2024-01-01')"
-    )
+    conn.execute("INSERT INTO songs (song_id, name, first_seen_at) VALUES (1, 'A', '2024-01-01')")
+    conn.execute("INSERT INTO songs (song_id, name, first_seen_at) VALUES (2, 'B', '2024-01-01')")
     conn.commit()
     upsert_show(conn, {"showid": 555, "showdate": "1989-01-01", "venueid": None, "tourid": None})
     upsert_setlist_songs(
@@ -101,7 +97,16 @@ def test_upsert_setlist_stubs_missing_songs(tmp_path: Path):
     # song_id 999 is NOT in songs table yet.
     upsert_setlist_songs(
         conn,
-        [{"showid": 777, "set": "1", "position": 1, "songid": 999, "song": "Ghost", "trans_mark": ","}],
+        [
+            {
+                "showid": 777,
+                "set": "1",
+                "position": 1,
+                "songid": 999,
+                "song": "Ghost",
+                "trans_mark": ",",
+            }
+        ],
     )
     row = conn.execute("SELECT name FROM songs WHERE song_id = 999").fetchone()
     assert row["name"] == "Ghost"
@@ -120,7 +125,5 @@ def test_upsert_setlist_normalizes_encore_to_uppercase(tmp_path: Path):
         conn,
         [{"showid": 999, "set": "e", "position": 1, "songid": 200, "trans_mark": ","}],
     )
-    row = conn.execute(
-        "SELECT set_number FROM setlist_songs WHERE show_id = 999"
-    ).fetchone()
+    row = conn.execute("SELECT set_number FROM setlist_songs WHERE show_id = 999").fetchone()
     assert row["set_number"] == "E"
