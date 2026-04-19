@@ -15,7 +15,10 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date
 
-BUSTOUT_THRESHOLD_SHOWS: int = 50
+# 50 shows turned out to be far too low for real Phish rotation — songs can
+# go 30-40 shows between plays and still be core rotation. A proper bustout
+# is typically 100+ shows (closer to 200 for the famous ones). Raised to 100.
+BUSTOUT_THRESHOLD_SHOWS: int = 100
 
 
 @dataclass

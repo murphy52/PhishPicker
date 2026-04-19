@@ -246,6 +246,26 @@ Gordon, Page McConnell, Jon Fishman}.
 
 ---
 
+## 5a. Tuning corrections (post-Oblivion analysis)
+
+The 4/18 set-2 opener analysis (Oblivion missed at #47) surfaced two
+calibration issues that a human Phish fan catches instantly but the model
+doesn't without tuning:
+
+- **`BUSTOUT_THRESHOLD_SHOWS` was 50, raised to 100.** Real Phish bustouts
+  are typically 100-200 shows. Anything under ~40 shows since last play
+  is still active rotation. At 5 shows since, a song is "just played" —
+  it should *not* get any bustout bonus. The old threshold was
+  misclassifying recently-played songs as partial-bustouts.
+- **`days_since_last_played_anywhere` is probably the wrong shape for
+  Phish.** Their touring is bursty — 80 calendar days might be 0 shows
+  (winter hiatus) or 30+ shows (summer tour stretch). Calendar days adds
+  noise, not signal. `shows_since_last_played_anywhere` is the real
+  rotation signal. Keep the calendar version for now (LightGBM can
+  ignore it), but don't trust it as a primary feature and consider
+  dropping it if feature-importance post-train shows it's not driving
+  splits.
+
 ## 6. Open research questions
 
 - **Does the model learn anti-predictability from LambdaRank alone, or

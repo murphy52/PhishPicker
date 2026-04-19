@@ -195,7 +195,10 @@ def test_bustout_score_flags_long_gap(conn):
     """A song that hasn't been played in many shows gets a high bustout score.
     Chalk Dust last played in show 1003 (2023-11-15); by our cutoff 2024-07-01,
     there's 1 intervening show (1004 on 2024-06-01). Not a bustout.
-    We'll define bustout_score as 1.0 if shows_since_last >= 50, else ratio."""
+    bustout_score caps at 1.0 when shows_since_last >= the threshold
+    (currently 100 — tuned up from 50 after the Oblivion analysis showed
+    that 5-show gaps were being called 'mild bustout' when they're really
+    core rotation territory for Phish)."""
     rows = build_feature_rows(
         conn,
         show_date="2024-07-01",
