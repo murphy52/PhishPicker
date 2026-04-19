@@ -11,6 +11,7 @@ ignore = ["E501"]
 "src/phishpicker/train/**" = ["N806", "N803"]
 "src/phishpicker/model/lightgbm_scorer.py" = ["N806", "N803"]
 "src/phishpicker/model/scorer.py" = ["N806", "N803"]
+"src/phishpicker/replay.py" = ["N806", "N803"]
 "tests/train/**" = ["N806", "N803"]
 "tests/model/test_lightgbm_scorer.py" = ["N806", "N803"]
 
