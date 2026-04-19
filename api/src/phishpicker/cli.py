@@ -110,8 +110,10 @@ def main() -> int:
         )
         if not result.get("wrote_artifacts"):
             print(
-                f"Ship gate blocked: new_mrr={result['new_mrr']:.3f} "
-                f"(reason={result['reason']}). Re-run with --override to force."
+                f"Ship gate blocked: new_mrr={result.get('mrr', float('nan')):.3f} "
+                f"(reason={result.get('reason', 'unknown')}). "
+                f"Staged at {result.get('staging_metrics_path', '?')}. "
+                "Re-run with --override to force."
             )
             return 2
         print(
