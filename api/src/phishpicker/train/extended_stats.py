@@ -11,6 +11,7 @@ needed in a future optimization pass.
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from dataclasses import dataclass
 from datetime import date
@@ -40,6 +41,9 @@ class ExtendedStats:
     shows_since_last_set1_opener: int = -1
     shows_since_last_any_opener_role: int = -1
     avg_set_position_when_played: float = -1.0
+    days_since_debut: int = -1
+    plays_last_6mo: int = 0
+    recent_play_acceleration: float = 0.0
 
 
 def compute_extended_stats(
@@ -181,11 +185,54 @@ def compute_extended_stats(
         e = out[r["song_id"]]
         dd = r["debut_date"]
         if dd and len(dd) >= 4:
-            try:
+            with contextlib.suppress(ValueError):
                 e.debut_year = int(dd[:4])
-            except ValueError:
-                pass
+            # B1: days_since_debut — per-song "how new is this song in the
+            # repertoire" signal. Proxy for album-recency when album data
+            # is unavailable.
+            with contextlib.suppress(ValueError):
+                e.days_since_debut = max(0, (show_d - date.fromisoformat(dd)).days)
         e.is_cover = 1 if r["original_artist"] else 0
+
+    # B2: plays_last_6mo + recent_play_acceleration. Momentum signal —
+    # songs that got hot in the last six months. Picks up Evolve-style
+    # album-release spikes without needing explicit album data.
+    plays_6mo = dict(
+        conn.execute(
+            f"""
+            SELECT ss.song_id, COUNT(*) AS n
+            FROM setlist_songs ss JOIN shows s USING (show_id)
+            WHERE ss.song_id IN ({placeholders})
+              AND s.show_date < ?
+              AND s.show_date >= date(?, '-6 months')
+            GROUP BY ss.song_id
+            """,
+            [*candidate_song_ids, show_date, show_date],
+        ).fetchall()
+    )
+    plays_12mo = dict(
+        conn.execute(
+            f"""
+            SELECT ss.song_id, COUNT(*) AS n
+            FROM setlist_songs ss JOIN shows s USING (show_id)
+            WHERE ss.song_id IN ({placeholders})
+              AND s.show_date < ?
+              AND s.show_date >= date(?, '-1 year')
+            GROUP BY ss.song_id
+            """,
+            [*candidate_song_ids, show_date, show_date],
+        ).fetchall()
+    )
+    for sid in candidate_song_ids:
+        recent = plays_6mo.get(sid, 0)
+        prior = plays_12mo.get(sid, 0) - recent  # plays in 6-12 month window
+        out[sid].plays_last_6mo = recent
+        # Symmetric ratio, bounded. When prior=0 and recent>0, treat as strong
+        # acceleration (new song); divide-by-zero avoidance.
+        if prior == 0:
+            out[sid].recent_play_acceleration = 2.0 if recent > 0 else 0.0
+        else:
+            out[sid].recent_play_acceleration = recent / prior
 
     return out
 

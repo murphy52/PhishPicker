@@ -8,6 +8,7 @@ construction.
 import sqlite3
 
 from phishpicker.model.stats import compute_song_stats, find_run_bounds
+from phishpicker.train.albums import days_between, latest_album_as_of, song_album_map
 from phishpicker.train.bigrams import compute_bigram_probs
 from phishpicker.train.context import compute_show_context
 from phishpicker.train.extended_stats import compute_bustout_score, compute_extended_stats
@@ -88,6 +89,13 @@ def build_feature_rows(
         (run_length_value - run_position_value) / run_length_value if run_length_value else 0.0
     )
 
+    # Album-era context — same for every candidate on the same show.
+    latest_album = latest_album_as_of(show_date)
+    days_since_album_value = (
+        days_between(latest_album.release_date, show_date) if latest_album else MISSING_INT
+    )
+    song_to_album = song_album_map(conn, candidate_song_ids)
+
     rows: list[FeatureRow] = []
     for sid in candidate_song_ids:
         s = stats[sid]
@@ -144,6 +152,19 @@ def build_feature_rows(
         row.shows_since_last_set1_opener = e.shows_since_last_set1_opener
         row.shows_since_last_any_opener_role = e.shows_since_last_any_opener_role
         row.avg_set_position_when_played = e.avg_set_position_when_played
+        # Album-recency batch.
+        row.days_since_debut = e.days_since_debut
+        row.plays_last_6mo = e.plays_last_6mo
+        row.recent_play_acceleration = e.recent_play_acceleration
+        row.days_since_last_new_album = days_since_album_value
+        song_alb = song_to_album.get(sid)
+        row.is_from_latest_album = (
+            1
+            if song_alb is not None
+            and latest_album is not None
+            and song_alb.album_id == latest_album.album_id
+            else 0
+        )
 
         rows.append(row)
     return rows

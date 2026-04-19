@@ -69,9 +69,14 @@ class FeatureRow:
     # 6. Temporal / era
     day_of_week: int = 0
     month: int = 1
-    days_since_last_new_album: int = 365
+    days_since_last_new_album: int = MISSING_INT
     is_from_latest_album: int = 0
     era: int = 3
+    # Album-recency substitutes (no /albums endpoint on phish.net).
+    days_since_debut: int = MISSING_INT
+    plays_last_6mo: int = 0
+    # Ratio of recent 6mo plays to preceding 6mo plays. >1 = heating up.
+    recent_play_acceleration: float = 0.0
 
     # 7. Derived role scores
     opener_score: float = 0.0

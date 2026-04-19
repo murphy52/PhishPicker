@@ -460,3 +460,67 @@ def test_run_gap_of_3_days_breaks_the_run(conn):
     )
     assert rows[0].run_length_total == 1
     assert rows[0].run_position == 1
+
+
+def test_days_since_debut_populated(conn):
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert abs(rows[0].days_since_debut - 12022) <= 2
+
+
+def test_plays_last_6mo_counts_recent_only(conn):
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-02-01",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].plays_last_6mo == 3
+
+
+def test_recent_play_acceleration_flags_hot_songs(conn):
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-02-01",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].recent_play_acceleration == 2.0
+
+
+def test_is_from_latest_album_flag(conn):
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1, 2],
+    )
+    by_id = {r.song_id: r for r in rows}
+    assert by_id[1].is_from_latest_album == 0
+    assert by_id[2].is_from_latest_album == 0
+
+
+def test_days_since_last_new_album_is_populated(conn):
+    """For 2024-07-01, the latest Phish studio album BEFORE that date is
+    Sigma Oasis (2020-04-02). Evolve (2024-07-12) is after. Gap ~1551 days."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert 1500 <= rows[0].days_since_last_new_album <= 1600

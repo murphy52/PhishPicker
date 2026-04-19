@@ -1,0 +1,325 @@
+{
+  "_meta": {
+    "description": "Phish studio album discography for album-recency signal testing. Song titles use phish.net canonical spellings where known.",
+    "source": "Wikipedia album pages cross-referenced with phish.net song database (for canonical titles). Track titles prefer phish.net spelling over album liner notes when they differ.",
+    "generated_for": "phishpicker setlist prediction model",
+    "studio_albums_only": true
+  },
+  "albums": [
+    {
+      "album_id": 1,
+      "name": "Junta",
+      "release_date": "1989-05-08",
+      "is_studio": true,
+      "tracks": [
+        "Fee",
+        "You Enjoy Myself",
+        "Esther",
+        "Golgi Apparatus",
+        "Foam",
+        "Dinner and a Movie",
+        "Divided Sky",
+        "David Bowie",
+        "Fluffhead",
+        "Fluff's Travels",
+        "Contact",
+        "Union Federal",
+        "Sanity",
+        "Icculus"
+      ],
+      "notes": "Original 1988 cassette self-release; 1989-05-08 is the date commonly cited for the widely-circulated Elektra version. Disc 2 of the CD (Union Federal, Sanity, Icculus) is a bonus live recording. phish.net canonical: 'Divided Sky' (no 'The'). 'Fluffhead' and 'Fluff's Travels' are separate songs in phish.net's DB."
+    },
+    {
+      "album_id": 2,
+      "name": "Lawn Boy",
+      "release_date": "1990-09-21",
+      "is_studio": true,
+      "tracks": [
+        "The Squirming Coil",
+        "Reba",
+        "My Sweet One",
+        "Split Open and Melt",
+        "The Oh Kee Pa Ceremony",
+        "Bathtub Gin",
+        "Run Like an Antelope",
+        "Lawn Boy",
+        "Bouncing Around the Room"
+      ],
+      "notes": "Original Absolute A Go Go cassette release included 'Fee' as a bonus; Elektra 1992 CD reissue omits it. We exclude 'Fee' here since it is canonically on Junta."
+    },
+    {
+      "album_id": 3,
+      "name": "A Picture of Nectar",
+      "release_date": "1992-02-18",
+      "is_studio": true,
+      "tracks": [
+        "Llama",
+        "Eliza",
+        "Cavern",
+        "Poor Heart",
+        "Stash",
+        "Manteca",
+        "Guelah Papyrus",
+        "Magilla",
+        "The Landlady",
+        "Glide",
+        "Tweezer",
+        "The Mango Song",
+        "Chalk Dust Torture",
+        "Faht",
+        "Catapult",
+        "Tweezer Reprise"
+      ],
+      "notes": "phish.net uses 'Chalk Dust Torture' (with space) as the canonical form."
+    },
+    {
+      "album_id": 4,
+      "name": "Rift",
+      "release_date": "1993-02-02",
+      "is_studio": true,
+      "tracks": [
+        "Rift",
+        "Fast Enough for You",
+        "Lengthwise",
+        "Maze",
+        "Sparkle",
+        "Horn",
+        "The Wedge",
+        "My Friend, My Friend",
+        "Weigh",
+        "All Things Reconsidered",
+        "Mound",
+        "It's Ice",
+        "The Horse",
+        "Silent in the Morning"
+      ],
+      "notes": "Album has two 'Lengthwise' tracks (tracks 3 and 13) \u2014 deduplicated to one song here since phish.net treats them as the same song. Track 13 on Wikipedia is 'Lengthwise (reprise)' with compressed snippets."
+    },
+    {
+      "album_id": 5,
+      "name": "Hoist",
+      "release_date": "1994-03-29",
+      "is_studio": true,
+      "tracks": [
+        "Julius",
+        "Down with Disease",
+        "If I Could",
+        "Riker's Mailbox",
+        "Axilla (Part II)",
+        "Lifeboy",
+        "Sample in a Jar",
+        "Wolfman's Brother",
+        "Scent of a Mule",
+        "Dog Faced Boy",
+        "Demand",
+        "Yerushalayim Shel Zahav"
+      ],
+      "notes": "Final album track on Hoist is a medley listed as 'Demand / Split Open and Melt Jam / Yerushalayim Shel Zahav'. phish.net treats 'Demand' and 'Yerushalayim Shel Zahav' as separate songs (the SOAM jam is a live excerpt, not a separate studio song), so we split them. 'Split Open and Melt' is already on Lawn Boy and not duplicated here."
+    },
+    {
+      "album_id": 6,
+      "name": "Billy Breathes",
+      "release_date": "1996-10-15",
+      "is_studio": true,
+      "tracks": [
+        "Free",
+        "Character Zero",
+        "Waste",
+        "Taste",
+        "Cars Trucks Buses",
+        "Talk",
+        "Theme from the Bottom",
+        "Train Song",
+        "Bliss",
+        "Billy Breathes",
+        "Swept Away",
+        "Steep",
+        "Prince Caspian"
+      ],
+      "notes": "'Cars Trucks Buses' has no ampersand/commas on phish.net. 'Swept Away' and 'Steep' are often played together as a pair but are separate phish.net song entries."
+    },
+    {
+      "album_id": 7,
+      "name": "The Story of the Ghost",
+      "release_date": "1998-10-27",
+      "is_studio": true,
+      "tracks": [
+        "Ghost",
+        "Birds of a Feather",
+        "Meat",
+        "Guyute",
+        "Fikus",
+        "Shafty",
+        "Limb By Limb",
+        "Frankie Says",
+        "Brian and Robert",
+        "Water in the Sky",
+        "Roggae",
+        "Wading in the Velvet Sea",
+        "The Moma Dance",
+        "End of Session"
+      ]
+    },
+    {
+      "album_id": 8,
+      "name": "Farmhouse",
+      "release_date": "2000-05-16",
+      "is_studio": true,
+      "tracks": [
+        "Farmhouse",
+        "Twist",
+        "Bug",
+        "Back on the Train",
+        "Heavy Things",
+        "Gotta Jibboo",
+        "Dirt",
+        "Piper",
+        "Sleep",
+        "The Inlaw Josie Wales",
+        "Sand",
+        "First Tube"
+      ],
+      "notes": "phish.net canonical: 'The Inlaw Josie Wales' (with 'The'). 'Gotta Jibboo' and 'First Tube' originated with Trey Anastasio Band but appear on this Phish studio album."
+    },
+    {
+      "album_id": 9,
+      "name": "Round Room",
+      "release_date": "2002-12-10",
+      "is_studio": true,
+      "tracks": [
+        "Pebbles and Marbles",
+        "Anything But Me",
+        "Round Room",
+        "Mexican Cousin",
+        "Friday",
+        "Seven Below",
+        "Mock Song",
+        "46 Days",
+        "All of These Dreams",
+        "Walls of the Cave",
+        "Thunderhead",
+        "Waves"
+      ]
+    },
+    {
+      "album_id": 10,
+      "name": "Undermind",
+      "release_date": "2004-06-15",
+      "is_studio": true,
+      "tracks": [
+        "Scents and Subtle Sounds",
+        "Undermind",
+        "The Connection",
+        "A Song I Heard the Ocean Sing",
+        "Army of One",
+        "Crowd Control",
+        "Maggie's Revenge",
+        "Nothing",
+        "Two Versions of Me",
+        "Access Me",
+        "Scents and Subtle Sounds",
+        "Tomorrow's Song",
+        "Secret Smile",
+        "Grind"
+      ],
+      "notes": "phish.net tracks 'Scents and Subtle Sounds (Intro)' and 'Scents and Subtle Sounds' as distinct songs (the intro was played as a standalone on 8/15/2021). Both included here as on the album."
+    },
+    {
+      "album_id": 11,
+      "name": "Joy",
+      "release_date": "2009-09-08",
+      "is_studio": true,
+      "tracks": [
+        "Backwards Down the Number Line",
+        "Stealing Time From the Faulty Plan",
+        "Joy",
+        "Sugar Shack",
+        "Ocelot",
+        "Kill Devil Falls",
+        "Light",
+        "I Been Around",
+        "Time Turns Elastic",
+        "Twenty Years Later"
+      ]
+    },
+    {
+      "album_id": 12,
+      "name": "Fuego",
+      "release_date": "2014-06-24",
+      "is_studio": true,
+      "tracks": [
+        "Fuego",
+        "The Line",
+        "Devotion to a Dream",
+        "Halfway to the Moon",
+        "Winterqueen",
+        "Sing Monica",
+        "555",
+        "Waiting All Night",
+        "Wombat",
+        "Wingsuit"
+      ]
+    },
+    {
+      "album_id": 13,
+      "name": "Big Boat",
+      "release_date": "2016-10-07",
+      "is_studio": true,
+      "tracks": [
+        "Friends",
+        "Breath and Burning",
+        "Home",
+        "Blaze On",
+        "Tide Turns",
+        "Things People Do",
+        "Waking Up Dead",
+        "Running Out of Time",
+        "No Men In No Man's Land",
+        "Miss You",
+        "I Always Wanted It This Way",
+        "More",
+        "Petrichor"
+      ],
+      "notes": "phish.net canonical: 'No Men In No Man's Land' (capital 'In')."
+    },
+    {
+      "album_id": 14,
+      "name": "Sigma Oasis",
+      "release_date": "2020-04-02",
+      "is_studio": true,
+      "tracks": [
+        "Sigma Oasis",
+        "Leaves",
+        "Everything's Right",
+        "Mercury",
+        "Shade",
+        "Evening Song",
+        "Steam",
+        "A Life Beyond The Dream",
+        "Thread"
+      ],
+      "notes": "Surprise-released during the COVID-19 pandemic. 'Mercury' and 'Shade' were originally recorded during the Big Boat sessions but cut from that album."
+    },
+    {
+      "album_id": 15,
+      "name": "Evolve",
+      "release_date": "2024-07-12",
+      "is_studio": true,
+      "tracks": [
+        "Hey Stranger",
+        "Oblivion",
+        "Evolve",
+        "A Wave of Hope",
+        "Pillow Jets",
+        "Lonely Trip",
+        "Life Saving Gun",
+        "Monsters",
+        "Ether Edge",
+        "Human Nature",
+        "Valdese",
+        "Mercy"
+      ],
+      "notes": "Standard 12-track digital/CD release. Vinyl edition adds a 13th track 'The Well' between 'Valdese' and 'Mercy'; excluded here since the task says prefer the standard studio release when editions differ."
+    }
+  ]
+}
