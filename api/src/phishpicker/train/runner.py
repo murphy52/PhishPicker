@@ -146,9 +146,7 @@ def run_training(
     # tour_id through live shows?"
     try:
         gains = booster.feature_importance(importance_type="gain")
-        feature_importance = {
-            col: float(gain) for col, gain in zip(cols, gains, strict=True)
-        }
+        feature_importance = {col: float(gain) for col, gain in zip(cols, gains, strict=True)}
     except Exception:  # pragma: no cover — booster API is stable but defensive
         feature_importance = {}
 
