@@ -152,8 +152,7 @@ def build_feature_rows(
         row.shows_since_last_set1_opener = e.shows_since_last_set1_opener
         row.shows_since_last_any_opener_role = e.shows_since_last_any_opener_role
         row.avg_set_position_when_played = e.avg_set_position_when_played
-        # Album-recency batch.
-        row.days_since_debut = e.days_since_debut
+        # Album-recency batch (days_since_debut dropped in v6).
         row.plays_last_6mo = e.plays_last_6mo
         row.recent_play_acceleration = e.recent_play_acceleration
         row.days_since_last_new_album = days_since_album_value

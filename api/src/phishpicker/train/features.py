@@ -73,7 +73,9 @@ class FeatureRow:
     is_from_latest_album: int = 0
     era: int = 3
     # Album-recency substitutes (no /albums endpoint on phish.net).
-    days_since_debut: int = MISSING_INT
+    # NOTE: days_since_debut was tried in v5, dropped in v6 — it correlated
+    # too tightly with debut_year and added a "newness bias" that lifted
+    # all recent songs together at the cost of slot-specific signals.
     plays_last_6mo: int = 0
     # Ratio of recent 6mo plays to preceding 6mo plays. >1 = heating up.
     recent_play_acceleration: float = 0.0
