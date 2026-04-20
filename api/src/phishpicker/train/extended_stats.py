@@ -41,6 +41,7 @@ class ExtendedStats:
     shows_since_last_set1_opener: int = -1
     shows_since_last_any_opener_role: int = -1
     avg_set_position_when_played: float = -1.0
+    days_since_debut: int = -1
     plays_last_6mo: int = 0
     recent_play_acceleration: float = 0.0
 
@@ -186,6 +187,11 @@ def compute_extended_stats(
         if dd and len(dd) >= 4:
             with contextlib.suppress(ValueError):
                 e.debut_year = int(dd[:4])
+            # B1: days_since_debut — per-song "how new is this song in the
+            # repertoire" signal. Proxy for album-recency when album data
+            # is unavailable.
+            with contextlib.suppress(ValueError):
+                e.days_since_debut = max(0, (show_d - date.fromisoformat(dd)).days)
         e.is_cover = 1 if r["original_artist"] else 0
 
     # B2: plays_last_6mo + recent_play_acceleration. Momentum signal —

@@ -462,6 +462,18 @@ def test_run_gap_of_3_days_breaks_the_run(conn):
     assert rows[0].run_position == 1
 
 
+def test_days_since_debut_populated(conn):
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert abs(rows[0].days_since_debut - 12022) <= 2
+
+
 def test_plays_last_6mo_counts_recent_only(conn):
     rows = build_feature_rows(
         conn,
