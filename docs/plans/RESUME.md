@@ -1,22 +1,33 @@
-# Resume Point — 2026-04-20
+# Resume Point — 2026-04-20 (afternoon update)
 
-Deep into signal-iteration phase. v5 shipped to NAS; v6 training finishing.
+v6 experiment concluded: **hypothesis refuted, days_since_debut drop reverted**.
+v5 remains the current shipped model. Ready to pick the next experiment.
 
 ## TL;DR for next session
 
-- **Mac mini** is running v6 training (pid 87506). Last check: 6h 51min
-  elapsed, on the final walk-forward fold (2026-04-17 cutoff), ~3-5 min
-  from writing `~/phishpicker/api/data/metrics.json`.
-- **NAS** currently serves v5 at `http://127.0.0.1:3400` (loopback only).
-- **Key pending action**: once v6 finishes, ship its artifacts to NAS and
-  re-run the Buried Alive / Oblivion replay to see if dropping
-  `days_since_debut` restored the per-case ranks (see `replay tests`
-  section below).
+- **v6 finished** (Mac mini, 6h 52min) and **regressed on both aggregate and
+  per-case**: Top-5 14.5% → 13.1%, Buried Alive #11 → #14, Oblivion #6 → #5.
+  Dropping `days_since_debut` did NOT recover v4's per-case ranks — it made
+  the opener slot worse.
+- **Reverted** the v6 change in commit `ee53da8` (revert of `3d6c95e`) so
+  main's code once again matches v5 deployed on NAS. 190 tests pass.
+- **NAS** still serves v5 at `http://127.0.0.1:3400` (loopback only). No
+  ship needed — we left v5 alone. NAS SSH window was closed this session
+  so side-by-side v5-vs-v6 replay wasn't possible; v6 replay was run solo
+  on Mac mini against the current 4/18 setlist (Buried Alive, Oblivion).
+- **Mac mini artifacts** are currently stale v6 in `~/phishpicker/api/data/`.
+  Next retrain (from reverted main) will overwrite with v5-equivalent.
+  No action needed unless you want to retrain.
+- **Next research direction is open**: the v5 per-case regression relative
+  to v4 is still unexplained. days_since_debut is not the culprit. See
+  "Open research questions" below for candidates.
 
 ## Commits in this session (most recent first)
 
 | SHA | Summary |
 |---|---|
+| ee53da8 | revert: restore `days_since_debut` — v6 hypothesis refuted |
+| dd811a2 | docs: RESUME.md update for next session pickup |
 | 3d6c95e | revert: drop `days_since_debut` (v6 hypothesis test) |
 | 3931b55 | feat: album-recency batch (B1 + B2 + B3) — v5 run |
 | 167892e | tune: raise BUSTOUT_THRESHOLD_SHOWS 50→100; days-vs-shows note |
@@ -40,19 +51,38 @@ All pushed to `https://github.com/murphy52/PhishPicker`.
 | v3 (shipped) | +extended, tour-rotation, segue | 2.8% | 12.8% | 0.094 | |
 | v4 (shipped) | +opener rotation, warm-up-fit, run-length, relaxed run | **3.6%** | 13.7% | **0.104** | +29% Top-1 vs v3 |
 | v5 (shipped NAS) | +album recency (B1-B3) | 3.6% | **14.5%** | 0.103 | +Top-5 but BA/Oblivion regressed |
-| v6 (training) | −days_since_debut (v5 redundancy fix) | ? | ? | ? | hypothesis test |
+| v6 (refuted) | −days_since_debut | 3.6% | 13.1% | 0.099 | strictly worse — reverted |
 
 Headline metrics are bounded by n=358 holdout slots (CI on Top-1 ≈ ±2pp).
+v6 Top-5 CI [10.1, 16.5] overlaps v5 14.5% — the aggregate regression is
+directional but within one CI. Combined with per-case results, though,
+the verdict is clear.
 
 ### Per-case validation (4/18 Sphere opener + set-2 opener)
 
 | Slot | Actual | v0 | v4 | v5 | v6 |
 |---|---|---|---|---|---|
-| 4/18 opener | Buried Alive | #45 | #8 | #11 | **pending** |
-| 4/18 set-2 opener | Oblivion | #47 | #3 | #6 | **pending** |
+| 4/18 opener | Buried Alive | #45 | #8 | #11 | **#14** |
+| 4/18 set-2 opener | Oblivion | #47 | #3 | #6 | **#5** |
 
 v6 hypothesis: dropping `days_since_debut` should recover Buried Alive/
 Oblivion ranks without losing v5's +0.8pp Top-5 lift.
+
+**Result: hypothesis refuted.** Buried Alive got *worse* (#11 → #14), Oblivion
+marginally better within n=2 noise (#6 → #5), Top-5 regressed. Dropping
+`days_since_debut` is not the right lever.
+
+### v6 feature-importance shifts (for next-experiment context)
+
+With `days_since_debut` gone, its 16k gain partially redistributed:
+- `debut_year`: 28.6k → 32.4k (+13%) — absorbed some, not all
+- `prev_song_id`: 28.9k → 24.4k (-16%) — *decreased* unexpectedly
+- `set_position`: 27.3k → 31.3k (+15%)
+- `bigram_prev_to_this`: 261.8k → 259.5k (~flat, still 8× everything)
+
+So debut-era signal did compress into `debut_year` somewhat, but net gain
+was lost (combined 45k → 32k). And the drop shook up `prev_song_id`'s
+contribution in a way that hurt opener prediction specifically.
 
 ## Feature landscape (post v5, feature_importance_gain)
 
@@ -84,7 +114,8 @@ Oblivion ranks without losing v5's +0.8pp Top-5 lift.
   - `.env` in `~/phishpicker/api/.env` (copy of repo root's)
   - Training logs: `/tmp/phishpicker-train-v{N}.log`
   - DB: `~/phishpicker/api/data/phishpicker.db` (2250 Phish-only shows,
-    39395 setlist rows, 983 songs, latest ingested 2026-04-17)
+    39405 setlist rows, 976 songs; 4/18 setlist ingested via fresh
+    `phishpicker ingest` run 2026-04-20 for v6 replay)
   - Artifacts: `~/phishpicker/api/data/{model.lgb, model.meta.json, metrics.json}`
 - **NAS** (`Murphy52@storage.local` OR `nas-ssh` via Cloudflare):
   - LAN SSH sometimes refused — SSH window is manually opened for
@@ -97,62 +128,85 @@ Oblivion ranks without losing v5's +0.8pp Top-5 lift.
 
 ## Playbook for the next session
 
-### Step 1: Pick up v6
+The v6 branch of experiments is closed. Main is aligned with v5, which
+is shipped on NAS. Below are **candidate next experiments** ranked by
+expected information value. Pick one; don't just sequence through.
 
-```bash
-ssh mac-mini 'tail -10 /tmp/phishpicker-train-v6.log; ls -la ~/phishpicker/api/data/metrics.json'
-```
+### Experiment A (recommended): try dropping `debut_year` instead
 
-If v6 still running, wait. If finished, proceed.
+Symmetric test of the redundancy hypothesis. v5 had both `debut_year` (gain
+28.6k) and `days_since_debut` (16.4k). v6 dropped the smaller one and lost
+aggregate. v7 would drop the larger one (`debut_year`), keeping the
+date-granular `days_since_debut`.
 
-### Step 2: Ship v6 to NAS
+Rationale: if the pair really is redundant, dropping either should give
+similar metrics. If v7 ≈ v5, redundancy confirmed and we pick the cheaper
+feature. If v7 < v5 by a similar margin to v6, they're additive (each
+captures something the other doesn't) and both should stay.
 
-```bash
-mkdir -p /tmp/v6
-scp mac-mini:/Users/admin/phishpicker/api/data/{model.lgb,model.meta.json,metrics.json} /tmp/v6/
-cat /tmp/v6/model.lgb         | ssh Murphy52@storage.local 'cat > /home/Murphy52/docker/apps/phishpicker/data/model.lgb.new && mv /home/Murphy52/docker/apps/phishpicker/data/model.lgb.new /home/Murphy52/docker/apps/phishpicker/data/model.lgb'
-cat /tmp/v6/model.meta.json   | ssh Murphy52@storage.local 'cat > /home/Murphy52/docker/apps/phishpicker/data/model.meta.json'
-cat /tmp/v6/metrics.json      | ssh Murphy52@storage.local 'cat > /home/Murphy52/docker/apps/phishpicker/data/metrics.json'
-ssh Murphy52@storage.local 'cd /home/Murphy52/docker/apps/phishpicker && docker compose restart api'
-```
+Est. 7h retrain on Mac mini.
 
-NOTE: NAS SSH window may be closed. If so, ask David to re-enable.
+### Experiment B: interaction features
 
-### Step 3: Replay 4/18 on v6
+`set2_opener_rate × (current_set==2)` and similar. v5's set-split features
+have low *aggregate* gain (set2_opener_rate = 122) but theoretically
+high slot-conditional value. LightGBM is supposed to learn these
+interactions implicitly but may not be finding them. Explicit feature
+engineering is a cheap test.
 
-Use the existing replay script at `/tmp/v4-replay.py` (same flow works for v6):
+### Experiment C: explicit anti-predictability feature
 
-```bash
-cat /tmp/v4-replay.py | ssh Murphy52@storage.local 'python3'
-```
+`recent_opener_share` — fraction of last 30 set-1 openers that were this
+song. Phish avoids repetition; a high value should strongly *down*-rank.
+Currently the model relies on `days_since_last_played_anywhere` +
+`shows_since_last_set1_opener` to encode this, but both are general-purpose.
 
-Look for where Buried Alive and Oblivion rank. Compare to v4 (Buried #8,
-Oblivion #3) and v5 (Buried #11, Oblivion #6).
+### Experiment D: fix `segue_mark_in` zero-gain mystery
 
-### Step 4: If v6 validates the redundancy hypothesis
+Feature has 0 gain. Two candidate causes:
+1. Training data has trans_mark=',' on nearly every row (no variance)
+2. Bigram already absorbs the segue signal perfectly
 
-Update `docs/plans/2026-04-19-signal-research.md` with the v6 numbers.
-Tag it as a completed experiment.
+Quick triage: count distinct trans_mark values in training rows. If <3
+or one dominates at >95%, the feature has near-zero variance and should
+either be dropped or re-featurized (e.g., one-hot of trans_mark).
 
-Then consider next batch:
-- Explicit anti-predictability feature (`recent_opener_share` — fraction
-  of last 30 set-1 openers that were this song)
-- Fix `segue_mark_in` zero-gain mystery (check if trans_mark has variance
-  in training rows)
-- Interaction features (e.g., `set2_opener_rate × (current_set==2)`)
-- Deploy `nightly-smoke` as a cron on Mac mini
-- UI access: Cloudflare tunnel hostname for NAS `/api` + web
+### Experiment E: slot-conditional feature importance
 
-### Step 5: Nightly smoke cron (deferred)
+Rather than aggregate `gain`, compute importance separately for
+opener slots vs mid-set slots vs encore. Will answer: "does
+set2_opener_rate drive set-2-opener slots even though its global gain
+is 122?" This is an analysis task, not a model change — just needs a
+walk-forward harness that segments by slot type before computing gain.
 
-When ready:
-```bash
-ssh mac-mini 'crontab -l' # check existing
-# add line like:
-# 30 12 * * * ~/.local/bin/uv run --directory ~/phishpicker/api phishpicker nightly-smoke
-```
+### Deferred (no new info, deploy-ish)
 
-Idempotent by show_id; skips already-recorded dates.
+- **Deploy `nightly-smoke` as cron on Mac mini.** Logs daily
+  actual-vs-predicted ranks. Tests infra, accumulates eval data.
+  ```bash
+  ssh mac-mini 'crontab -l'  # check existing
+  # 30 12 * * * ~/.local/bin/uv run --directory ~/phishpicker/api phishpicker nightly-smoke
+  ```
+- **UI access**: Cloudflare tunnel hostname for NAS `/api` + web so
+  the picker is reachable outside loopback.
+
+### Infra tips for re-doing this session's work
+
+If you want to run v5 vs v6 (or any other) side-by-side replay:
+
+1. Ensure NAS SSH is open (ask David if `ssh nas-ssh 'echo ok'` fails
+   with "banner exchange timeout").
+2. Pull v5 artifacts from NAS:
+   ```bash
+   ssh nas-ssh 'cat /home/Murphy52/docker/apps/phishpicker/data/model.lgb' > /tmp/v5.lgb
+   scp /tmp/v5.lgb mac-mini:/tmp/v5.lgb
+   ```
+3. Run replay with both:
+   ```bash
+   ssh mac-mini 'cd ~/phishpicker/api && ~/.local/bin/uv run phishpicker replay \
+     --model-a /tmp/v5.lgb --model-b data/model.lgb --show-id 1764702381'
+   ```
+   (show_id 1764702381 = 2026-04-18 Sphere.)
 
 ## Files worth reading for context
 
@@ -170,11 +224,16 @@ Idempotent by show_id; skips already-recorded dates.
 
 ## Test count
 
-189 tests passing. One file with recent churn:
-`api/tests/train/test_build_extended_features.py`.
+190 tests passing (up from 189 — the v6-revert-revert restored one test).
+One file with recent churn: `api/tests/train/test_build_extended_features.py`.
 
-## Open research questions (from signal research doc, still valid)
+## Open research questions (from signal research doc + v6 outcome)
 
+- **The v5 per-case regression relative to v4 is still unexplained.** It's
+  not `days_since_debut`. Candidates: the album-recency batch overall
+  (plays_last_6mo, recent_play_acceleration, days_since_last_new_album,
+  is_from_latest_album) collectively introduces "recency bias" that
+  competes with slot-specific signals. Consider ablating the whole batch.
 - Is the `days_since_last_played_anywhere` feature's 22k gain real signal
   or LightGBM memorizing calendar-year patterns? Run ablation.
 - Can we make `segue_mark_in` actually contribute? Check if most training
