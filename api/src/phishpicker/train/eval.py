@@ -121,6 +121,7 @@ def walk_forward_eval(
 
         played: list[int] = []
         prev_trans_mark = ","
+        prev_set_number: str | None = None
         fold = FoldResult(
             heldout_show_id=int(sh["show_id"]),
             heldout_show_date=cutoff,
@@ -145,6 +146,7 @@ def walk_forward_eval(
                 show_id=int(sh["show_id"]),
                 all_show_dates=all_show_dates,
                 prev_trans_mark=prev_trans_mark,
+                prev_set_number=prev_set_number,
             )
             X = np.asarray([fr.to_vector() for fr in rows], dtype=np.float32)
             scores = booster.predict(X)
@@ -155,6 +157,7 @@ def walk_forward_eval(
             all_ranks.append(rank)
             played.append(positive)
             prev_trans_mark = r["trans_mark"] or ","
+            prev_set_number = r["set_number"]
         for k in (1, 5, 20):
             fold.top_k_hits[k] = sum(1 for rk in fold.ranks if rk <= k) / max(1, len(fold.ranks))
         fold_results.append(fold)

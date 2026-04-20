@@ -81,6 +81,7 @@ def replay_show(
     slots: list[dict[str, Any]] = []
     played: list[int] = []
     prev_trans_mark = ","
+    prev_set_number: str | None = None
     for slot_idx, row in enumerate(setlist, start=1):
         positive = int(row["song_id"])
         feature_rows = build_feature_rows(
@@ -93,6 +94,7 @@ def replay_show(
             show_id=show_id,
             all_show_dates=all_show_dates,
             prev_trans_mark=prev_trans_mark,
+            prev_set_number=prev_set_number,
         )
         X = np.asarray([fr.to_vector() for fr in feature_rows], dtype=np.float32)
 
@@ -114,6 +116,7 @@ def replay_show(
         )
         played.append(positive)
         prev_trans_mark = row["trans_mark"] or ","
+        prev_set_number = row["set_number"]
 
     return {
         "show": {

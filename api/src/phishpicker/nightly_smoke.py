@@ -144,6 +144,7 @@ def run_nightly_smoke(
     # 5. Per-slot replay.
     played_songs: list[int] = []
     prev_trans_mark = ","
+    prev_set_number: str | None = None
     slot_records: list[dict] = []
 
     for idx, row in enumerate(rows, start=1):
@@ -159,6 +160,7 @@ def run_nightly_smoke(
             current_set=set_number,
             candidate_song_ids=candidate_ids,
             prev_trans_mark=prev_trans_mark,
+            prev_set_number=prev_set_number,
         )
         # Sort by score desc; tiebreak on song_id for determinism.
         ranked = sorted(scored, key=lambda pair: (-pair[1], pair[0]))
@@ -193,6 +195,7 @@ def run_nightly_smoke(
 
         played_songs.append(actual_song_id)
         prev_trans_mark = row.get("trans_mark") or ","
+        prev_set_number = set_number
 
     record = {
         "date": date,

@@ -43,3 +43,11 @@ def test_to_vector_order_matches_feature_columns():
     vec = row.to_vector()
     assert vec[FEATURE_COLUMNS.index("total_plays_ever")] == 42.0
     assert vec[FEATURE_COLUMNS.index("era")] == 4.0
+
+
+def test_slot_type_flags_exist_and_default_to_zero():
+    row = FeatureRow.empty(song_id=1, show_id=2, slot_number=3)
+    assert row.is_set2 == 0
+    assert row.is_first_in_set == 0
+    assert "is_set2" in FEATURE_COLUMNS
+    assert "is_first_in_set" in FEATURE_COLUMNS

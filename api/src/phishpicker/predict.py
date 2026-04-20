@@ -35,6 +35,7 @@ def predict_next(
     played_list = [r["song_id"] for r in played]
     # trans_mark on the last played song points into the slot we're predicting.
     prev_trans_mark = played[-1]["trans_mark"] if played else ","
+    prev_set_number = played[-1]["set_number"] if played else None
 
     song_ids = [r["song_id"] for r in read_conn.execute("SELECT song_id FROM songs").fetchall()]
     if not song_ids:
@@ -48,6 +49,7 @@ def predict_next(
         current_set=show["current_set"],
         candidate_song_ids=song_ids,
         prev_trans_mark=prev_trans_mark,
+        prev_set_number=prev_set_number,
     )
 
     scored = apply_post_rules(scored, played_tonight=played_ids)

@@ -53,6 +53,13 @@ class FeatureRow:
     # 5. In-show context
     current_set: int = 1
     set_position: int = 1
+    # Explicit slot-type flags. Trees can learn set-2 and opener behavior via
+    # (current_set, set_position) splits but our slot-conditional SHAP analysis
+    # showed the model wasn't finding those interactions — set-2-mid/closer
+    # slots had no slot-specific features firing. These flags give trees a
+    # single-split path to slot type so slot-specific rates can engage.
+    is_set2: int = 0
+    is_first_in_set: int = 0
     set1_opener_rate: float = 0.0
     set2_opener_rate: float = 0.0
     encore_rate: float = 0.0

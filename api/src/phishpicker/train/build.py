@@ -29,6 +29,7 @@ def build_feature_rows(
     bigram_cache: dict[tuple[int, int], float] | None = None,
     all_show_dates: list[str] | None = None,
     prev_trans_mark: str = ",",
+    prev_set_number: str | None = None,
 ) -> list[FeatureRow]:
     """Emit one FeatureRow per candidate song at the given slot.
 
@@ -76,6 +77,10 @@ def build_feature_rows(
     prev_song_id = played_songs[-1] if played_songs else MISSING_INT
     slot_number = len(played_songs) + 1
     current_set_int = SET_NUMBER_TO_INT.get(current_set, 1)
+    is_set2_value = 1 if current_set == "2" else 0
+    # First slot overall is always first-in-set; otherwise it's first-in-set
+    # iff prev_set differs from current_set.
+    is_first_in_set_value = 1 if prev_set_number != current_set else 0
 
     if bigram_cache is None:
         bigram_cache = compute_bigram_probs(conn, cutoff_date=show_date)
@@ -122,6 +127,8 @@ def build_feature_rows(
         row.middle_rate = s.middle_score
         row.current_set = current_set_int
         row.set_position = slot_number
+        row.is_set2 = is_set2_value
+        row.is_first_in_set = is_first_in_set_value
         row.prev_song_id = prev_song_id
         row.bigram_prev_to_this = bigram_p
         row.day_of_week = ctx.day_of_week

@@ -25,6 +25,9 @@ class TrainingGroup:
     # Lets us populate segue_mark_in as a feature. "," for slot 1 (no prior
     # song) or when the prior slot had no segue mark recorded.
     prev_trans_mark: str = ","
+    # set_number of the slot immediately before this one (None for slot 1 of
+    # a show). Feeds is_first_in_set — "2" != "1" marks set-2-opener, etc.
+    prev_set_number: str | None = None
 
 
 def iter_training_groups(
@@ -84,6 +87,7 @@ def iter_training_groups(
         ).fetchall()
         played: list[int] = []
         prev_trans_mark = ","
+        prev_set_number: str | None = None
         for idx, row in enumerate(setlist, start=1):
             positive = int(row["song_id"])
             pool = [s for s in all_song_ids if s != positive and s not in played]
@@ -104,11 +108,13 @@ def iter_training_groups(
                 positive_song_id=positive,
                 negative_song_ids=negatives,
                 prev_trans_mark=prev_trans_mark,
+                prev_set_number=prev_set_number,
             )
             played.append(positive)
             # trans_mark on this row is the segue OUT of this song (into the
             # next slot). Preserve for the NEXT iteration's TrainingGroup.
             prev_trans_mark = row["trans_mark"] or ","
+            prev_set_number = row["set_number"]
 
 
 def _stratified_sample(

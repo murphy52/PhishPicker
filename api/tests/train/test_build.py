@@ -127,6 +127,100 @@ def test_build_current_set_encoding(conn):
     assert rows[0].current_set == 4
 
 
+def test_build_is_set2_flag_true_in_set2(conn):
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-12-31",
+        venue_id=1,
+        played_songs=[1],
+        current_set="2",
+        candidate_song_ids=[2, 3],
+        prev_set_number="1",
+    )
+    for r in rows:
+        assert r.is_set2 == 1
+
+
+def test_build_is_set2_flag_false_in_set1(conn):
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-12-31",
+        venue_id=1,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].is_set2 == 0
+
+
+def test_build_is_set2_flag_false_in_encore(conn):
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-12-31",
+        venue_id=1,
+        played_songs=[1],
+        current_set="E",
+        candidate_song_ids=[2],
+        prev_set_number="2",
+    )
+    assert rows[0].is_set2 == 0
+
+
+def test_build_is_first_in_set_true_at_show_start(conn):
+    # No prior songs played, no prev_set_number — this is slot 1 of set 1.
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-12-31",
+        venue_id=1,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].is_first_in_set == 1
+
+
+def test_build_is_first_in_set_true_when_set_changes(conn):
+    # Set 1 just ended, now starting set 2: prev_set_number differs from current_set.
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-12-31",
+        venue_id=1,
+        played_songs=[1, 2],
+        current_set="2",
+        candidate_song_ids=[3],
+        prev_set_number="1",
+    )
+    assert rows[0].is_first_in_set == 1
+
+
+def test_build_is_first_in_set_false_mid_set(conn):
+    # We're deep in set 1: prev_set_number=="1" matches current_set.
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-12-31",
+        venue_id=1,
+        played_songs=[1],
+        current_set="1",
+        candidate_song_ids=[2, 3],
+        prev_set_number="1",
+    )
+    for r in rows:
+        assert r.is_first_in_set == 0
+
+
+def test_build_is_first_in_set_true_at_encore_start(conn):
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-12-31",
+        venue_id=1,
+        played_songs=[1, 2, 3],
+        current_set="E",
+        candidate_song_ids=[1],
+        prev_set_number="2",
+    )
+    assert rows[0].is_first_in_set == 1
+
+
 def test_build_bigram_feature_populated_when_prev_known(conn):
     # After Tweezer (1), Fluffhead (2) was played once in show 10. Bigram prob
     # for 1→2 (raw) should be positive.

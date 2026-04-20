@@ -33,6 +33,7 @@ class Scorer(Protocol):
         current_set: str,
         candidate_song_ids: list[int],
         prev_trans_mark: str = ",",
+        prev_set_number: str | None = None,
     ) -> list[tuple[int, float]]: ...
 
 
@@ -49,10 +50,11 @@ class HeuristicScorer:
         current_set: str,
         candidate_song_ids: list[int],
         prev_trans_mark: str = ",",
+        prev_set_number: str | None = None,
     ) -> list[tuple[int, float]]:
-        # Heuristic ignores prev_trans_mark — kept for Protocol compatibility
-        # with LightGBMRuntimeScorer.
-        del prev_trans_mark
+        # Heuristic ignores prev_trans_mark / prev_set_number — kept for
+        # Protocol compatibility with LightGBMRuntimeScorer.
+        del prev_trans_mark, prev_set_number
         stats = compute_song_stats(conn, show_date, venue_id, candidate_song_ids)
         ctx = Context(current_set=current_set, current_position=len(played_songs) + 1)
         return [(sid, heuristic_score(stats[sid], ctx)) for sid in candidate_song_ids]
@@ -72,6 +74,7 @@ class LightGBMRuntimeScorer:
         current_set: str,
         candidate_song_ids: list[int],
         prev_trans_mark: str = ",",
+        prev_set_number: str | None = None,
     ) -> list[tuple[int, float]]:
         if not candidate_song_ids:
             return []
@@ -83,6 +86,7 @@ class LightGBMRuntimeScorer:
             current_set=current_set,
             candidate_song_ids=candidate_song_ids,
             prev_trans_mark=prev_trans_mark,
+            prev_set_number=prev_set_number,
         )
         X = np.asarray([r.to_vector() for r in rows], dtype=np.float32)
         scores = self.scorer.score(X)
