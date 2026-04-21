@@ -60,6 +60,25 @@ v8 will become v9-the-model on the next training run. The code is on
 + v7 code combination (47 features). Schema-mismatch check in the deploy
 script will prevent an accidental ship of a v8-code + v7-model combo.
 
+## v10 feature family queued — residency / run awareness
+
+`docs/plans/2026-04-20-residency-run-awareness.md` details a run-
+detection rewrite plus a family of run-aware features motivated by
+the Sphere Night 4 preview:
+
+- **Run detection**: replace `_RUN_MAX_GAP_DAYS=2` gap heuristic with a
+  walk-until-venue-changes rule (still intersected with `tour_id` for
+  safety). Immediate win without retraining — fixes
+  `played_already_this_run` for mid-residency gaps (Sphere 4/18→4/23).
+- **New features**: `run_length_scheduled`, `nights_remaining_in_run`,
+  `plays_this_run_count` (integer, replacing binary), `is_residency`,
+  `run_saturation_pressure` (per-song overdue-within-residency score).
+
+Motivated by v7 preview picking `Also Sprach Zarathustra` on Night 4
+after it was played on Night 1 — model had no way to see Night 1 as
+part of the same run, and no concept of "Phish saves favorites across
+9 nights rather than blowing them on Night 1."
+
 ## v9 experiment queued — from residual analysis
 
 `docs/plans/v7-residual-analysis.md` proposes one concrete feature add
