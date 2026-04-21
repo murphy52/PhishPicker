@@ -152,6 +152,23 @@ def compare(
     )
 
 
+def smoke_rank_summary(smoke: SmokeRecord | None) -> dict | None:
+    if smoke is None:
+        return None
+    ranks = [s.actual_rank for s in smoke.slots if s.actual_rank is not None]
+    if not ranks:
+        return {"n_ranked": 0, "top1": 0, "top5": 0, "top10": 0, "median": None}
+    ranks_sorted = sorted(ranks)
+    median = ranks_sorted[len(ranks_sorted) // 2]
+    return {
+        "n_ranked": len(ranks),
+        "top1": sum(1 for r in ranks if r == 1),
+        "top5": sum(1 for r in ranks if r <= 5),
+        "top10": sum(1 for r in ranks if r <= 10),
+        "median": median,
+    }
+
+
 def load_smoke_record(jsonl_path: Path, date: str) -> SmokeRecord | None:
     if not jsonl_path.exists():
         return None

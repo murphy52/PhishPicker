@@ -18,6 +18,7 @@ from phishpicker.retro import (
     load_actual_setlist,
     load_preview,
     load_smoke_record,
+    smoke_rank_summary,
 )
 
 
@@ -225,3 +226,28 @@ def test_compare_slot_mismatch_in_length() -> None:
     assert r.slot_matches[1].predicted == "B"
     assert r.slot_matches[1].actual is None
     assert not r.slot_matches[1].exact_match
+
+
+def test_smoke_rank_summary() -> None:
+    smoke = SmokeRecord(
+        date="2026-04-23",
+        show_id=1,
+        venue="Sphere",
+        slots=[
+            SmokeSlotRank(slot=1, actual_song="A", actual_rank=1),
+            SmokeSlotRank(slot=2, actual_song="B", actual_rank=4),
+            SmokeSlotRank(slot=3, actual_song="C", actual_rank=7),
+            SmokeSlotRank(slot=4, actual_song="D", actual_rank=None),
+        ],
+    )
+    s = smoke_rank_summary(smoke)
+    assert s is not None
+    assert s["n_ranked"] == 3
+    assert s["top1"] == 1
+    assert s["top5"] == 2
+    assert s["top10"] == 3
+    assert s["median"] == 4
+
+
+def test_smoke_rank_summary_none_input() -> None:
+    assert smoke_rank_summary(None) is None
