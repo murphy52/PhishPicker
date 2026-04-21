@@ -21,6 +21,19 @@ from datetime import date
 # is typically 100+ shows (closer to 200 for the famous ones). Raised to 100.
 BUSTOUT_THRESHOLD_SHOWS: int = 100
 
+# Songs attributed to one of these artists are NOT covers. phish.net stores
+# Phish originals as 'Phish' (not NULL) and many TAB-originated songs that
+# joined the Phish rotation as 'Trey Anastasio'. Other band members appear
+# similarly. Anyone NOT in this set (and not NULL) is a real third-party
+# cover.
+PHISH_FAMILY_ARTISTS: frozenset[str] = frozenset({
+    "Phish",
+    "Trey Anastasio",
+    "Mike Gordon",
+    "Page McConnell",
+    "Jon Fishman",
+})
+
 
 @dataclass
 class ExtendedStats:
@@ -192,7 +205,16 @@ def compute_extended_stats(
             # is unavailable.
             with contextlib.suppress(ValueError):
                 e.days_since_debut = max(0, (show_d - date.fromisoformat(dd)).days)
-        e.is_cover = 1 if r["original_artist"] else 0
+        # is_cover: phish.net stores original_artist='Phish' for Phish
+        # originals (NOT NULL — only ~20 of 983 songs have NULL, mostly
+        # one-off jams with unknown attribution). And many TAB songs that
+        # entered the Phish rotation are stored as 'Trey Anastasio'. Both
+        # of those are family — not covers. Pre-v8 the check was simply
+        # `if original_artist`, which inverted the feature: Phish originals
+        # got is_cover=1 and the model couldn't distinguish anything
+        # meaningful. Use a Phish-family whitelist instead.
+        artist = r["original_artist"]
+        e.is_cover = 1 if (artist is not None and artist not in PHISH_FAMILY_ARTISTS) else 0
 
     # B2: plays_last_6mo + recent_play_acceleration. Momentum signal —
     # songs that got hot in the last six months. Picks up Evolve-style

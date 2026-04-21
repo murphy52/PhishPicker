@@ -51,3 +51,20 @@ def test_slot_type_flags_exist_and_default_to_zero():
     assert row.is_first_in_set == 0
     assert "is_set2" in FEATURE_COLUMNS
     assert "is_first_in_set" in FEATURE_COLUMNS
+
+
+def test_v8_dropped_features_removed_from_schema():
+    """v8 cleanup: five features were dropped because they were either
+    never populated (historical_gap_mean, middle_of_set_2_score,
+    shows_since_last_played_this_run) or fully redundant with extended-stats
+    refinements (opener_score → set1_opener_rate, encore_score → encore_rate).
+    LightGBM confirmed it never split on these — they were dead weight.
+    """
+    for dead in (
+        "historical_gap_mean",
+        "middle_of_set_2_score",
+        "shows_since_last_played_this_run",
+        "opener_score",
+        "encore_score",
+    ):
+        assert dead not in FEATURE_COLUMNS, f"{dead} should be dropped"

@@ -191,6 +191,89 @@ def test_is_cover_populated_from_original_artist(conn):
     assert by_id[1].is_cover == 0
 
 
+def test_is_cover_zero_for_phish_family_artists(conn, tmp_path):
+    """phish.net attributes Phish originals to original_artist='Phish' (not NULL),
+    and TAB songs that joined the Phish rotation as original_artist='Trey
+    Anastasio'. Both should be is_cover=0 — they're family, not covers.
+    Real third-party covers (Beatles, Stones, etc.) stay is_cover=1.
+    """
+    # Build a richer DB that includes Phish-family attributions.
+    from phishpicker.db.connection import apply_schema, open_db
+
+    c = open_db(tmp_path / "covers.db")
+    apply_schema(c)
+    c.executescript(
+        """
+        INSERT INTO songs (song_id, name, original_artist, debut_date, first_seen_at) VALUES
+            (10, 'AC/DC Bag',     'Phish',           '1990-01-01', '2020-01-01'),
+            (11, 'Sand',          'Trey Anastasio',  '1999-09-09', '2020-01-01'),
+            (12, 'Mound',         'Mike Gordon',     '1990-05-01', '2020-01-01'),
+            (13, 'Loving Cup',    'Rolling Stones',  '1997-07-25', '2020-01-01'),
+            (14, 'Mystery Song',  NULL,              '1995-01-01', '2020-01-01');
+        INSERT INTO venues (venue_id, name) VALUES (100, 'MSG');
+        INSERT INTO shows (show_id, show_date, venue_id, fetched_at) VALUES
+            (2001, '2024-01-01', 100, '2024-01-02');
+        INSERT INTO setlist_songs (show_id, set_number, position, song_id, trans_mark) VALUES
+            (2001, '1', 1, 10, ',');
+        """
+    )
+    c.commit()
+    rows = build_feature_rows(
+        c,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[10, 11, 12, 13, 14],
+    )
+    by_id = {r.song_id: r for r in rows}
+    assert by_id[10].is_cover == 0, "Phish original (original_artist='Phish') is not a cover"
+    assert by_id[11].is_cover == 0, "TAB song is Phish-family, not a cover"
+    assert by_id[12].is_cover == 0, "Mike Gordon song is Phish-family, not a cover"
+    assert by_id[13].is_cover == 1, "Rolling Stones cover is a cover"
+    assert by_id[14].is_cover == 0, "Unknown attribution defaults to original (NULL)"
+
+
+def test_segue_mark_in_handles_spaced_db_values(conn):
+    """phish.net's setlists endpoint returns trans_mark with surrounding
+    whitespace: ', ', ' > ', ' -> '. The lookup table has bare keys, so
+    every spaced value misses and segue_mark_in is always 0 — even though
+    33% of rows in the live DB are ' > ' jam-inline. Strip whitespace.
+    """
+    rows_seg = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[1],
+        current_set="1",
+        candidate_song_ids=[2],
+        prev_trans_mark=" > ",
+    )
+    assert rows_seg[0].segue_mark_in == 1, "spaced ' > ' should map to inline-jam = 1"
+
+    rows_tight = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[1],
+        current_set="1",
+        candidate_song_ids=[2],
+        prev_trans_mark=" -> ",
+    )
+    assert rows_tight[0].segue_mark_in == 2, "spaced ' -> ' should map to tight-segue = 2"
+
+    rows_comma = build_feature_rows(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        played_songs=[1],
+        current_set="1",
+        candidate_song_ids=[2],
+        prev_trans_mark=", ",
+    )
+    assert rows_comma[0].segue_mark_in == 0, "spaced ', ' should map to song-break = 0"
+
+
 def test_bustout_score_flags_long_gap(conn):
     """A song that hasn't been played in many shows gets a high bustout score.
     Chalk Dust last played in show 1003 (2023-11-15); by our cutoff 2024-07-01,

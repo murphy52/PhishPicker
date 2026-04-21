@@ -25,7 +25,6 @@ class FeatureRow:
     # 1. Song base rates
     total_plays_ever: int = 0
     plays_last_12mo: int = 0
-    historical_gap_mean: float = MISSING_FLOAT
     debut_year: int = MISSING_INT
     is_cover: int = 0
 
@@ -33,7 +32,6 @@ class FeatureRow:
     shows_since_last_played_anywhere: int = MISSING_INT
     days_since_last_played_anywhere: int = MISSING_INT
     shows_since_last_played_this_tour: int = MISSING_INT
-    shows_since_last_played_this_run: int = MISSING_INT
 
     # 3. Venue & run
     times_at_venue: int = 0
@@ -86,10 +84,7 @@ class FeatureRow:
     recent_play_acceleration: float = 0.0
 
     # 7. Derived role scores
-    opener_score: float = 0.0
     closer_score: float = 0.0
-    encore_score: float = 0.0
-    middle_of_set_2_score: float = 0.0
     bustout_score: float = 0.0
 
     @classmethod

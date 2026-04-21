@@ -15,6 +15,9 @@ from phishpicker.train.extended_stats import compute_bustout_score, compute_exte
 from phishpicker.train.features import MISSING_INT, FeatureRow
 
 SET_NUMBER_TO_INT = {"1": 1, "2": 2, "3": 3, "4": 4, "E": 4}
+# phish.net returns trans_mark with surrounding whitespace (', ', ' > ',
+# ' -> '). Always strip before lookup — pre-v8 the keys were bare and the
+# feature was silently always 0.
 SEGUE_MARK_TO_INT = {",": 0, ">": 1, "->": 2}
 
 
@@ -122,8 +125,11 @@ def build_feature_rows(
             else MISSING_INT
         )
         row.played_already_this_run = int(s.played_already_this_run)
-        row.opener_score = s.opener_score
-        row.encore_score = s.encore_score
+        # opener_score / encore_score (from SongStats) are intentionally not
+        # written to the FeatureRow — v8 dropped them from the LightGBM
+        # schema as redundant with set1_opener_rate / encore_rate (extended
+        # stats). They remain on SongStats because the heuristic scorer
+        # consumes them.
         row.middle_rate = s.middle_score
         row.current_set = current_set_int
         row.set_position = slot_number
@@ -155,7 +161,7 @@ def build_feature_rows(
         row.tour_closer_rate = e.tour_closer_rate
         row.times_this_tour = e.times_this_tour
         row.shows_since_last_played_this_tour = e.shows_since_last_played_this_tour
-        row.segue_mark_in = SEGUE_MARK_TO_INT.get(prev_trans_mark, 0)
+        row.segue_mark_in = SEGUE_MARK_TO_INT.get((prev_trans_mark or "").strip(), 0)
         row.shows_since_last_set1_opener = e.shows_since_last_set1_opener
         row.shows_since_last_any_opener_role = e.shows_since_last_any_opener_role
         row.avg_set_position_when_played = e.avg_set_position_when_played
