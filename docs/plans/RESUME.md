@@ -1,8 +1,8 @@
-# Resume Point — 2026-04-20 (evening update)
+# Resume Point — 2026-04-20 (late evening update)
 
-🚀 **v7 is a major win.** Slot-type flags (`is_set2`, `is_first_in_set`)
-nearly DOUBLED Top-1 (3.6% → 6.8%) and gained +6.7pp Top-5 (14.5% → 21.2%)
-vs v5. Per-case ranks all improved. Ready to ship to NAS.
+✅ **v7 shipped to NAS, serving in production.** Slot-type flags (`is_set2`,
+`is_first_in_set`) nearly DOUBLED Top-1 (3.6% → 6.8%) and gained +6.7pp
+Top-5 (14.5% → 21.2%) vs v5. Per-case ranks all improved.
 
 ## TL;DR for next session
 
@@ -25,20 +25,30 @@ vs v5. Per-case ranks all improved. Ready to ship to NAS.
   but the slot-type flag absorbed most of the work.
 - **NAS still serves v5.** v7 is on Mac mini only. **Ship action pending.**
 
-## Pending actions
+## Deploy status
 
-- ✅ **Pushed** — 4 commits on origin/main (ee53da8, 2632ef6, e746975, b630159).
-- ⏳ **Ship v7 to NAS** — artifacts staged at `/tmp/v7/` locally; NAS SSH
-  window was closed as of evening 4/20. Open it, then run:
-    ```bash
-    bash scripts/ship_v7_to_nas.sh
-    ```
-  The script backs up the current v5 as `*.v5-backup` (idempotent), uploads
-  v7 under `.new` names, atomic-renames, and restarts the API container.
-  Rollback instructions are in the script's header.
+- ✅ v7 live on NAS (commit `77960a4`, `scorer:lightgbm` confirmed).
+- ✅ All commits pushed to origin/main.
+- Backups on NAS:
+  - `data/*.v5-backup` — sticky v5 artifacts for emergency deep rollback
+  - `data/*.prev-backup` — last pre-deploy snapshot (currently v5, since
+    that's what was live before v7)
+- Deploy script: `scripts/deploy_to_nas.sh` — generic code+model deploy
+  with pre-flight + healthcheck + rollback one-liner for future versions.
+
+## Next on the roadmap
+
 - 🛑 **Hold on v8 cleanup** (segue_mark_in/is_cover bug fixes + dead-feature
   drops) until v7 has been observed in production for a bit. We want to
   attribute any shifted behavior cleanly.
+- When ready for v8: the findings are in this session's conversation
+  summary — two bugs (`segue_mark_in` spaces in lookup, `is_cover`
+  inverted + needs Phish-family whitelist per Tom Marshall / TAB
+  discussion) and five drop candidates (`historical_gap_mean`,
+  `middle_of_set_2_score`, `shows_since_last_played_this_run`,
+  `opener_score`, `encore_score`).
+- Deferred: nightly-smoke cron on Mac mini (build up a live track
+  record of v7's real-world accuracy).
 
 ## Commits in this session (most recent first)
 
