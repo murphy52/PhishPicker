@@ -1,31 +1,46 @@
-# Resume Point — 2026-04-20 (afternoon update)
+# Resume Point — 2026-04-20 (evening update)
 
-v6 experiment concluded: **hypothesis refuted, days_since_debut drop reverted**.
-v5 remains the current shipped model. Ready to pick the next experiment.
+🚀 **v7 is a major win.** Slot-type flags (`is_set2`, `is_first_in_set`)
+nearly DOUBLED Top-1 (3.6% → 6.8%) and gained +6.7pp Top-5 (14.5% → 21.2%)
+vs v5. Per-case ranks all improved. Ready to ship to NAS.
 
 ## TL;DR for next session
 
-- **v6 finished** (Mac mini, 6h 52min) and **regressed on both aggregate and
-  per-case**: Top-5 14.5% → 13.1%, Buried Alive #11 → #14, Oblivion #6 → #5.
-  Dropping `days_since_debut` did NOT recover v4's per-case ranks — it made
-  the opener slot worse.
-- **Reverted** the v6 change in commit `ee53da8` (revert of `3d6c95e`) so
-  main's code once again matches v5 deployed on NAS. 190 tests pass.
-- **NAS** still serves v5 at `http://127.0.0.1:3400` (loopback only). No
-  ship needed — we left v5 alone. NAS SSH window was closed this session
-  so side-by-side v5-vs-v6 replay wasn't possible; v6 replay was run solo
-  on Mac mini against the current 4/18 setlist (Buried Alive, Oblivion).
-- **Mac mini artifacts** are currently stale v6 in `~/phishpicker/api/data/`.
-  Next retrain (from reverted main) will overwrite with v5-equivalent.
-  No action needed unless you want to retrain.
-- **Next research direction is open**: the v5 per-case regression relative
-  to v4 is still unexplained. days_since_debut is not the culprit. See
-  "Open research questions" below for candidates.
+- **v7 trained on Mac mini in 3h 26m** (faster than v6's 6h 52m). Artifacts
+  at `~/phishpicker/api/data/{model.lgb, metrics.json, model.meta.json}`.
+- **Aggregate (n=354 holdout slots):**
+  - Top-1: **6.8%** (v5: 3.6%, +3.2pp · nearly 2×)
+  - Top-5: **21.2%** (v5: 14.5%, +6.7pp · CI [16.9, 25.7] excludes v5)
+  - MRR: **0.146** (v5: 0.103, +43%)
+- **Per-case 4/18 Sphere replay:**
+  - Buried Alive: #5 (v5 #11, v6 #14, v4 #8)
+  - Oblivion: #4 (v5 #6, v6 #5, v4 #3)
+  - **Tweezer Reprise: #7 (v6 #109)** — hugely improved despite no cross-slot
+    bigram feature; the slot-type flags are doing the work
+- **Sanity-check passed:** baselines (random/freq/heuristic) are flat between
+  v6 and v7 → holdout difficulty unchanged → the model lift is real.
+- **Feature importance shifts:** `is_first_in_set` jumped to **rank 2 by
+  gain (88K)**, just below `bigram_prev_to_this`. `is_set2` modest at rank
+  32. `set2_opener_rate` still tiny (rank 40, gain 71) — it's no longer 0
+  but the slot-type flag absorbed most of the work.
+- **NAS still serves v5.** v7 is on Mac mini only. **Ship action pending.**
+
+## Pending actions
+
+- **Push** local commits to GitHub (3 unpushed: v6 revert, RESUME update,
+  feat slot-type flags, post-train eval harness, results doc — though only
+  feat ones really need pushing)
+- **Ship v7 to NAS** when SSH window is open. Ship-gate already passed.
+- **Do not start v8 until v7 is shipped** — we want production parity with
+  what we're measuring.
 
 ## Commits in this session (most recent first)
 
 | SHA | Summary |
 |---|---|
+| (uncommitted) | scripts: post_train_eval.py + docs/picking-phish.html + docs/plans/v7-results.md |
+| e746975 | feat(train): add `is_set2` + `is_first_in_set` slot-type flags |
+| 2632ef6 | docs: record v6 outcome — hypothesis refuted, reverted |
 | ee53da8 | revert: restore `days_since_debut` — v6 hypothesis refuted |
 | dd811a2 | docs: RESUME.md update for next session pickup |
 | 3d6c95e | revert: drop `days_since_debut` (v6 hypothesis test) |
