@@ -18,6 +18,7 @@ from phishpicker.retro import (
     load_actual_setlist,
     load_preview,
     load_smoke_record,
+    render_markdown,
     render_stdout_summary,
     smoke_rank_summary,
 )
@@ -289,3 +290,23 @@ def test_render_stdout_summary_without_smoke() -> None:
     out = render_stdout_summary(r)
     assert out
     assert "smoke" in out.lower() or "nightly" in out.lower()
+
+
+def test_render_markdown_contains_expected_sections() -> None:
+    preview = PreviewDoc(
+        show_date="2026-04-23",
+        venue_id=1,
+        generated_at="2026-04-21T00:00:00Z",
+        model_path="data/model.lgb",
+        picks=[PreviewPick(1, "SET 1", 1, "A"), PreviewPick(2, "SET 1", 2, "B")],
+    )
+    actual = [ActualSlot(1, "1", 1, 1, "A"), ActualSlot(2, "1", 2, 99, "C")]
+    r = compare(preview, actual, smoke=None, venue="Sphere")
+    md = render_markdown(r)
+    assert md.startswith("# ")
+    assert "2026-04-23" in md
+    assert "## Headline" in md
+    assert "## Slot-level" in md
+    assert "## Where did the preview miss" in md
+    assert "## Where did the preview over-commit" in md
+    assert "| 1 | A | A |" in md

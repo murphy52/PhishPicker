@@ -197,6 +197,62 @@ def render_stdout_summary(retro: Retro) -> str:
     return "\n".join(lines)
 
 
+def render_markdown(retro: Retro) -> str:
+    lines: list[str] = []
+    venue = retro.venue or "?"
+    lines.append(f"# Retro — {retro.show_date} {venue}")
+    lines.append("")
+
+    lines.append("## Headline")
+    lines.append(
+        f"- Preview picks: {len(retro.preview_picks)} · "
+        f"Actual slots: {len(retro.actual_slots)}"
+    )
+    lines.append(f"- Set-level overlap: {len(retro.set_overlap_songs)} songs")
+    exact = sum(1 for m in retro.slot_matches if m.exact_match)
+    lines.append(f"- Slot-level exact matches: {exact}/{len(retro.slot_matches)}")
+    smoke_summary = smoke_rank_summary(retro.smoke)
+    if smoke_summary is None:
+        lines.append("- Nightly-smoke: (no record)")
+    else:
+        n = smoke_summary["n_ranked"]
+        lines.append(
+            f"- Nightly-smoke: Top-1 {smoke_summary['top1']}/{n} · "
+            f"Top-5 {smoke_summary['top5']}/{n} · "
+            f"median rank {smoke_summary['median']}"
+        )
+    lines.append("")
+
+    lines.append("## Slot-level")
+    lines.append("")
+    lines.append("| Slot | Predicted | Actual | Match |")
+    lines.append("|---|---|---|---|")
+    for m in retro.slot_matches:
+        mark = "✓" if m.exact_match else ""
+        lines.append(
+            f"| {m.slot_idx} | {m.predicted or '—'} | {m.actual or '—'} | {mark} |"
+        )
+    lines.append("")
+
+    lines.append("## Where did the preview miss?")
+    if retro.actual_only_songs:
+        for name in retro.actual_only_songs:
+            lines.append(f"- {name}")
+    else:
+        lines.append("- (none — every actual song appeared in preview)")
+    lines.append("")
+
+    lines.append("## Where did the preview over-commit?")
+    if retro.preview_only_songs:
+        for name in retro.preview_only_songs:
+            lines.append(f"- {name}")
+    else:
+        lines.append("- (none — every predicted song was played)")
+    lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
 def load_smoke_record(jsonl_path: Path, date: str) -> SmokeRecord | None:
     if not jsonl_path.exists():
         return None
