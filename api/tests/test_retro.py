@@ -1,6 +1,7 @@
 """Tests for the retrospective harness."""
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -13,8 +14,24 @@ from phishpicker.retro import (
     SlotMatch,
     SmokeRecord,
     SmokeSlotRank,
+    load_actual_setlist,
     load_preview,
 )
+
+
+def _make_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE shows (show_id INTEGER PRIMARY KEY, show_date TEXT, venue_id INTEGER);
+        CREATE TABLE venues (venue_id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE songs (song_id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE setlist_songs (
+            show_id INTEGER, set_number TEXT, position INTEGER,
+            song_id INTEGER, trans_mark TEXT
+        );
+    """)
+    return conn
 
 
 def test_module_imports() -> None:
@@ -53,3 +70,29 @@ def test_load_preview_parses_saved_json(tmp_path: Path) -> None:
 def test_load_preview_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load_preview(tmp_path / "nope.json")
+
+
+def test_load_actual_setlist_returns_slots_in_order() -> None:
+    conn = _make_db()
+    conn.executescript("""
+        INSERT INTO venues VALUES (1597, 'Sphere');
+        INSERT INTO shows VALUES (9001, '2026-04-23', 1597);
+        INSERT INTO songs VALUES (1, 'Buried Alive'), (2, 'Moma Dance'), (3, 'Tweezer Reprise');
+        INSERT INTO setlist_songs VALUES
+            (9001, '1', 1, 1, ','),
+            (9001, '1', 2, 2, ','),
+            (9001, 'E', 1, 3, ',');
+    """)
+
+    slots = load_actual_setlist(conn, "2026-04-23")
+    assert len(slots) == 3
+    assert slots[0].slot_idx == 1
+    assert slots[0].name == "Buried Alive"
+    assert slots[0].set_number == "1"
+    assert slots[2].set_number == "E"
+    assert slots[2].slot_idx == 3
+
+
+def test_load_actual_setlist_missing_show_returns_empty() -> None:
+    conn = _make_db()
+    assert load_actual_setlist(conn, "1999-01-01") == []
