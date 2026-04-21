@@ -1,8 +1,8 @@
-# Resume Point — 2026-04-20 (late evening update)
+# Resume Point — 2026-04-20 (night update)
 
-✅ **v7 shipped to NAS, serving in production.** Slot-type flags (`is_set2`,
-`is_first_in_set`) nearly DOUBLED Top-1 (3.6% → 6.8%) and gained +6.7pp
-Top-5 (14.5% → 21.2%) vs v5. Per-case ranks all improved.
+✅ **v7 shipped to NAS and serving.** Top-5 14.5% → 21.2%, Top-1 nearly 2×.
+✅ **v8 code cleanup committed** (`fd44f67`). Not yet trained — v9 candidate.
+✅ **Residual-miss analysis** written up (`65ce024`), proposes v9 feature.
 
 ## TL;DR for next session
 
@@ -36,25 +36,73 @@ Top-5 (14.5% → 21.2%) vs v5. Per-case ranks all improved.
 - Deploy script: `scripts/deploy_to_nas.sh` — generic code+model deploy
   with pre-flight + healthcheck + rollback one-liner for future versions.
 
-## Next on the roadmap
+## v8 cleanup — code landed, not trained
 
-- 🛑 **Hold on v8 cleanup** (segue_mark_in/is_cover bug fixes + dead-feature
-  drops) until v7 has been observed in production for a bit. We want to
-  attribute any shifted behavior cleanly.
-- When ready for v8: the findings are in this session's conversation
-  summary — two bugs (`segue_mark_in` spaces in lookup, `is_cover`
-  inverted + needs Phish-family whitelist per Tom Marshall / TAB
-  discussion) and five drop candidates (`historical_gap_mean`,
-  `middle_of_set_2_score`, `shows_since_last_played_this_run`,
-  `opener_score`, `encore_score`).
-- Deferred: nightly-smoke cron on Mac mini (build up a live track
+Commit `fd44f67` (42 features, down from 47):
+
+- **segue_mark_in** — lookup now strips whitespace. Was always 0 pre-v8
+  because DB has `' > '`/`' -> '` with spaces but the map had bare keys.
+  Real variance in the DB (33% jam-inline `>`, 5% segue `->`) is now
+  reaching the model.
+- **is_cover** — new `PHISH_FAMILY_ARTISTS` whitelist in extended_stats.py
+  ({Phish, Trey Anastasio, Mike Gordon, Page McConnell, Jon Fishman}).
+  Pre-v8 logic `1 if original_artist else 0` flagged Phish originals as
+  covers. Now: family=0, real third-party covers=1, NULL=0.
+- Dropped 5 features: `historical_gap_mean`, `middle_of_set_2_score`,
+  `shows_since_last_played_this_run`, `opener_score`, `encore_score`.
+  First 3 were never populated; last 2 were redundant with extended-stats
+  refinements. `opener_score`/`encore_score` stay on SongStats for the
+  heuristic scorer. LightGBM side now has 42 lean features.
+- Tests: 201 pass (3 new).
+
+v8 will become v9-the-model on the next training run. The code is on
+`main` but no training has been kicked off. NAS still runs the v7 model
++ v7 code combination (47 features). Schema-mismatch check in the deploy
+script will prevent an accidental ship of a v8-code + v7-model combo.
+
+## v9 experiment queued — from residual analysis
+
+`docs/plans/v7-residual-analysis.md` proposes one concrete feature add
+for v9:
+
+- **`slots_into_current_set`** — 1-indexed position within the current
+  set (not the global slot number). Caller tracks it analogously to
+  `prev_set_number`. Expected to help set-2 closers (Antelope tied for
+  #1 historical set-2 closer but v7 ranked it #92 on 4/18 — no "approaching
+  closer territory" signal in the feature set).
+
+The analysis categorizes v7's residual misses:
+- **Bustouts** (Forbin's 2.3yr gap, #102) — fundamentally unpredictable
+- **Surprise covers** (Walk Away with Joe Walsh, Walrus) — external info
+- **Set-2 closers** — tractable, `slots_into_current_set` should help
+
+## Next-session priorities
+
+1. **Train v9** on Mac mini when ready (expect 3-4h based on v7 timing).
+   Use `phishpicker train run --cutoff 2026-04-18` for apples-to-apples
+   with v7. Artifacts land on Mac mini; use `scripts/post_train_eval.py`
+   for the results report.
+2. **Add `slots_into_current_set`** (BEFORE retraining, if going that
+   route) following the TDD + prev_set_number plumbing pattern from v7.
+3. **Or**: skip v9 feature-add and just retrain with v8 to see how the
+   bug-fixed `segue_mark_in` + cleaner `is_cover` shift metrics alone.
+   Arguably a cleaner A/B than bundling a new feature.
+4. **Deploy**: `bash scripts/deploy_to_nas.sh` with NAS SSH window open.
+   Prefer `NAS_HOST='Murphy52@storage.local'` (LAN) — Cloudflare tunnel
+   token needs re-login to work. Rollback documented in script header.
+5. **Deferred still**: nightly-smoke cron on Mac mini (build up a live track
   record of v7's real-world accuracy).
 
-## Commits in this session (most recent first)
+## Commits this session (most recent first, all pushed)
 
 | SHA | Summary |
 |---|---|
-| (uncommitted) | scripts: post_train_eval.py + docs/picking-phish.html + docs/plans/v7-results.md |
+| 65ce024 | docs: v7 residual miss analysis — categorizes + proposes v9 feature |
+| fd44f67 | **feat(train): v8 cleanup — fix segue_mark_in + is_cover bugs, drop 5 dead features** |
+| 7c0e017 | docs: v7 is live on NAS |
+| 77960a4 | ops: deploy_to_nas.sh — true code+model deploy with verification |
+| 43696cf | ops: ship_v7_to_nas.sh + RESUME.md update (superseded) |
+| b630159 | docs(v7): results report + post-train eval harness + reader guide |
 | e746975 | feat(train): add `is_set2` + `is_first_in_set` slot-type flags |
 | 2632ef6 | docs: record v6 outcome — hypothesis refuted, reverted |
 | ee53da8 | revert: restore `days_since_debut` — v6 hypothesis refuted |
