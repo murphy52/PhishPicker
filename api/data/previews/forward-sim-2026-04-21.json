@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-04-21T21:27:08.790829Z",
+  "model_path": "data/model.lgb",
+  "nights": [
+    {
+      "label": "Night 4",
+      "show_date": "2026-04-23",
+      "show_id": 1764702416,
+      "picks": []
+    },
+    {
+      "label": "Night 5",
+      "show_date": "2026-04-24",
+      "show_id": 1764702441,
+      "picks": []
+    },
+    {
+      "label": "Night 6",
+      "show_date": "2026-04-25",
+      "show_id": 1764702466,
+      "picks": []
+    },
+    {
+      "label": "Night 7",
+      "show_date": "2026-04-30",
+      "show_id": 1764702491,
+      "picks": []
+    },
+    {
+      "label": "Night 8",
+      "show_date": "2026-05-01",
+      "show_id": 1764702513,
+      "picks": []
+    },
+    {
+      "label": "Night 9",
+      "show_date": "2026-05-02",
+      "show_id": 1764702539,
+      "picks": []
+    }
+  ]
+}

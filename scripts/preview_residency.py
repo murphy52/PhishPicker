@@ -18,8 +18,11 @@ Hardcoded for the 2026 Sphere residency. Adapt NIGHTS + PRIOR_RESIDENCY_SHOW_IDS
 for future residencies.
 """
 
+import json
 import shutil
 import sqlite3
+from datetime import date as date_type
+from datetime import datetime
 from pathlib import Path
 
 from phishpicker.db.connection import open_db
@@ -31,6 +34,7 @@ SIM_DB_PATH = Path("/tmp/sim_residency.db")
 REAL_DB_PATH = Path("data/phishpicker.db")
 LIVE_DB_PATH = Path("data/live.db")
 MODEL_PATH = Path("data/model.lgb")
+PREVIEW_DIR = Path("data/previews")
 
 NIGHTS = [
     ("Night 4", "2026-04-23", 1764702416),
@@ -45,6 +49,37 @@ STRUCTURE = [("1", 9), ("2", 7), ("E", 2)]
 PRIOR_RESIDENCY_SHOW_IDS = (1764702178, 1764702334, 1764702381)
 
 TOP_N = 30  # must exceed STRUCTURE slot count so late-residency nights don't run out
+
+
+def save_forward_sim(
+    all_picks_by_night: dict[str, list[str]],
+    night_metadata: list[tuple[str, str, int]],
+) -> Path:
+    PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+    today = date_type.today().isoformat()
+    out_path = PREVIEW_DIR / f"forward-sim-{today}.json"
+    nights = []
+    for night_label, show_date, show_id in night_metadata:
+        names = all_picks_by_night.get(night_label, [])
+        picks = [
+            {"slot_idx": i + 1, "set": "", "song_id": 0, "name": name}
+            for i, name in enumerate(names)
+        ]
+        nights.append(
+            {
+                "label": night_label,
+                "show_date": show_date,
+                "show_id": show_id,
+                "picks": picks,
+            }
+        )
+    payload = {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "model_path": str(MODEL_PATH),
+        "nights": nights,
+    }
+    out_path.write_text(json.dumps(payload, indent=2) + "\n")
+    return out_path
 
 
 def main() -> None:
@@ -132,6 +167,9 @@ def main() -> None:
         if repeats:
             print(f"  !! RESIDENCY REPEATS this night: {repeats}")
         print()
+
+    saved = save_forward_sim(all_picks_by_night, NIGHTS)
+    print(f"\nSaved forward-sim JSON: {saved}\n")
 
     print("=" * 70)
     print("RESIDENCY PACING ANALYSIS")
