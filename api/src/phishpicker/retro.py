@@ -100,6 +100,37 @@ def load_actual_setlist(conn: sqlite3.Connection, show_date: str) -> list[Actual
     ]
 
 
+def compare(
+    preview: PreviewDoc,
+    actual: list[ActualSlot],
+    smoke: SmokeRecord | None,
+    venue: str = "",
+) -> Retro:
+    preview_names = [p.name for p in preview.picks]
+    actual_names = [a.name for a in actual]
+    preview_set = set(preview_names)
+    actual_set = set(actual_names)
+    seen: set[str] = set()
+    overlap_ordered: list[str] = []
+    for n in preview_names:
+        if n in actual_set and n not in seen:
+            overlap_ordered.append(n)
+            seen.add(n)
+    preview_only = [n for n in preview_names if n not in actual_set]
+    actual_only = [n for n in actual_names if n not in preview_set]
+
+    return Retro(
+        show_date=preview.show_date,
+        venue=venue,
+        preview_picks=list(preview.picks),
+        actual_slots=list(actual),
+        smoke=smoke,
+        set_overlap_songs=overlap_ordered,
+        preview_only_songs=preview_only,
+        actual_only_songs=actual_only,
+    )
+
+
 def load_smoke_record(jsonl_path: Path, date: str) -> SmokeRecord | None:
     if not jsonl_path.exists():
         return None

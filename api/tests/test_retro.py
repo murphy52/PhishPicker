@@ -14,6 +14,7 @@ from phishpicker.retro import (
     SlotMatch,
     SmokeRecord,
     SmokeSlotRank,
+    compare,
     load_actual_setlist,
     load_preview,
     load_smoke_record,
@@ -135,3 +136,26 @@ def test_load_smoke_record_missing_date_returns_none(tmp_path: Path) -> None:
 
 def test_load_smoke_record_missing_file_returns_none(tmp_path: Path) -> None:
     assert load_smoke_record(tmp_path / "nope.jsonl", "2026-04-23") is None
+
+
+def test_compare_set_level_overlap() -> None:
+    preview = PreviewDoc(
+        show_date="2026-04-23",
+        venue_id=1,
+        generated_at="t",
+        model_path="p",
+        picks=[
+            PreviewPick(1, "SET 1", 1, "Buried Alive"),
+            PreviewPick(2, "SET 1", 2, "Moma Dance"),
+            PreviewPick(3, "SET 2", 3, "Oblivion"),
+        ],
+    )
+    actual = [
+        ActualSlot(1, "1", 1, 1, "Buried Alive"),
+        ActualSlot(2, "1", 2, 99, "Sample in a Jar"),
+        ActualSlot(3, "2", 1, 3, "Oblivion"),
+    ]
+    r = compare(preview, actual, smoke=None)
+    assert set(r.set_overlap_songs) == {"Buried Alive", "Oblivion"}
+    assert r.preview_only_songs == ["Moma Dance"]
+    assert r.actual_only_songs == ["Sample in a Jar"]
