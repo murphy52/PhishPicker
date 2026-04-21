@@ -1,105 +1,117 @@
-# Resume Point — 2026-04-20 (late-night session-3 update)
+# Resume Point — 2026-04-21 (v10 shipped)
 
-## This session's work (2026-04-20 evening)
+## This session's work (2026-04-21)
 
-Triggered by a full-show preview for **Sphere Night 4 (Thursday 2026-04-23)**
-using the live v7 model. Two problems surfaced:
+Executed the v10 retrain + deploy decided at end of session 3. Chose
+**Path B** (ship with run-detection fix + `plays_this_run_count` only;
+defer `run_saturation_pressure` to v11 pending real-world residency data).
 
-1. **v7 picked `Also Sprach Zarathustra`** even though it played Night 1
-   (2026-04-16). Root cause: `_find_run_start`/`_find_run_end` used a
-   2-day gap rule. The 4-day mid-residency gap (4/18 → 4/23) split the
-   9-show run into two 3-show runs.
-2. **No "save favorites for later" concept**. On a 9-night residency,
-   Phish spreads signature songs across the run rather than blowing them
-   early. The model has no feature encoding this.
+### Deploy outcome
 
-### Shipped this session
+- **NAS now serves v10.** HEAD `6e09092`, `scorer: "lightgbm"` verified
+  via `/api/meta` healthcheck.
+- **Prior state preserved** as `data/*.prev-backup` on NAS (rollback is
+  one command, see below).
+- **Training: 3h 25m** on Mac mini (slightly faster than v7's 3h 26m).
+  Cutoff `2026-04-19` — keeps the Sphere residency itself out of training.
 
-| Commit | Summary |
+### Aggregate metrics — v10 vs v7 (n=354)
+
+| Metric | v10 | v7 | Δ | Within 95% CI? |
+|---|---|---|---|---|
+| Top-1 | 5.4% | 6.8% | −1.4pp | Yes, v10 CI [3.1, 7.9] |
+| Top-5 | 21.8% | 21.2% | +0.6pp | Yes, v10 CI [17.8, 26.3] |
+| MRR | 0.140 | 0.146 | −0.006 | Yes |
+| Top-20 | 43.2% | — | — | — |
+
+**Aggregate is statistically indistinguishable from v7.** Baselines
+unchanged (random 0.57%, frequency 3.95%, heuristic 2.26% Top-5) —
+holdout difficulty is the same.
+
+### Feature-importance shift
+
+- `plays_this_run_count` landed at gain **3,350** (rank ~15 of 42) —
+  non-trivial; the model is using it.
+- `plays_last_12mo` **jumped 62,911** (v7: 16,935, 3.7×). With
+  `plays_this_run_count` present, the tree leans much harder on 12-mo
+  play rate as a complementary residency signal.
+- `bigram_prev_to_this` 401,862 (v7: 261,757) — still the dominant signal.
+- `is_first_in_set` 88,912 (≈v7). Run-geometry features
+  (`run_position` 560, `run_length_total` 1,405, `frac_run_remaining` 726)
+  stayed low — **the play-count feature is carrying the residency axis,
+  not geometry.**
+
+### Residency validation (the whole point of v10)
+
+Ran `phishpicker replay` v10-vs-v10 on Sphere Night 2 (show_id
+1764702334) and Night 3 (1764702381). Cross-checked top-3 predictions
+against prior-night setlists:
+
+- **Zero** Night-1 songs appeared in any Night-2 top-3 prediction (19 slots).
+- **Zero** Night-1 or Night-2 songs appeared in any Night-3 top-3
+  prediction (16 slots).
+
+`plays_this_run_count` is actively down-ranking prior-residency-night
+plays. This is the behavior v10 was built for, and it's working.
+
+### Per-case: Night 3 spot-check vs v7 published ranks
+
+| Song | v7 | v10 | Δ |
+|---|---|---|---|
+| Buried Alive (opener) | 5 | **1** | +4 ⬆️ |
+| Oblivion (set-2 opener) | 4 | **1** | +3 ⬆️ |
+| Tweezer Reprise (encore) | 7 | 12 | −5 ⬇️ |
+
+2-of-3 headline-song ranks improved dramatically. Tweezer Reprise
+regressed slightly but is still vastly better than pre-v7 (#109).
+
+### Per-show walk-forward (from training log, walk-forward folds)
+
+| Fold | Predicts | Slots | Top-1 | Top-5 |
+|---|---|---|---|---|
+| 18 | Night 2 (4/17) | 17 | 0.000 | 0.176 |
+| 19 | Night 3 (4/18) | 19 | 0.105 | 0.211 |
+| 20 | next-in-DB after Night 3 | 16 | 0.125 | 0.375 |
+
+Sphere shows are **easier than the aggregate** (Night 2 replay MRR 0.247,
+Night 3 replay MRR 0.390 vs aggregate 0.140) — unsurprising given the
+bigram structure Phish uses heavily on residency nights.
+
+### Mac mini cleanup (side quest)
+
+Mac mini was 14 commits behind origin/main with ~163 lines of orphaned
+uncommitted edits (experimental `days_since_debut` re-adds from an
+earlier session, superseded by shipped code). Everything stashed as
+`stash@{0}: mac-mini pre-v10-pull orphaned edits 2026-04-20`.
+
+**Untouched on Mac mini**: `wait_then_train_v2.sh`, `wait_then_train_v4.sh`
+(scratch training-wait helpers, captured in the stash). Drop the stash
+when you're sure those aren't needed.
+
+### Commits (all pushed; v10 family)
+
+| SHA | Summary |
 |---|---|
-| `b09e76a` | docs: v10 plan (`2026-04-20-residency-run-awareness.md`) |
-| `d31ff84` | **fix(stats): walk-until-venue-changes run detection.** |
-| `ec023a3` | **feat(train): plays_this_run_count replaces binary.** |
+| `6e09092` | docs: RESUME handoff — v10 run-detection fix + plays_this_run_count shipped |
+| `ec023a3` | **feat(train): v10 — plays_this_run_count replaces binary** |
+| `d31ff84` | **fix(stats): walk-until-venue-changes for run detection** |
+| `b09e76a` | docs: v10 plan — residency / run awareness |
+| `3eaa864` | docs: RESUME.md update for next session pickup |
 
-All pushed to origin/main.
+### NAS rollback command (one step)
 
-`d31ff84`:
-- `_find_run_start`/`_find_run_end` walk chronologically until venue
-  changes (intersected with `tour_id` when available). No threshold.
-- Handles arbitrary-length gaps — the Sphere run (and any residency
-  with mid-run off-blocks) is now correctly detected as one run.
-- **No retrain needed for this fix.** It changes values the v7 model
-  already consumes (`played_already_this_run`, `run_length_total`,
-  `run_position`, `frac_run_remaining`). Values now more accurate;
-  `played_already_this_run` firing correctly on Night 4+ is pure upside.
-- Tests: 2 new (Sphere gap, intermediate-venue break) + 1 renamed
-  old test (3-day-gap → supersedes), 204 tests pass.
-
-`ec023a3`:
-- Replaces binary `played_already_this_run` on FeatureRow with integer
-  `plays_this_run_count` (0, 1, 2, ...). `SongStats` keeps the binary
-  as a derived bool for the heuristic scorer; LightGBM gets the count.
-- **This is a schema-breaking change for LightGBM.** The
-  `assert_compatible_with` guard will refuse to load a v7 model against
-  v10 code. A retrain is required before deploying v10 code.
-- Tests: 2 new at stats layer, 1 new at feature-row layer, 207 tests pass.
-
-### Deploy state after this session
-
-- **NAS still serves v7** (unchanged — nothing deployed tonight).
-- **v10 code on origin/main**; Mac mini not pulled yet.
-- **Mac mini has untracked `scripts/post_train_eval.py`** blocking
-  `git pull`. Needs resolution before a v10 retrain:
-  ```bash
-  ssh mac-mini 'cd ~/phishpicker && git status'
-  # then either `git add` + commit the helper, or delete it if superseded
-  ```
-- **scp to Mac mini was permission-denied** in this session by the
-  deploy-safety rule — code must move via git. Fine; push is on origin.
+```bash
+ssh Murphy52@storage.local "cd '/home/Murphy52/docker/apps/phishpicker' && \
+  git reset --hard 77960a4a3fe739c4ed8234bdf08cdf933175c2f7 && \
+  cd data && cp model.lgb.prev-backup model.lgb && \
+  cp model.meta.json.prev-backup model.meta.json && \
+  cp metrics.json.prev-backup metrics.json && cd .. && \
+  docker compose build api && docker compose up -d api"
+```
 
 ## What's next
 
-### Immediate decision required: `run_saturation_pressure`
-
-Third proposed v10 feature. Formula:
-`(plays_last_12mo / shows_last_12mo) × (run_position − 1) − plays_this_run_count`.
-Positive = song overdue this run; negative = already used.
-
-**Arguments against**: LightGBM trees can learn this interaction from
-existing features (`plays_last_12mo`, `plays_this_run_count`, `run_position`)
-via sequential splits. Explicit engineering adds one SQL query per show
-and encodes a uniform-rate assumption that may not match Phish's actual
-dynamic (day-of-week patterns, themed nights, etc.).
-
-**Arguments for**: direct axis > composite splits on small training data
-for long residencies. Cheap to add; easy to drop in v11 if feature
-importance stays low.
-
-**David was deciding when session paused.** Two paths:
-- **Path A (add it)**: one more TDD cycle, then retrain v10.
-- **Path B (skip it)**: retrain v10 now with just run-detection fix +
-  `plays_this_run_count`. Add `run_saturation_pressure` in v11 if
-  Night 4-9 residency predictions still show "didn't save favorites"
-  misses.
-
-### Then: retrain v10 on Mac mini
-
-Once Mac mini `git pull` is unblocked:
-```bash
-ssh mac-mini 'cd ~/phishpicker/api && ~/.local/bin/uv run phishpicker train run --cutoff 2026-04-19'
-```
-(`2026-04-19` = day after Night 3 Sphere; keeps the residency itself
-out of training for a clean Night-4 replay.)
-
-Expect 3–4h based on v7 timing. Artifacts land at
-`~/phishpicker/api/data/{model.lgb, metrics.json, model.meta.json}`.
-
-### Then: deploy v10
-
-`bash scripts/deploy_to_nas.sh` — schema-mismatch check will pass now
-that code+model are both v10. NAS SSH window must be open.
-
-### Then: validation on live shows
+### Night 4 — first real-world v10 test
 
 | Date | Event |
 |---|---|
@@ -110,23 +122,40 @@ that code+model are both v10. NAS SSH window must be open.
 | Fri 2026-05-01 | Night 8 |
 | Sat 2026-05-02 | Night 9 |
 
-After each show, run `phishpicker nightly-smoke` to log ranks. Key
-metric: does `plays_this_run_count` correctly down-weight songs played
-on prior nights? (Should; it's strictly more info than the binary.)
+After each show, run `phishpicker nightly-smoke` to log actual-vs-predicted
+ranks. Key questions:
 
-## Session-3 preview run artifacts
+1. Does `plays_this_run_count` correctly down-weight songs played on
+   prior nights in live predictions? (Replay says yes; confirm in the wild.)
+2. Do Night 4-9 predictions show "didn't save favorites" misses (a song
+   that the model should predict but ranks low because it hasn't seen
+   similar-depth residencies in training)? If yes → v11 candidate:
+   `run_saturation_pressure`.
+3. Do high-frequency 12-mo songs that were *not* played early show up
+   correctly as the run progresses? (The v10 `plays_last_12mo` ×
+   `plays_this_run_count` interaction should handle this; this is the
+   implicit test of whether the tree-learned interaction beats an
+   explicit `run_saturation_pressure` feature.)
 
-The Night 4 preview logic is in `/tmp/preview_0423.py` on this local
-machine (not committed). Uses greedy top-1 per slot; applies a
-post-filter for residency repeats (which is now redundant with the
-run-detection fix). Re-run after v10 ships to confirm `Also Sprach`
-and other Night 1-3 songs drop organically.
+### v11 gating decision — defer unless Night 4-9 misses match pattern
 
-Phish DB show_ids used:
+`run_saturation_pressure = (plays_last_12mo / shows_last_12mo) ×
+(run_position − 1) − plays_this_run_count`. **Don't add unless** Night
+4-9 show the specific miss-pattern of "model under-ranks a 12-mo
+favorite that hasn't been played yet on this residency, and we can
+attribute the miss to lack of a direct overdue-axis feature."
+
+If instead the misses look like bustouts, surprise covers, or
+set-2-closer misses → those are separately queued experiments (see
+`docs/plans/v7-residual-analysis.md`).
+
+### Phish DB show_ids (for replay)
+
 - Night 1: 1764702178 (4/16)
 - Night 2: 1764702334 (4/17)
 - Night 3: 1764702381 (4/18)
 - Night 4: 1764702416 (4/23) — not yet ingested with setlist
+- Night 5 and beyond: not yet in DB
 
 ## Prior context (v7 baseline)
 
