@@ -22,7 +22,7 @@ import json
 import shutil
 import sqlite3
 from datetime import date as date_type
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from phishpicker.db.connection import open_db
@@ -74,7 +74,7 @@ def save_forward_sim(
             }
         )
     payload = {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "model_path": str(MODEL_PATH),
         "nights": nights,
     }

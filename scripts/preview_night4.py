@@ -18,7 +18,7 @@ SHOW_DATE for later nights.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from phishpicker.db.connection import open_db
@@ -43,7 +43,7 @@ def save_preview(picks: list[tuple[str, int, str]], label: str) -> Path:
     payload = {
         "show_date": SHOW_DATE,
         "venue_id": VENUE_ID,
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "model_path": str(MODEL_PATH),
         "pass": label,
         "picks": [

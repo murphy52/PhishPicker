@@ -56,8 +56,15 @@ def main() -> int:
 
     preview = load_preview(preview_path)
 
+    if not DB_PATH.exists():
+        print(
+            f"ERROR: DB not found at {DB_PATH}. "
+            f"Run `phishpicker ingest` first.",
+            file=sys.stderr,
+        )
+        return 2
     conn = open_db(DB_PATH, read_only=True)
-    actual = load_actual_setlist(conn, args.date)
+    actual = load_actual_setlist(conn, args.date, venue_id=preview.venue_id)
     if not actual:
         print(
             f"ERROR: no setlist for {args.date} in {DB_PATH}. "

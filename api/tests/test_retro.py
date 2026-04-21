@@ -103,6 +103,23 @@ def test_load_actual_setlist_missing_show_returns_empty() -> None:
     assert load_actual_setlist(conn, "1999-01-01") == []
 
 
+def test_load_actual_setlist_filters_by_venue_when_given() -> None:
+    conn = _make_db()
+    conn.executescript("""
+        INSERT INTO venues VALUES (1597, 'Sphere'), (42, 'Other');
+        INSERT INTO shows VALUES (9001, '2026-04-23', 1597);
+        INSERT INTO shows VALUES (9002, '2026-04-23', 42);
+        INSERT INTO songs VALUES (1, 'Buried Alive'), (2, 'Wrong Show');
+        INSERT INTO setlist_songs VALUES (9001, '1', 1, 1, ','), (9002, '1', 1, 2, ',');
+    """)
+    sphere = load_actual_setlist(conn, "2026-04-23", venue_id=1597)
+    assert len(sphere) == 1
+    assert sphere[0].name == "Buried Alive"
+
+    merged = load_actual_setlist(conn, "2026-04-23")  # no filter = merged
+    assert len(merged) == 2
+
+
 def test_load_smoke_record_finds_matching_date(tmp_path: Path) -> None:
     jsonl = tmp_path / "smoke.jsonl"
     rec1 = {
@@ -310,3 +327,6 @@ def test_render_markdown_contains_expected_sections() -> None:
     assert "## Where did the preview miss" in md
     assert "## Where did the preview over-commit" in md
     assert "| 1 | A | A |" in md
+    assert "## Rank of each actual song in the preview" in md
+    assert "| A | 1 |" in md
+    assert "| C | not predicted |" in md

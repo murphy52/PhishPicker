@@ -73,16 +73,25 @@ class Retro:
     actual_ranks_in_preview: dict[str, int | None] = field(default_factory=dict)
 
 
-def load_actual_setlist(conn: sqlite3.Connection, show_date: str) -> list[ActualSlot]:
+def load_actual_setlist(
+    conn: sqlite3.Connection,
+    show_date: str,
+    venue_id: int | None = None,
+) -> list[ActualSlot]:
+    where = "WHERE sh.show_date = ?"
+    params: list = [show_date]
+    if venue_id is not None:
+        where += " AND sh.venue_id = ?"
+        params.append(venue_id)
     rows = conn.execute(
-        """
+        f"""
         SELECT ss.set_number, ss.position, ss.song_id, s.name
         FROM shows sh
         JOIN setlist_songs ss USING (show_id)
         JOIN songs s USING (song_id)
-        WHERE sh.show_date = ?
+        {where}
         """,
-        (show_date,),
+        params,
     ).fetchall()
     rows = sorted(
         rows,
@@ -248,6 +257,15 @@ def render_markdown(retro: Retro) -> str:
             lines.append(f"- {name}")
     else:
         lines.append("- (none — every predicted song was played)")
+    lines.append("")
+
+    lines.append("## Rank of each actual song in the preview")
+    lines.append("")
+    lines.append("| Actual song | Preview rank |")
+    lines.append("|---|---|")
+    for name, rank in retro.actual_ranks_in_preview.items():
+        rank_str = str(rank) if rank is not None else "not predicted"
+        lines.append(f"| {name} | {rank_str} |")
     lines.append("")
 
     return "\n".join(lines) + "\n"
