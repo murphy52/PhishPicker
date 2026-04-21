@@ -530,6 +530,20 @@ def test_run_gap_of_2_days_is_still_same_run(conn):
     assert rows[0].run_position == 3
 
 
+def test_plays_this_run_count_populated_on_feature_row(conn):
+    """Song 1 (Chalk Dust) was played on show 1001 and 1002 (MSG, Oct 1-2).
+    For a live show 2023-10-03 MSG, plays_this_run_count should be 2."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2023-10-03",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].plays_this_run_count == 2
+
+
 def test_run_extends_across_long_gap_when_no_other_venue(conn):
     """Under walk-until-venue-changes: a 3-day gap between MSG shows (1002 on
     2023-10-02 and a live show on 2023-10-05) with no intermediate show at a

@@ -232,17 +232,18 @@ def compute_song_stats(
         for r in role_rows
     }
 
-    played_this_run: set[int] = set()
+    plays_this_run: dict[int, int] = {}
     if venue_id is not None:
         run_start = _find_run_start(conn, venue_id, show_date, tour_id=tour_id)
         if run_start < show_date:
-            played_this_run = {
-                r["song_id"]
+            plays_this_run = {
+                r["song_id"]: r["n"]
                 for r in conn.execute(
                     """
-                    SELECT DISTINCT ss.song_id FROM setlist_songs ss
+                    SELECT ss.song_id, COUNT(*) AS n FROM setlist_songs ss
                     JOIN shows s USING (show_id)
                     WHERE s.venue_id = ? AND s.show_date >= ? AND s.show_date < ?
+                    GROUP BY ss.song_id
                     """,
                     (venue_id, run_start, show_date),
                 ).fetchall()
@@ -261,7 +262,8 @@ def compute_song_stats(
             if last_anywhere
             else None,
             shows_since_last_played_here=shows_between(last_here) if last_here else None,
-            played_already_this_run=sid in played_this_run,
+            played_already_this_run=sid in plays_this_run,
+            plays_this_run_count=plays_this_run.get(sid, 0),
             opener_score=r["opener"],
             encore_score=r["encore"],
             middle_score=r["middle"],

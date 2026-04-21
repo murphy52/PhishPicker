@@ -13,6 +13,7 @@ class SongStats:
     opener_score: float  # expected [0.0, 1.0]
     encore_score: float  # expected [0.0, 1.0]
     middle_score: float  # expected [0.0, 1.0]
+    plays_this_run_count: int = 0
 
     def __post_init__(self) -> None:
         for name in ("opener_score", "encore_score", "middle_score"):

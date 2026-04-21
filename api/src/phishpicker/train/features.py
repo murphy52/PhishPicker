@@ -36,7 +36,7 @@ class FeatureRow:
     # 3. Venue & run
     times_at_venue: int = 0
     shows_since_last_at_venue: int = MISSING_INT
-    played_already_this_run: int = 0
+    plays_this_run_count: int = 0
     run_position: int = 1
     run_length_total: int = 1
     frac_run_remaining: float = 0.0

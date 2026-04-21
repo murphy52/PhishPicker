@@ -141,6 +141,50 @@ def test_run_extends_across_mid_residency_gap(conn: sqlite3.Connection) -> None:
     assert stats[100].played_already_this_run is True
 
 
+def test_plays_this_run_count_counts_repeated_plays(conn: sqlite3.Connection) -> None:
+    """Song played on two different nights of the same residency: count = 2.
+    Binary `played_already_this_run` can't distinguish a one-off repeat from
+    a Baker's-Dozen-style double-dip; the count feature can."""
+    _seed_venue(conn, 500)
+    _seed_tour(conn, 77)
+    _seed_song(conn, 100)
+
+    _seed_show(conn, 1, "2024-07-19", 500, 77)
+    _seed_show(conn, 2, "2024-07-20", 500, 77)
+    _seed_show(conn, 3, "2024-07-21", 500, 77)
+    _seed_show(conn, 4, "2024-07-22", 500, 77)  # live target
+
+    _seed_setlist_song(conn, 1, 100, set_number="1", position=1)
+    _seed_setlist_song(conn, 3, 100, set_number="2", position=3)  # played again
+
+    conn.commit()
+
+    stats = compute_song_stats(conn, "2024-07-22", 500, [100], tour_id=77)
+
+    assert stats[100].plays_this_run_count == 2
+    # Binary derivation still works for the heuristic path.
+    assert stats[100].played_already_this_run is True
+
+
+def test_plays_this_run_count_zero_for_never_played(
+    conn: sqlite3.Connection,
+) -> None:
+    """Song with no history this run returns count 0."""
+    _seed_venue(conn, 500)
+    _seed_tour(conn, 77)
+    _seed_song(conn, 100)
+
+    _seed_show(conn, 1, "2024-07-19", 500, 77)
+    _seed_show(conn, 2, "2024-07-20", 500, 77)
+
+    conn.commit()
+
+    stats = compute_song_stats(conn, "2024-07-20", 500, [100], tour_id=77)
+
+    assert stats[100].plays_this_run_count == 0
+    assert stats[100].played_already_this_run is False
+
+
 def test_run_stops_at_intermediate_show_at_different_venue(
     conn: sqlite3.Connection,
 ) -> None:

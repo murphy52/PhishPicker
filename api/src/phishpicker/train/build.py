@@ -124,7 +124,7 @@ def build_feature_rows(
             if s.shows_since_last_played_here is not None
             else MISSING_INT
         )
-        row.played_already_this_run = int(s.played_already_this_run)
+        row.plays_this_run_count = s.plays_this_run_count
         # opener_score / encore_score (from SongStats) are intentionally not
         # written to the FeatureRow — v8 dropped them from the LightGBM
         # schema as redundant with set1_opener_rate / encore_rate (extended
