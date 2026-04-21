@@ -2,7 +2,9 @@
 setlists + nightly-smoke JSONL. Pure-python library; the CLI in
 scripts/compare_prediction_to_actual.py is thin glue."""
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -66,3 +68,23 @@ class Retro:
     actual_only_songs: list[str] = field(default_factory=list)
     slot_matches: list[SlotMatch] = field(default_factory=list)
     actual_ranks_in_preview: dict[str, int | None] = field(default_factory=dict)
+
+
+def load_preview(path: Path) -> PreviewDoc:
+    raw = json.loads(path.read_text())
+    picks = [
+        PreviewPick(
+            slot_idx=p["slot_idx"],
+            set=p["set"],
+            song_id=p["song_id"],
+            name=p["name"],
+        )
+        for p in raw["picks"]
+    ]
+    return PreviewDoc(
+        show_date=raw["show_date"],
+        venue_id=raw.get("venue_id"),
+        generated_at=raw["generated_at"],
+        model_path=raw["model_path"],
+        picks=picks,
+    )
