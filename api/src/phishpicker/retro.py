@@ -119,6 +119,20 @@ def compare(
     preview_only = [n for n in preview_names if n not in actual_set]
     actual_only = [n for n in actual_names if n not in preview_set]
 
+    slot_matches: list[SlotMatch] = []
+    n = max(len(preview.picks), len(actual))
+    for i in range(n):
+        pred = preview.picks[i].name if i < len(preview.picks) else None
+        act = actual[i].name if i < len(actual) else None
+        slot_matches.append(
+            SlotMatch(
+                slot_idx=i + 1,
+                predicted=pred,
+                actual=act,
+                exact_match=(pred is not None and pred == act),
+            )
+        )
+
     return Retro(
         show_date=preview.show_date,
         venue=venue,
@@ -128,6 +142,7 @@ def compare(
         set_overlap_songs=overlap_ordered,
         preview_only_songs=preview_only,
         actual_only_songs=actual_only,
+        slot_matches=slot_matches,
     )
 
 

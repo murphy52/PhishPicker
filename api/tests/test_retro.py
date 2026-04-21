@@ -159,3 +159,48 @@ def test_compare_set_level_overlap() -> None:
     assert set(r.set_overlap_songs) == {"Buried Alive", "Oblivion"}
     assert r.preview_only_songs == ["Moma Dance"]
     assert r.actual_only_songs == ["Sample in a Jar"]
+
+
+def test_compare_slot_level_match() -> None:
+    preview = PreviewDoc(
+        show_date="2026-04-23",
+        venue_id=1,
+        generated_at="t",
+        model_path="p",
+        picks=[
+            PreviewPick(1, "SET 1", 1, "A"),
+            PreviewPick(2, "SET 1", 2, "B"),
+            PreviewPick(3, "SET 1", 3, "C"),
+        ],
+    )
+    actual = [
+        ActualSlot(1, "1", 1, 1, "A"),
+        ActualSlot(2, "1", 2, 99, "X"),
+        ActualSlot(3, "1", 3, 3, "C"),
+    ]
+    r = compare(preview, actual, smoke=None)
+    assert len(r.slot_matches) == 3
+    assert r.slot_matches[0].exact_match
+    assert not r.slot_matches[1].exact_match
+    assert r.slot_matches[2].exact_match
+    assert r.slot_matches[1].predicted == "B"
+    assert r.slot_matches[1].actual == "X"
+
+
+def test_compare_slot_mismatch_in_length() -> None:
+    preview = PreviewDoc(
+        show_date="2026-04-23",
+        venue_id=1,
+        generated_at="t",
+        model_path="p",
+        picks=[
+            PreviewPick(1, "SET 1", 1, "A"),
+            PreviewPick(2, "SET 1", 2, "B"),
+        ],
+    )
+    actual = [ActualSlot(1, "1", 1, 1, "A")]
+    r = compare(preview, actual, smoke=None)
+    assert len(r.slot_matches) == 2
+    assert r.slot_matches[1].predicted == "B"
+    assert r.slot_matches[1].actual is None
+    assert not r.slot_matches[1].exact_match
