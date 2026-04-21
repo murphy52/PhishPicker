@@ -1,5 +1,7 @@
 # data
-data/
+data/*
+# keep the previews/ subdir for ahead-of-show retro truth
+!data/previews/
 *.db
 *.db-journal
 *.db-wal

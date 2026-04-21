@@ -17,6 +17,8 @@ Hardcoded for the 2026 Sphere residency. Adapt RESIDENCY_SHOW_IDS +
 SHOW_DATE for later nights.
 """
 
+import json
+from datetime import datetime
 from pathlib import Path
 
 from phishpicker.db.connection import open_db
@@ -32,6 +34,25 @@ RESIDENCY_SHOW_IDS = (1764702178, 1764702334, 1764702381)
 MODEL_PATH = Path("data/model.lgb")
 READ_DB_PATH = Path("data/phishpicker.db")
 LIVE_DB_PATH = Path("data/live.db")
+PREVIEW_DIR = Path("data/previews")
+
+
+def save_preview(picks: list[tuple[str, int, str]], label: str) -> Path:
+    PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = PREVIEW_DIR / f"preview-{SHOW_DATE}.json"
+    payload = {
+        "show_date": SHOW_DATE,
+        "venue_id": VENUE_ID,
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "model_path": str(MODEL_PATH),
+        "pass": label,
+        "picks": [
+            {"slot_idx": i + 1, "set": set_label, "song_id": sid, "name": name}
+            for i, (set_label, sid, name) in enumerate(picks)
+        ],
+    }
+    out_path.write_text(json.dumps(payload, indent=2) + "\n")
+    return out_path
 
 
 def run_pass(label: str, apply_filter: bool, already_played: set[int]) -> list[tuple[str, int, str]]:
@@ -80,6 +101,8 @@ def main() -> None:
     read.close()
 
     picks_raw = run_pass("RAW", apply_filter=False, already_played=already_played)
+    saved = save_preview(picks_raw, "RAW")
+    print(f"\nSaved preview JSON: {saved}")
     print("\n" + "=" * 70 + "\n")
     picks_filt = run_pass("FILTERED", apply_filter=True, already_played=already_played)
 
