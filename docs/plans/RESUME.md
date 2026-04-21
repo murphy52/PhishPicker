@@ -77,6 +77,80 @@ Sphere shows are **easier than the aggregate** (Night 2 replay MRR 0.247,
 Night 3 replay MRR 0.390 vs aggregate 0.140) — unsurprising given the
 bigram structure Phish uses heavily on residency nights.
 
+### Post-deploy exploration (same session)
+
+After shipping, ran three follow-up tests that sharpened our understanding
+of v10's residency behavior.
+
+#### 1. Night 4 preview — `scripts/preview_night4.py` (commit `a9aec79`)
+
+Runs two passes: RAW (no residency filter) and FILTERED (post-filter
+songs played Nights 1-3). If `plays_this_run_count` is doing its job,
+the outputs match. **Result: raw == filtered, zero residency repeats.**
+All 52 Nights-1-3 songs are organically suppressed. The v7-era bug
+("Also Sprach Zarathustra" predicted for Night 4 despite being played
+Night 1) is gone.
+
+#### 2. 6-night forward simulation — `scripts/preview_residency.py` (commit `e10dda4`)
+
+Forward-simulates Nights 4-9 by writing each night's predicted setlist
+back to a scratch DB copy so the next night's feature builder sees it.
+**Result: 0 residency repeats across all 6 nights.** v10 front-loads
+A-list into N4-6 (Moma Dance, Stash, Sand, Chalk Dust Torture, Slave to
+the Traffic Light) and reaches into deeper catalog by N7-9 (Runaway Jim,
+NICU, Cars Trucks Buses, Llama). "Deplete A-list early, then B-list"
+rather than "evenly spread A-list across the run." Whether this matches
+Phish's actual pacing is an open question until Thursday.
+
+#### 3. Historical residency leak test — `scripts/historical_residency_leak_test.py` + `leak_debug_bakers_dozen.py` (commit `7cb2159`)
+
+Picked the last night of three historical residencies, counted how many
+top-K candidates per slot were played on earlier nights of the same run.
+
+| Residency | Prior nights | Top-3 leak | Top-10 leak | Actual MRR |
+|---|---|---|---|---|
+| Moon Palace 2026-01 (5 nights) | 4 | **0.0%** | **0.0%** | 0.120 |
+| Moon Palace 2024-02 (5 nights) | 4 | **0.0%** | 0.5% | 0.154 |
+| **Baker's Dozen 2017 MSG (13 nights)** | **12** | **10.0%** | **23.0%** | 0.088 |
+
+**Baker's Dozen leaks heavily.** Feature-value debug at the worst slot
+confirmed run detection works correctly (`plays_this_run_count=1` for
+every prior-played song, `run_position=13`, `run_length_total=13`). The
+issue is **signal weight, not detection**: `plays_this_run_count=1` can't
+distinguish "1x in 3-night run" (loose constraint) from "1x in 13-night
+run" (strict constraint), so the model's learned suppression is
+calibrated to the common short-residency case and gets overwhelmed by
+`plays_last_12mo` and bigram completion at long runs.
+
+**Diagnosis converts `run_saturation_pressure` from "maybe" to
+"mechanically motivated" for v11.** The formula
+`(plays_last_12mo / shows_last_12mo) × (run_position − 1) − plays_this_run_count`
+provides a direct scaling axis: at run_position=13, a 12-mo favorite
+with plays_this_run_count=1 becomes strongly overdue-negative (expected
+~8, actual 1); at run_position=2, the same value is only mildly
+negative.
+
+**For Sphere (max 8 prior nights by N9):** expect clean top-1 picks
+(confident bigram/slot-type signals dominate) and growing top-10 leaks
+as the run progresses. Not catastrophic but observable.
+
+### Nightly-smoke cron (same session)
+
+Installed on Mac mini: `0 12 * * *` runs `phishpicker nightly-smoke`
+daily at noon EDT, defaulting to "yesterday UTC". Logs to
+`~/phishpicker-smoke.log`; JSONL at
+`~/phishpicker/api/data/nightly-predictions.jsonl`.
+
+Nights 1-3 backfilled into the JSONL as pre-Sphere baseline:
+
+| Date | Show | Slots | Median rank | Top-1 | Top-5 |
+|---|---|---|---|---|---|
+| 2026-04-16 | Night 1 Sphere | 17 | 7 | 3/17 | 7/17 |
+| 2026-04-17 | Night 2 Sphere | 19 | 20 | 3/19 | 7/19 |
+| 2026-04-18 | Night 3 Sphere | 16 | 6 | 5/16 | 8/16 |
+
+Thursday's Night 4 will auto-log at 12pm EDT Friday.
+
 ### Mac mini cleanup (side quest)
 
 Mac mini was 14 commits behind origin/main with ~163 lines of orphaned
@@ -88,10 +162,14 @@ earlier session, superseded by shipped code). Everything stashed as
 (scratch training-wait helpers, captured in the stash). Drop the stash
 when you're sure those aren't needed.
 
-### Commits (all pushed; v10 family)
+### Commits (all pushed; v10 family + post-deploy exploration)
 
 | SHA | Summary |
 |---|---|
+| `7cb2159` | **feat(scripts): historical residency leak test + plays_this_run_count debug** |
+| `e10dda4` | feat(scripts): preview_residency — 6-night forward simulation N4-N9 |
+| `a9aec79` | feat(scripts): preview_night4 — with/without residency filter |
+| `a6875cf` | docs: RESUME — v10 shipped to NAS, headline metrics + residency validation |
 | `6e09092` | docs: RESUME handoff — v10 run-detection fix + plays_this_run_count shipped |
 | `ec023a3` | **feat(train): v10 — plays_this_run_count replaces binary** |
 | `d31ff84` | **fix(stats): walk-until-venue-changes for run detection** |
@@ -122,32 +200,36 @@ ssh Murphy52@storage.local "cd '/home/Murphy52/docker/apps/phishpicker' && \
 | Fri 2026-05-01 | Night 8 |
 | Sat 2026-05-02 | Night 9 |
 
-After each show, run `phishpicker nightly-smoke` to log actual-vs-predicted
-ranks. Key questions:
+The nightly-smoke cron (see above) auto-captures each show. Key
+questions to answer from the accumulating JSONL:
 
-1. Does `plays_this_run_count` correctly down-weight songs played on
-   prior nights in live predictions? (Replay says yes; confirm in the wild.)
-2. Do Night 4-9 predictions show "didn't save favorites" misses (a song
-   that the model should predict but ranks low because it hasn't seen
-   similar-depth residencies in training)? If yes → v11 candidate:
-   `run_saturation_pressure`.
-3. Do high-frequency 12-mo songs that were *not* played early show up
-   correctly as the run progresses? (The v10 `plays_last_12mo` ×
-   `plays_this_run_count` interaction should handle this; this is the
-   implicit test of whether the tree-learned interaction beats an
-   explicit `run_saturation_pressure` feature.)
+1. Does v10's front-loaded A-list pacing match reality, or does Phish
+   save favorites for later? (Simulation front-loaded Moma Dance/Stash
+   into N4; if real N4 plays them, pacing call was right.)
+2. By Night 9, do we see top-10 leak growth matching the Baker's Dozen
+   diagnosis (23% leak at 12 priors extrapolates to some-nonzero leak
+   at 8 priors)? This validates the v11 motivation empirically.
+3. Do the per-case winners generalize (Buried-Alive-#1-style wins) to
+   Night 4+ predictions, or was Night 3's spot-check lucky?
 
-### v11 gating decision — defer unless Night 4-9 misses match pattern
+### v11 plan — post-Sphere, bundle `run_saturation_pressure` + v9 queue
 
-`run_saturation_pressure = (plays_last_12mo / shows_last_12mo) ×
-(run_position − 1) − plays_this_run_count`. **Don't add unless** Night
-4-9 show the specific miss-pattern of "model under-ranks a 12-mo
-favorite that hasn't been played yet on this residency, and we can
-attribute the miss to lack of a direct overdue-axis feature."
+The Baker's Dozen test upgraded `run_saturation_pressure` from
+"speculative" to **mechanically motivated** (see Post-deploy
+exploration above). v11 candidate feature list:
 
-If instead the misses look like bustouts, surprise covers, or
-set-2-closer misses → those are separately queued experiments (see
-`docs/plans/v7-residual-analysis.md`).
+1. **`run_saturation_pressure`** — `(plays_last_12mo / shows_last_12mo)
+   × (run_position − 1) − plays_this_run_count`. Addresses long-run
+   signal-weight degradation diagnosed today. Cost: one SQL query per
+   show.
+2. **`slots_into_current_set`** — 1-indexed position within current set
+   (not global slot number). Addresses v7-residual-analysis set-2
+   closer misses (Antelope tied for #1 set-2 closer but v7 ranked it
+   #92). See `docs/plans/v7-residual-analysis.md`.
+
+Both are cheap TDD + walk-forward cycles. Target retrain after Sphere
+residency concludes (post 2026-05-02), using Night 4-9 outcomes as the
+validation signal.
 
 ### Phish DB show_ids (for replay)
 
