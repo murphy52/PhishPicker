@@ -16,6 +16,7 @@ from phishpicker.retro import (
     SmokeSlotRank,
     load_actual_setlist,
     load_preview,
+    load_smoke_record,
 )
 
 
@@ -96,3 +97,41 @@ def test_load_actual_setlist_returns_slots_in_order() -> None:
 def test_load_actual_setlist_missing_show_returns_empty() -> None:
     conn = _make_db()
     assert load_actual_setlist(conn, "1999-01-01") == []
+
+
+def test_load_smoke_record_finds_matching_date(tmp_path: Path) -> None:
+    jsonl = tmp_path / "smoke.jsonl"
+    rec1 = {
+        "date": "2026-04-16",
+        "show_id": 1,
+        "venue": "Sphere",
+        "slots": [{"slot": 1, "actual_song": "Sample in a Jar", "actual_rank": 7}],
+    }
+    rec2 = {
+        "date": "2026-04-23",
+        "show_id": 2,
+        "venue": "Sphere",
+        "slots": [
+            {"slot": 1, "actual_song": "Buried Alive", "actual_rank": 1},
+            {"slot": 2, "actual_song": "Moma Dance", "actual_rank": 4},
+        ],
+    }
+    jsonl.write_text(json.dumps(rec1) + "\n" + json.dumps(rec2) + "\n")
+
+    rec = load_smoke_record(jsonl, "2026-04-23")
+    assert rec is not None
+    assert rec.show_id == 2
+    assert len(rec.slots) == 2
+    assert rec.slots[0].actual_rank == 1
+
+
+def test_load_smoke_record_missing_date_returns_none(tmp_path: Path) -> None:
+    jsonl = tmp_path / "smoke.jsonl"
+    jsonl.write_text(
+        json.dumps({"date": "2025-01-01", "show_id": 1, "venue": "x", "slots": []}) + "\n"
+    )
+    assert load_smoke_record(jsonl, "2026-04-23") is None
+
+
+def test_load_smoke_record_missing_file_returns_none(tmp_path: Path) -> None:
+    assert load_smoke_record(tmp_path / "nope.jsonl", "2026-04-23") is None

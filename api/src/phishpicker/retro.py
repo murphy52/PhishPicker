@@ -100,6 +100,35 @@ def load_actual_setlist(conn: sqlite3.Connection, show_date: str) -> list[Actual
     ]
 
 
+def load_smoke_record(jsonl_path: Path, date: str) -> SmokeRecord | None:
+    if not jsonl_path.exists():
+        return None
+    for line in jsonl_path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("date") == date:
+            slots = [
+                SmokeSlotRank(
+                    slot=s["slot"],
+                    actual_song=s["actual_song"],
+                    actual_rank=s.get("actual_rank"),
+                )
+                for s in rec.get("slots", [])
+            ]
+            return SmokeRecord(
+                date=rec["date"],
+                show_id=rec["show_id"],
+                venue=rec.get("venue", ""),
+                slots=slots,
+            )
+    return None
+
+
 def load_preview(path: Path) -> PreviewDoc:
     raw = json.loads(path.read_text())
     picks = [
