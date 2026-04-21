@@ -88,9 +88,14 @@ def test_compute_song_stats_live_run(conn: sqlite3.Connection) -> None:
     assert stats[100].shows_since_last_played_anywhere == 2
 
 
-def test_compute_song_stats_breaks_run_on_day_gap(conn: sqlite3.Connection) -> None:
-    """A 3-day gap between Jul 19 and Jul 22 means they are NOT the same run.
-    Song played Jul 19 should NOT count as played_already_this_run for Jul 22."""
+def test_run_extends_across_gap_when_no_intermediate_show(
+    conn: sqlite3.Connection,
+) -> None:
+    """A 3-day gap between two same-venue shows with NO intermediate show at
+    any other venue is still one run (walk-until-venue-changes semantics).
+
+    Supersedes the prior gap-based rule (_RUN_MAX_GAP_DAYS=2) which would have
+    considered these two shows separate runs."""
     _seed_venue(conn, 500)
     _seed_tour(conn, 77)
     _seed_song(conn, 100)
@@ -104,7 +109,62 @@ def test_compute_song_stats_breaks_run_on_day_gap(conn: sqlite3.Connection) -> N
 
     conn.commit()
 
-    stats = compute_song_stats(conn, "2024-07-22", 500, [100])
+    stats = compute_song_stats(conn, "2024-07-22", 500, [100], tour_id=77)
+
+    assert stats[100].played_already_this_run is True
+
+
+def test_run_extends_across_mid_residency_gap(conn: sqlite3.Connection) -> None:
+    """Sphere-style residency: 4-day mid-residency gap with NO intermediate show
+    at any other venue. Under the walk-until-venue-changes rule, nights on
+    either side of the gap are still the same run, so a song played Night 1
+    must be flagged `played_already_this_run` on Night 4.
+
+    Scenario mirrors real Sphere 2026-04-16 (Night 1) and 2026-04-23 (Night 4),
+    where v7 failed to flag `Also Sprach Zarathustra` as already played.
+    """
+    _seed_venue(conn, 500)
+    _seed_tour(conn, 77)
+    _seed_song(conn, 100)
+
+    _seed_show(conn, 1, "2024-07-16", 500, 77)
+    _seed_show(conn, 2, "2024-07-17", 500, 77)
+    _seed_show(conn, 3, "2024-07-18", 500, 77)
+    _seed_show(conn, 4, "2024-07-23", 500, 77)  # live target, 4-day gap
+
+    _seed_setlist_song(conn, 1, 100)  # played Night 1
+
+    conn.commit()
+
+    stats = compute_song_stats(conn, "2024-07-23", 500, [100], tour_id=77)
+
+    assert stats[100].played_already_this_run is True
+
+
+def test_run_stops_at_intermediate_show_at_different_venue(
+    conn: sqlite3.Connection,
+) -> None:
+    """If Phish plays elsewhere between two same-venue shows, the later show
+    starts a new run. Guards the walk from gluing unrelated residencies
+    together."""
+    _seed_venue(conn, 500)
+    _seed_tour(conn, 77)
+    _seed_song(conn, 100)
+    # Second venue for the intermediate away show
+    conn.execute(
+        "INSERT INTO venues (venue_id, name, city, state, country) VALUES (?, ?, ?, ?, ?)",
+        (600, "Hampton", "Hampton", "VA", "USA"),
+    )
+
+    _seed_show(conn, 1, "2024-07-19", 500, 77)  # MSG
+    _seed_show(conn, 2, "2024-07-21", 600, 77)  # away show at Hampton
+    _seed_show(conn, 3, "2024-07-23", 500, 77)  # back at MSG — new run
+
+    _seed_setlist_song(conn, 1, 100)  # played at venue 500 on Jul 19
+
+    conn.commit()
+
+    stats = compute_song_stats(conn, "2024-07-23", 500, [100], tour_id=77)
 
     assert stats[100].played_already_this_run is False
 

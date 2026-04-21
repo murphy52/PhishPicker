@@ -1,10 +1,7 @@
 import bisect
 import sqlite3
-from datetime import date, timedelta
 
 from phishpicker.model.heuristic import SongStats
-
-_RUN_MAX_GAP_DAYS = 2  # one off-night is still "the same run"
 
 
 def _find_run_start(
@@ -13,36 +10,39 @@ def _find_run_start(
     show_date: str,
     tour_id: int | None = None,
 ) -> str:
-    """Walk backwards to find the earliest show of the current multi-night run.
+    """Walk backwards through scheduled shows until the venue changes.
 
-    Relaxed from the original gap=1 rule to gap≤2 (one off-night tolerated)
-    AND, when `tour_id` is supplied, constrained to the same tour. This makes
-    residencies like Phish's 9-show Sphere run (which always contains off-
-    nights between weekends) register as a single run so `played_already_this_run`
-    correctly excludes everything played earlier in the residency.
+    A run is an unbroken chronological sequence of shows at the same venue.
+    Any-length gap is tolerated so long as no other venue appears in between
+    — this correctly spans residencies like Phish's 9-show Sphere run that
+    contain multi-day off-blocks between weekends.
+
+    When `tour_id` is supplied, the walk is constrained to the same tour:
+    two same-venue runs separated by a different tour are not glued together
+    (e.g. spring and fall Hampton stands).
     """
     if venue_id is None:
         return show_date
-    cur = date.fromisoformat(show_date)
+    start = show_date
+    cur = show_date
     while True:
-        window_start = cur - timedelta(days=_RUN_MAX_GAP_DAYS)
         if tour_id is not None:
             row = conn.execute(
-                "SELECT MAX(show_date) FROM shows "
-                "WHERE venue_id = ? AND tour_id = ? "
-                "AND show_date >= ? AND show_date < ?",
-                (venue_id, tour_id, window_start.isoformat(), cur.isoformat()),
+                "SELECT show_date, venue_id FROM shows "
+                "WHERE show_date < ? AND tour_id = ? "
+                "ORDER BY show_date DESC LIMIT 1",
+                (cur, tour_id),
             ).fetchone()
         else:
             row = conn.execute(
-                "SELECT MAX(show_date) FROM shows "
-                "WHERE venue_id = ? AND show_date >= ? AND show_date < ?",
-                (venue_id, window_start.isoformat(), cur.isoformat()),
+                "SELECT show_date, venue_id FROM shows "
+                "WHERE show_date < ? ORDER BY show_date DESC LIMIT 1",
+                (cur,),
             ).fetchone()
-        prior_date = row[0] if row else None
-        if not prior_date:
-            return cur.isoformat()
-        cur = date.fromisoformat(prior_date)
+        if not row or row["venue_id"] != venue_id:
+            return start
+        start = row["show_date"]
+        cur = row["show_date"]
 
 
 def _find_run_end(
@@ -51,7 +51,8 @@ def _find_run_end(
     show_date: str,
     tour_id: int | None = None,
 ) -> str:
-    """Forward analog of `_find_run_start`: the latest scheduled show of this run.
+    """Forward analog of `_find_run_start`: walks forward through scheduled
+    shows until the venue changes.
 
     Relies on phish.net future-show placeholders being ingested (they are —
     `/shows.json` returns future shows with no setlist). For live predictions
@@ -59,26 +60,26 @@ def _find_run_end(
     """
     if venue_id is None:
         return show_date
-    cur = date.fromisoformat(show_date)
+    end = show_date
+    cur = show_date
     while True:
-        window_end = cur + timedelta(days=_RUN_MAX_GAP_DAYS)
         if tour_id is not None:
             row = conn.execute(
-                "SELECT MIN(show_date) FROM shows "
-                "WHERE venue_id = ? AND tour_id = ? "
-                "AND show_date > ? AND show_date <= ?",
-                (venue_id, tour_id, cur.isoformat(), window_end.isoformat()),
+                "SELECT show_date, venue_id FROM shows "
+                "WHERE show_date > ? AND tour_id = ? "
+                "ORDER BY show_date ASC LIMIT 1",
+                (cur, tour_id),
             ).fetchone()
         else:
             row = conn.execute(
-                "SELECT MIN(show_date) FROM shows "
-                "WHERE venue_id = ? AND show_date > ? AND show_date <= ?",
-                (venue_id, cur.isoformat(), window_end.isoformat()),
+                "SELECT show_date, venue_id FROM shows "
+                "WHERE show_date > ? ORDER BY show_date ASC LIMIT 1",
+                (cur,),
             ).fetchone()
-        next_date = row[0] if row else None
-        if not next_date:
-            return cur.isoformat()
-        cur = date.fromisoformat(next_date)
+        if not row or row["venue_id"] != venue_id:
+            return end
+        end = row["show_date"]
+        cur = row["show_date"]
 
 
 def find_run_bounds(

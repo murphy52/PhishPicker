@@ -530,9 +530,32 @@ def test_run_gap_of_2_days_is_still_same_run(conn):
     assert rows[0].run_position == 3
 
 
-def test_run_gap_of_3_days_breaks_the_run(conn):
-    """A 3-day gap is beyond the relaxed threshold; the live show starts a
-    new run (run_length=1)."""
+def test_run_extends_across_long_gap_when_no_other_venue(conn):
+    """Under walk-until-venue-changes: a 3-day gap between MSG shows (1002 on
+    2023-10-02 and a live show on 2023-10-05) with no intermediate show at a
+    different venue is still one run. Supersedes the old gap-threshold rule."""
+    rows = build_feature_rows(
+        conn,
+        show_date="2023-10-05",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].run_length_total == 3
+    assert rows[0].run_position == 3
+
+
+def test_run_breaks_when_intermediate_show_at_different_venue(conn, tmp_path):
+    """If there's an intermediate show at a different venue between two
+    same-venue shows, the second is a new run. Guards against gluing unrelated
+    residencies together."""
+    # Add an intermediate Hampton show between 1002 (Oct 2) and a live 10/05.
+    conn.execute(
+        """INSERT INTO shows (show_id, show_date, venue_id, tour_id, run_position, run_length, tour_position, fetched_at)
+           VALUES (1999, '2023-10-04', 101, 10, 1, 1, 3, '2023-10-05')"""
+    )
+    conn.commit()
     rows = build_feature_rows(
         conn,
         show_date="2023-10-05",
