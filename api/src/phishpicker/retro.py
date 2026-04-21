@@ -169,6 +169,34 @@ def smoke_rank_summary(smoke: SmokeRecord | None) -> dict | None:
     }
 
 
+def render_stdout_summary(retro: Retro) -> str:
+    lines: list[str] = []
+    lines.append(f"=== Retro — {retro.show_date} {retro.venue} ===")
+    lines.append(
+        f"Preview picks: {len(retro.preview_picks)}  "
+        f"Actual slots: {len(retro.actual_slots)}"
+    )
+    lines.append(
+        f"Set-level overlap: {len(retro.set_overlap_songs)} songs "
+        f"({len(retro.set_overlap_songs)}/{len(retro.preview_picks)} of preview)"
+    )
+    exact = sum(1 for m in retro.slot_matches if m.exact_match)
+    lines.append(f"Slot-level exact matches: {exact}/{len(retro.slot_matches)}")
+
+    smoke_summary = smoke_rank_summary(retro.smoke)
+    if smoke_summary is None:
+        lines.append("Nightly-smoke: (no record for this date)")
+    else:
+        n = smoke_summary["n_ranked"]
+        lines.append(
+            f"Nightly-smoke: Top-1 {smoke_summary['top1']}/{n} · "
+            f"Top-5 {smoke_summary['top5']}/{n} · "
+            f"Top-10 {smoke_summary['top10']}/{n} · "
+            f"median rank {smoke_summary['median']}"
+        )
+    return "\n".join(lines)
+
+
 def load_smoke_record(jsonl_path: Path, date: str) -> SmokeRecord | None:
     if not jsonl_path.exists():
         return None

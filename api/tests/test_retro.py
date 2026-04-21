@@ -18,6 +18,7 @@ from phishpicker.retro import (
     load_actual_setlist,
     load_preview,
     load_smoke_record,
+    render_stdout_summary,
     smoke_rank_summary,
 )
 
@@ -251,3 +252,40 @@ def test_smoke_rank_summary() -> None:
 
 def test_smoke_rank_summary_none_input() -> None:
     assert smoke_rank_summary(None) is None
+
+
+def test_render_stdout_summary_basic() -> None:
+    preview = PreviewDoc(
+        show_date="2026-04-23",
+        venue_id=1,
+        generated_at="t",
+        model_path="p",
+        picks=[PreviewPick(1, "SET 1", 1, "A"), PreviewPick(2, "SET 1", 2, "B")],
+    )
+    actual = [ActualSlot(1, "1", 1, 1, "A"), ActualSlot(2, "1", 2, 99, "C")]
+    smoke = SmokeRecord(
+        date="2026-04-23",
+        show_id=1,
+        venue="Sphere",
+        slots=[SmokeSlotRank(1, "A", 1), SmokeSlotRank(2, "C", 12)],
+    )
+    r = compare(preview, actual, smoke, venue="Sphere")
+    out = render_stdout_summary(r)
+    assert "2026-04-23" in out
+    assert "Sphere" in out
+    assert "Top-1" in out
+
+
+def test_render_stdout_summary_without_smoke() -> None:
+    preview = PreviewDoc(
+        show_date="2026-04-23",
+        venue_id=1,
+        generated_at="t",
+        model_path="p",
+        picks=[PreviewPick(1, "SET 1", 1, "A")],
+    )
+    actual = [ActualSlot(1, "1", 1, 1, "A")]
+    r = compare(preview, actual, smoke=None, venue="Sphere")
+    out = render_stdout_summary(r)
+    assert out
+    assert "smoke" in out.lower() or "nightly" in out.lower()
