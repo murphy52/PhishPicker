@@ -27,12 +27,18 @@ vs v5. Per-case ranks all improved. Ready to ship to NAS.
 
 ## Pending actions
 
-- **Push** local commits to GitHub (3 unpushed: v6 revert, RESUME update,
-  feat slot-type flags, post-train eval harness, results doc — though only
-  feat ones really need pushing)
-- **Ship v7 to NAS** when SSH window is open. Ship-gate already passed.
-- **Do not start v8 until v7 is shipped** — we want production parity with
-  what we're measuring.
+- ✅ **Pushed** — 4 commits on origin/main (ee53da8, 2632ef6, e746975, b630159).
+- ⏳ **Ship v7 to NAS** — artifacts staged at `/tmp/v7/` locally; NAS SSH
+  window was closed as of evening 4/20. Open it, then run:
+    ```bash
+    bash scripts/ship_v7_to_nas.sh
+    ```
+  The script backs up the current v5 as `*.v5-backup` (idempotent), uploads
+  v7 under `.new` names, atomic-renames, and restarts the API container.
+  Rollback instructions are in the script's header.
+- 🛑 **Hold on v8 cleanup** (segue_mark_in/is_cover bug fixes + dead-feature
+  drops) until v7 has been observed in production for a bit. We want to
+  attribute any shifted behavior cleanly.
 
 ## Commits in this session (most recent first)
 
