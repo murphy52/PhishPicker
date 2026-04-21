@@ -119,6 +119,11 @@ def compare(
     preview_only = [n for n in preview_names if n not in actual_set]
     actual_only = [n for n in actual_names if n not in preview_set]
 
+    preview_name_to_rank = {p.name: p.slot_idx for p in preview.picks}
+    actual_ranks_in_preview: dict[str, int | None] = {
+        a.name: preview_name_to_rank.get(a.name) for a in actual
+    }
+
     slot_matches: list[SlotMatch] = []
     n = max(len(preview.picks), len(actual))
     for i in range(n):
@@ -143,6 +148,7 @@ def compare(
         preview_only_songs=preview_only,
         actual_only_songs=actual_only,
         slot_matches=slot_matches,
+        actual_ranks_in_preview=actual_ranks_in_preview,
     )
 
 

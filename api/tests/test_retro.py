@@ -187,6 +187,27 @@ def test_compare_slot_level_match() -> None:
     assert r.slot_matches[1].actual == "X"
 
 
+def test_compare_rank_of_actual_in_preview() -> None:
+    preview = PreviewDoc(
+        show_date="2026-04-23",
+        venue_id=1,
+        generated_at="t",
+        model_path="p",
+        picks=[
+            PreviewPick(1, "SET 1", 1, "A"),
+            PreviewPick(2, "SET 1", 2, "B"),
+            PreviewPick(3, "SET 1", 3, "C"),
+        ],
+    )
+    actual = [
+        ActualSlot(1, "1", 1, 3, "C"),
+        ActualSlot(2, "1", 2, 99, "X"),
+    ]
+    r = compare(preview, actual, smoke=None)
+    assert r.actual_ranks_in_preview["C"] == 3
+    assert r.actual_ranks_in_preview["X"] is None
+
+
 def test_compare_slot_mismatch_in_length() -> None:
     preview = PreviewDoc(
         show_date="2026-04-23",
