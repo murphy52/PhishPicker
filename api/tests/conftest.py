@@ -12,6 +12,19 @@ def fixtures_dir() -> Path:
 
 
 @pytest.fixture
+def live_conn(tmp_path):
+    """In-memory-like live DB on tmp_path; schema applied."""
+    from phishpicker.db.connection import apply_live_schema, open_db
+
+    conn = open_db(tmp_path / "live.db")
+    apply_live_schema(conn)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@pytest.fixture
 def seeded_client(tmp_path, monkeypatch, fixtures_dir) -> Iterator[TestClient]:
     """Fresh DB + live DB, seeded with a small deterministic set of shows/songs,
     wrapped in a TestClient that fires the FastAPI lifespan (`with ... as client`).

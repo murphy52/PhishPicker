@@ -4,6 +4,12 @@ from datetime import UTC, datetime
 
 
 def create_live_show(conn: sqlite3.Connection, show_date: str, venue_id: int | None) -> str:
+    existing = conn.execute(
+        "SELECT show_id FROM live_show WHERE show_date = ? ORDER BY started_at DESC LIMIT 1",
+        (show_date,),
+    ).fetchone()
+    if existing:
+        return existing["show_id"]
     show_id = str(uuid.uuid4())
     now = datetime.now(UTC).isoformat()
     conn.execute(
