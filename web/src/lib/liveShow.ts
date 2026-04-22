@@ -16,6 +16,7 @@ export function useLiveShow() {
 
   useEffect(() => {
     const stored = localStorage.getItem(LS_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot SSR-safe localStorage hydration
     if (stored) setShowId(stored);
   }, []);
 

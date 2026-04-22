@@ -1,6 +1,6 @@
 "use client";
 
-const SET_SEQUENCE: Record<string, string> = { "1": "2", "2": "e", e: "e" };
+const SET_SEQUENCE: Record<string, string> = { "1": "2", "2": "E" };
 
 interface Props {
   currentSet: string;
@@ -8,7 +8,8 @@ interface Props {
 }
 
 export function SetBoundaryButton({ currentSet, onAdvance }: Props) {
-  const nextSet = SET_SEQUENCE[currentSet] ?? "2";
+  const nextSet = SET_SEQUENCE[currentSet];
+  if (!nextSet) return null;
 
   return (
     <button
@@ -16,7 +17,7 @@ export function SetBoundaryButton({ currentSet, onAdvance }: Props) {
       onClick={() => onAdvance(nextSet)}
       className="px-4 py-2 rounded bg-neutral-800 text-neutral-300 text-sm"
     >
-      Set {currentSet} → advance to {nextSet === "e" ? "Encore" : `Set ${nextSet}`}
+      Set {currentSet} → advance to {nextSet === "E" ? "Encore" : `Set ${nextSet}`}
     </button>
   );
 }
