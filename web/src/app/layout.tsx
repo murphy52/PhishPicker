@@ -15,6 +15,17 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Phishpicker",
   description: "Real-time Phish setlist prediction",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Phishpicker",
+    // black-translucent lets the status bar float over our dark bg rather
+    // than eat a band for the clock; matches the full-bleed app look.
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 // viewportFit=cover extends layout under the iOS safe areas; themeColor
