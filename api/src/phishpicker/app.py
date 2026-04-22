@@ -237,6 +237,28 @@ def create_app() -> FastAPI:
             scorer=request.app.state.scorer,
         )
 
+    @app.get("/live/show/{show_id}/slot/{slot_idx}/alternatives")
+    def slot_alternatives(
+        show_id: str,
+        slot_idx: int,
+        request: Request,
+        top_k: int = 10,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.live_preview import build_preview
+
+        pr = build_preview(
+            read_conn=read,
+            live_conn=live,
+            show_id=show_id,
+            top_k=top_k,
+            scorer=request.app.state.scorer,
+        )
+        if slot_idx < 1 or slot_idx > len(pr["slots"]):
+            raise HTTPException(404, "slot out of range")
+        return pr["slots"][slot_idx - 1]
+
     @app.get("/predict/{show_id}")
     def predict(
         show_id: str,
