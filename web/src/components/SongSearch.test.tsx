@@ -51,3 +51,10 @@ test("matches partial song name case-insensitively", () => {
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "ENJOY" } });
   expect(screen.getByText("You Enjoy Myself")).toBeInTheDocument();
 });
+
+test("reverse mode uses flex-col-reverse so best match renders at bottom", () => {
+  render(<SongSearch songs={songs} onSelect={() => {}} reverse />);
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "w" } });
+  const list = screen.getByTestId("song-search-results");
+  expect(list.className).toContain("flex-col-reverse");
+});

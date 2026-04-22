@@ -29,20 +29,26 @@ export function AddSongSheet({ songs, onAdd }: Props) {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60">
-          <div className="bg-neutral-900 rounded-t-2xl p-4 h-dvh flex flex-col">
-            <div className="flex items-center justify-between mb-3">
+        <div
+          onClick={() => setOpen(false)}
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-neutral-900 rounded-t-2xl px-4 pt-3 pb-4 h-dvh flex flex-col"
+          >
+            <div className="flex items-center justify-between mb-2 shrink-0">
               <span className="text-sm font-medium text-neutral-300">Add song</span>
               <button
                 type="button"
                 aria-label="Close sheet"
                 onClick={() => setOpen(false)}
-                className="text-neutral-400"
+                className="text-neutral-400 text-lg leading-none"
               >
                 ✕
               </button>
             </div>
-            <SongSearch songs={songs} onSelect={handleSelect} autoFocus />
+            <SongSearch songs={songs} onSelect={handleSelect} autoFocus reverse />
           </div>
         </div>
       )}
