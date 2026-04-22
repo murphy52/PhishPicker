@@ -21,7 +21,7 @@ from phishpicker.live import (
 )
 from phishpicker.model.scorer import load_runtime_scorer
 from phishpicker.phishnet.client import PhishNetClient
-from phishpicker.predict import predict_next
+from phishpicker.predict import predict_next, predict_next_stateless
 from phishpicker.venue_tz import tz_for_state
 
 log = logging.getLogger(__name__)
@@ -172,6 +172,29 @@ def create_app() -> FastAPI:
         request.app.state.scorer = load_runtime_scorer(request.app.state.model_path)
         log.info("reloaded scorer: %s", request.app.state.scorer.name)
         return {"reloaded": True, "scorer": request.app.state.scorer.name}
+
+    class PredictRequest(BaseModel):
+        played_songs: list[int] = []
+        current_set: str
+        show_date: str
+        venue_id: int | None = None
+        prev_trans_mark: str = ","
+        prev_set_number: str | None = None
+        top_n: int = 20
+
+    @app.post("/predict")
+    def predict_post(
+        body: PredictRequest,
+        request: Request,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+    ):
+        return {
+            "candidates": predict_next_stateless(
+                read_conn=read,
+                scorer=request.app.state.scorer,
+                **body.model_dump(),
+            )
+        }
 
     @app.get("/predict/{show_id}")
     def predict(
