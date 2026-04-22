@@ -110,7 +110,20 @@ export default function Home() {
 
   async function handleAdd(song: Song) {
     await addSong(song);
-    mutatePreview();
+    await mutatePreview();
+    // After the new preview renders, scroll the just-added slot into view so
+    // the user sees both the confirmation and the next prediction beneath it.
+    // rAF waits for React's flush; a second rAF covers the case where preview
+    // re-renders synchronously after the mutate resolves.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const entered = document.querySelectorAll(
+          '[data-testid="slot"][data-state="entered"]',
+        );
+        const last = entered[entered.length - 1];
+        last?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }),
+    );
   }
 
   async function handleUndo() {
