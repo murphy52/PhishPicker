@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager, closing
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from phishpicker.config import Settings
@@ -48,6 +48,14 @@ def _live_conn_dep(settings: Settings) -> Iterator[sqlite3.Connection]:
     return _dep
 
 
+def _read_write_conn_dep(settings: Settings) -> Iterator[sqlite3.Connection]:
+    def _dep() -> Iterator[sqlite3.Connection]:
+        with closing(open_db(settings.db_path, read_only=False)) as c:
+            yield c
+
+    return _dep
+
+
 def create_app() -> FastAPI:
     settings = Settings()  # type: ignore[call-arg]
 
@@ -67,10 +75,12 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Phishpicker", lifespan=lifespan)
     get_read = _read_conn_dep(settings)
     get_live = _live_conn_dep(settings)
+    get_rw = _read_write_conn_dep(settings)
     # Expose dependency factories on app.state so endpoints in other modules
     # can access them via request.app.state.
     app.state.get_read = get_read
     app.state.get_live = get_live
+    app.state.get_rw = get_rw
 
     class LiveShowCreate(BaseModel):
         show_date: str
@@ -116,6 +126,39 @@ def create_app() -> FastAPI:
             "SELECT song_id, name, original_artist FROM songs ORDER BY name"
         ).fetchall()
         return [dict(r) for r in rows]
+
+    class NewSong(BaseModel):
+        name: str
+
+    @app.post("/songs", status_code=201)
+    def insert_song(
+        body: NewSong,
+        response: Response,
+        conn: sqlite3.Connection = Depends(get_rw),  # noqa: B008
+    ):
+        existing = conn.execute(
+            "SELECT song_id, name, is_bustout_placeholder FROM songs WHERE name = ?",
+            (body.name,),
+        ).fetchone()
+        if existing:
+            response.status_code = 200
+            return {
+                "song_id": existing["song_id"],
+                "name": existing["name"],
+                "is_bustout_placeholder": bool(existing["is_bustout_placeholder"]),
+            }
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        cur = conn.execute(
+            "INSERT INTO songs (name, first_seen_at, is_bustout_placeholder) "
+            "VALUES (?, ?, 1)",
+            (body.name, now),
+        )
+        conn.commit()
+        return {
+            "song_id": cur.lastrowid,
+            "name": body.name,
+            "is_bustout_placeholder": True,
+        }
 
     @app.get("/upcoming")
     def upcoming(request: Request):
