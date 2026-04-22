@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import { Leaderboard, type Candidate } from "@/components/Leaderboard";
 import { PlayedStrip } from "@/components/PlayedStrip";
 import { AddSongSheet } from "@/components/AddSongSheet";
 import { SetBoundaryButton } from "@/components/SetBoundaryButton";
 import { ShowHeader, type UpcomingShow } from "@/components/ShowHeader";
+import { FullPreview } from "@/components/FullPreview";
+import { SlotAltsModal } from "@/components/SlotAltsModal";
+import { SyncStatus } from "@/components/SyncStatus";
 import { useLiveShow } from "@/lib/liveShow";
+import { usePreview, type PreviewCandidate } from "@/lib/preview";
 import { getCachedSongs, setCachedSongs, type Song } from "@/lib/songs";
 
 interface Meta {
@@ -18,31 +21,29 @@ interface Meta {
   version: string;
 }
 
-interface PredictResponse {
-  candidates: Candidate[];
-}
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
-
 export default function Home() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
+  const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const initialized = useRef(false);
   const autoStarted = useRef(false);
 
-  const { showId, playedSongs, currentSet, startShow, addSong, undoLast, advanceSet, clearShow } =
-    useLiveShow();
+  const {
+    showId,
+    playedSongs,
+    currentSet,
+    startShow,
+    addSong,
+    undoLast,
+    advanceSet,
+    clearShow,
+  } = useLiveShow();
 
-  const predictKey = showId ? `/api/predict/${showId}` : null;
-  const { data: prediction, mutate: mutatePrediction } = useSWR<PredictResponse>(
-    predictKey,
-    fetcher,
-    { refreshInterval: 30_000 },
+  const { data: preview, mutate: mutatePreview } = usePreview(
+    showId,
+    playedSongs.length,
   );
 
-  // Next Phish show (used to populate ShowHeader + auto-start).
-  // 404 is a valid "no upcoming show" answer, not an error — surface it
-  // as `upcoming = null` rather than letting SWR throw.
   const { data: upcoming } = useSWR<UpcomingShow | null>(
     "/api/upcoming",
     async (url: string) => {
@@ -53,7 +54,6 @@ export default function Home() {
     { revalidateOnFocus: false, dedupingInterval: 60_000 },
   );
 
-  // Load songs with localStorage cache keyed on data_snapshot_at.
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
@@ -75,53 +75,55 @@ export default function Home() {
     })().catch(console.error);
   }, []);
 
-  // On mount with existing showId: verify it's still alive; clear if 404.
   useEffect(() => {
     if (!showId) return;
-    fetch(`/api/predict/${showId}`).then((r) => {
+    fetch(`/api/live/show/${showId}`).then((r) => {
       if (r.status === 404) clearShow();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleAdd(song: Song) {
-    // Optimistic: remove from leaderboard immediately.
-    mutatePrediction(
-      (cur) =>
-        cur
-          ? { candidates: cur.candidates.filter((c) => c.song_id !== song.song_id) }
-          : cur,
-      false,
-    );
     await addSong(song);
-    mutatePrediction(); // revalidate
+    mutatePreview();
   }
 
   async function handleUndo() {
     await undoLast();
-    mutatePrediction();
+    mutatePreview();
   }
 
   async function handleAdvanceSet(nextSet: string) {
     await advanceSet(nextSet);
-    mutatePrediction();
+    mutatePreview();
   }
 
-  // Auto-start the next show when we have upcoming data and no active show.
-  // Ref guard prevents StrictMode double-mount from calling startShow twice
-  // (backend is also idempotent on show_date, but this avoids extra round-trips).
+  function handlePickFromAlts(candidate: PreviewCandidate) {
+    handleAdd({ song_id: candidate.song_id, name: candidate.name });
+    setActiveSlot(null);
+  }
+
   useEffect(() => {
     if (showId || !upcoming || autoStarted.current) return;
     autoStarted.current = true;
-    startShow(upcoming.show_date).then(() => mutatePrediction());
-  }, [showId, upcoming, startShow, mutatePrediction]);
+    startShow(upcoming.show_date).then(() => mutatePreview());
+  }, [showId, upcoming, startShow, mutatePreview]);
 
-  const candidates = prediction?.candidates ?? [];
+  const slots = preview?.slots ?? [];
 
   return (
     <div className="min-h-dvh bg-neutral-950 text-neutral-100 flex flex-col">
       {upcoming ? (
-        <ShowHeader show={upcoming} />
+        <div className="flex items-start justify-between gap-3 border-b border-neutral-900">
+          <div className="flex-1 min-w-0">
+            <ShowHeader show={upcoming} />
+          </div>
+          {showId && (
+            <div className="px-4 pt-5 shrink-0">
+              <SyncStatus showId={showId} showDate={upcoming.show_date} />
+            </div>
+          )}
+        </div>
       ) : (
         <header className="px-4 pt-6 pb-2">
           <h1 className="text-xl font-bold tracking-tight">Phishpicker</h1>
@@ -149,14 +151,7 @@ export default function Home() {
           <>
             <PlayedStrip songs={playedSongs} onUndo={handleUndo} />
 
-            {candidates.length > 0 && (
-              <section>
-                <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-500 mb-2">
-                  Next song
-                </h2>
-                <Leaderboard candidates={candidates} />
-              </section>
-            )}
+            <FullPreview slots={slots} onSlotClick={setActiveSlot} />
 
             <SetBoundaryButton currentSet={currentSet} onAdvance={handleAdvanceSet} />
 
@@ -172,6 +167,15 @@ export default function Home() {
       </main>
 
       {showId && <AddSongSheet songs={songs} onAdd={handleAdd} />}
+
+      {showId && (
+        <SlotAltsModal
+          showId={showId}
+          slotIdx={activeSlot}
+          onClose={() => setActiveSlot(null)}
+          onPick={handlePickFromAlts}
+        />
+      )}
 
       <footer className="px-4 py-3 text-xs text-neutral-600 border-t border-neutral-900 flex justify-between items-center">
         <span>

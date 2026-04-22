@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Song } from "./songs";
 
 const LS_KEY = "phishpicker:live_show_id";
@@ -10,12 +10,14 @@ export interface LiveSong extends Song {
 }
 
 export function useLiveShow() {
-  const [showId, setShowId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem(LS_KEY);
-  });
+  const [showId, setShowId] = useState<string | null>(null);
   const [playedSongs, setPlayedSongs] = useState<LiveSong[]>([]);
   const [currentSet, setCurrentSet] = useState("1");
+
+  useEffect(() => {
+    const stored = localStorage.getItem(LS_KEY);
+    if (stored) setShowId(stored);
+  }, []);
 
   const startShow = useCallback(async (show_date: string, venue_id?: number) => {
     const res = await fetch("/api/live/show", {
