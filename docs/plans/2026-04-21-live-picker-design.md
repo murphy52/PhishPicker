@@ -41,6 +41,39 @@ recompute. David can tap any slot to see the top-10 alternatives.
 - **Deploy:** Same docker-compose stack on NAS; web app served alongside
   the API behind the existing Cloudflare tunnel.
 
+## Revision note (post-team-review, 2026-04-21)
+
+This section supersedes conflicting earlier design choices:
+
+- **State of record is SQLite**, not a JSON blob. The existing `live_show` /
+  `live_songs` tables hold what actually played. A new `live_show_meta`
+  table holds per-show metadata: sync state (`sync_enabled`, `last_updated`,
+  `last_error`), structure overrides. Two new columns on `live_songs`
+  support reconciliation: `source` (`"user" | "phishnet"`) and
+  `superseded_by` (song_id, when phish.net overrode a user entry). No JSON
+  blob; no `api/data/picker-sessions/` directory.
+- **Preview is stateless.** The backend exposes a pure `POST /predict`
+  endpoint accepting `{played_songs, current_set, show_date, venue_id}`
+  and returning top-K. The full 9/7/2 preview is a loop — either on the
+  client or in a convenience server endpoint — calling `/predict` once per
+  slot, extending `played_songs` with the top-1 each iteration. No hidden
+  autoregressive state in the server.
+- **Timezone is explicit.** `/upcoming` returns `timezone`
+  (e.g. `"America/Los_Angeles"`) and `start_time_local` (e.g. `"19:00"`)
+  alongside date/venue/city/state. The client combines these with the
+  browser's own `Intl.DateTimeFormat().resolvedOptions().timeZone` to
+  render a correct countdown regardless of where the user is.
+- **Override is full.** `replace_song_at(conn, show_id, entered_order,
+  new_song_id)` is a first-class DB helper. Interior phish.net overrides
+  work the same as tail appends. No "punt and warn" for interior slots.
+- **Poller lives on `app.state`** as a `PollerRegistry` instance, not a
+  module-level global. Tests get a fresh registry per `TestClient`; teardown
+  cancels any live tasks. Poller opens its own DB connection inside each
+  tick (avoids `sqlite3` thread-affinity traps with `asyncio.to_thread`).
+
+Everything below that implies a JSON blob, shared global `_POLLERS`, or
+timezone-naive "today" should be read through this lens.
+
 ## Frontend layout (mobile-first)
 
 ```
