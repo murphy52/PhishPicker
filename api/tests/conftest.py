@@ -69,6 +69,14 @@ def seeded_client(tmp_path, monkeypatch, fixtures_dir) -> Iterator[TestClient]:
 
 
 @pytest.fixture
+def seeded_live_show(live_conn) -> str:
+    """Create a live show directly against live_conn; returns show_id."""
+    from phishpicker.live import create_live_show
+
+    return create_live_show(live_conn, "2026-04-23", venue_id=1597)
+
+
+@pytest.fixture
 def live_show_id(seeded_client) -> str:
     """A live show created via the API; returns its show_id."""
     r = seeded_client.post(

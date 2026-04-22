@@ -77,6 +77,23 @@ def delete_last_song(conn: sqlite3.Connection, show_id: str) -> bool:
     return True
 
 
+def replace_song_at(
+    conn: sqlite3.Connection,
+    show_id: str,
+    entered_order: int,
+    new_song_id: int,
+    source: str = "phishnet",
+    superseded_by: int | None = None,
+) -> bool:
+    cur = conn.execute(
+        "UPDATE live_songs SET song_id = ?, source = ?, superseded_by = ? "
+        "WHERE show_id = ? AND entered_order = ?",
+        (new_song_id, source, superseded_by, show_id, entered_order),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def advance_set(conn: sqlite3.Connection, show_id: str, set_number: str) -> bool:
     result = conn.execute(
         "UPDATE live_show SET current_set = ? WHERE show_id = ?",
