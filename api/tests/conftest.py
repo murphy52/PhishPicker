@@ -69,6 +69,26 @@ def seeded_client(tmp_path, monkeypatch, fixtures_dir) -> Iterator[TestClient]:
 
 
 @pytest.fixture
+def live_show_id(seeded_client) -> str:
+    """A live show created via the API; returns its show_id."""
+    r = seeded_client.post(
+        "/live/show", json={"show_date": "2026-04-23", "venue_id": 1597}
+    )
+    return r.json()["show_id"]
+
+
+@pytest.fixture
+def live_show_with_one_song(seeded_client, live_show_id) -> dict:
+    """A live show with a single song already entered in Set 1, slot 1."""
+    r = seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": 100, "set_number": "1"},
+    )
+    assert r.status_code == 200
+    return {"show_id": live_show_id, "song_id": 100}
+
+
+@pytest.fixture
 def seeded_read_db(tmp_path, fixtures_dir):
     """Standalone read DB with the same seed data as seeded_client, for
     tests that need the read conn directly (no FastAPI / lifespan)."""

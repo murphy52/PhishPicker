@@ -196,6 +196,47 @@ def create_app() -> FastAPI:
             )
         }
 
+    class StructureUpdate(BaseModel):
+        set1: int = 9
+        set2: int = 7
+        encore: int = 2
+
+    @app.post("/live/show/{show_id}/structure")
+    def set_structure(
+        show_id: str,
+        body: StructureUpdate,
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        live.execute(
+            "INSERT INTO live_show_meta (show_id, set1_size, set2_size, encore_size) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(show_id) DO UPDATE SET "
+            "set1_size=excluded.set1_size, "
+            "set2_size=excluded.set2_size, "
+            "encore_size=excluded.encore_size",
+            (show_id, body.set1, body.set2, body.encore),
+        )
+        live.commit()
+        return {"ok": True}
+
+    @app.get("/live/show/{show_id}/preview")
+    def preview_endpoint(
+        show_id: str,
+        request: Request,
+        top_k: int = 10,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.live_preview import build_preview
+
+        return build_preview(
+            read_conn=read,
+            live_conn=live,
+            show_id=show_id,
+            top_k=top_k,
+            scorer=request.app.state.scorer,
+        )
+
     @app.get("/predict/{show_id}")
     def predict(
         show_id: str,
