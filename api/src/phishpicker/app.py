@@ -283,6 +283,84 @@ def create_app() -> FastAPI:
             scorer=request.app.state.scorer,
         )
 
+    class SyncStart(BaseModel):
+        show_date: str
+
+    @app.post("/live/show/{show_id}/sync/start")
+    async def sync_start(show_id: str, body: SyncStart, request: Request):
+        s = request.app.state.settings
+        await request.app.state.pollers.start(
+            show_id,
+            show_date=body.show_date,
+            interval=60.0,
+            db_path=s.db_path,
+            live_db_path=s.live_db_path,
+            api_key=s.phishnet_api_key,
+        )
+        # Open our own connection: this async endpoint may run on a different
+        # thread than whichever thread Depends(get_live) would have opened on.
+        with closing(open_db(s.live_db_path)) as live:
+            live.execute(
+                "INSERT INTO live_show_meta (show_id, sync_enabled) VALUES (?, 1) "
+                "ON CONFLICT(show_id) DO UPDATE SET sync_enabled=1",
+                (show_id,),
+            )
+            live.commit()
+        return {"started": True}
+
+    @app.post("/live/show/{show_id}/sync/stop")
+    async def sync_stop(show_id: str, request: Request):
+        s = request.app.state.settings
+        await request.app.state.pollers.stop(show_id)
+        with closing(open_db(s.live_db_path)) as live:
+            live.execute(
+                "UPDATE live_show_meta SET sync_enabled=0 WHERE show_id = ?",
+                (show_id,),
+            )
+            live.commit()
+        return {"stopped": True}
+
+    @app.get("/live/show/{show_id}/sync/status")
+    def sync_status(
+        show_id: str,
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        row = live.execute(
+            "SELECT sync_enabled, last_updated, last_error "
+            "FROM live_show_meta WHERE show_id = ?",
+            (show_id,),
+        ).fetchone()
+        if not row:
+            return {
+                "state": "off",
+                "sync_enabled": False,
+                "last_updated": None,
+                "last_error": None,
+            }
+        state = "off"
+        if row["sync_enabled"]:
+            if row["last_updated"]:
+                last = datetime.fromisoformat(
+                    row["last_updated"].replace("Z", "+00:00")
+                )
+                age = (datetime.now(UTC) - last).total_seconds()
+                if age < 120:
+                    state = "live"
+                elif age < 600:
+                    state = "stale"
+                else:
+                    state = "dead"
+            else:
+                state = "stale"
+            if row["last_error"]:
+                state = "dead"
+        return {
+            "state": state,
+            "sync_enabled": bool(row["sync_enabled"]),
+            "last_updated": row["last_updated"],
+            "last_error": row["last_error"],
+        }
+
     @app.get("/live/show/{show_id}/slot/{slot_idx}/alternatives")
     def slot_alternatives(
         show_id: str,
