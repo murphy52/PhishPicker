@@ -1,0 +1,44 @@
+name: Deploy to NAS
+
+# NOTE: NAS SSH access is manually enabled for 6-hour windows.
+# If deploy fails with "websocket: bad handshake", the SSH window
+# is closed. Re-enable SSH on the NAS and re-run the workflow.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: []
+    env:
+      TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+
+    steps:
+      - name: Install cloudflared
+        run: |
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o cloudflared.deb
+          sudo dpkg -i cloudflared.deb
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          cat > ~/.ssh/config <<EOF
+          Host nas-ssh
+            HostName nas-ssh.murphy52.xyz
+            User Murphy52
+            IdentityFile ~/.ssh/deploy_key
+            ProxyCommand cloudflared access ssh --hostname %h
+            StrictHostKeyChecking no
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Deploy
+        run: |
+          ssh -o ConnectTimeout=30 nas-ssh 'set -e; cd /home/Murphy52/docker/apps/phishpicker; echo "=== Pulling latest ==="; git pull origin main; echo "=== Building and restarting ==="; docker compose up -d --build; echo "=== Done ==="'
