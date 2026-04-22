@@ -1,8 +1,13 @@
 @import "tailwindcss";
 
+/* App is dark-themed only — don't follow the system light/dark pref. The
+ * old prefers-color-scheme swap left body bg white when the user's device
+ * was in light mode, which showed as white bands above/below the inner
+ * dark container during iOS Safari overscroll. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,13 +17,7 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
   background: var(--background);
   color: var(--foreground);
