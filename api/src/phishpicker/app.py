@@ -296,6 +296,9 @@ def create_app() -> FastAPI:
             db_path=s.db_path,
             live_db_path=s.live_db_path,
             api_key=s.phishnet_api_key,
+            scorer=request.app.state.scorer,
+            vapid_private_key=s.vapid_private_key,
+            vapid_subject=s.vapid_subject,
         )
         # Open our own connection: this async endpoint may run on a different
         # thread than whichever thread Depends(get_live) would have opened on.
