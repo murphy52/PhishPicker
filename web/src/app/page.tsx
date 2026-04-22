@@ -95,7 +95,16 @@ export default function Home() {
           return song ? { ...song, set_number: row.set_number } : null;
         })
         .filter((s): s is NonNullable<typeof s> => s !== null);
-      hydrate(played, data.current_set);
+      let currentSetFromServer = data.current_set;
+      if (played.length === 0 && currentSetFromServer !== "1") {
+        await fetch("/api/live/set-boundary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ show_id: showId, set_number: "1" }),
+        });
+        currentSetFromServer = "1";
+      }
+      hydrate(played, currentSetFromServer);
     })();
   }, [showId, songs, clearShow, hydrate]);
 

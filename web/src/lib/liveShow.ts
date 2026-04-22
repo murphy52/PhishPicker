@@ -50,8 +50,17 @@ export function useLiveShow() {
   const undoLast = useCallback(async () => {
     if (!showId || playedSongs.length === 0) return;
     await fetch(`/api/live/song/last?show_id=${showId}`, { method: "DELETE" });
-    setPlayedSongs((prev) => prev.slice(0, -1));
-  }, [showId, playedSongs]);
+    const next = playedSongs.slice(0, -1);
+    setPlayedSongs(next);
+    if (next.length === 0 && currentSet !== "1") {
+      await fetch("/api/live/set-boundary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ show_id: showId, set_number: "1" }),
+      });
+      setCurrentSet("1");
+    }
+  }, [showId, playedSongs, currentSet]);
 
   const advanceSet = useCallback(
     async (nextSet: string) => {
