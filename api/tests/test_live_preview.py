@@ -73,6 +73,36 @@ def test_preview_shrinks_past_set_to_entered_count(seeded_client, live_show_id):
     assert len(set2) == 7
 
 
+def test_preview_advance_to_encore_collapses_both_prior_sets(
+    seeded_client, live_show_id
+):
+    """Encore is the last set — advancing to it makes both Set 1 and Set 2
+    past, so both collapse to their entered counts."""
+    seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": 100, "set_number": "1"},
+    )
+    seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": 101, "set_number": "1"},
+    )
+    seeded_client.post(
+        "/live/set-boundary", json={"show_id": live_show_id, "set_number": "2"}
+    )
+    seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": 102, "set_number": "2"},
+    )
+    seeded_client.post(
+        "/live/set-boundary", json={"show_id": live_show_id, "set_number": "E"}
+    )
+    slots = seeded_client.get(f"/live/show/{live_show_id}/preview").json()["slots"]
+    assert len([s for s in slots if s["set_number"] == "1"]) == 2
+    assert len([s for s in slots if s["set_number"] == "2"]) == 1
+    # Encore active, no entered: max(default=2, 0+1) = 2.
+    assert len([s for s in slots if s["set_number"] == "E"]) == 2
+
+
 def test_preview_hides_past_set_with_no_entered(seeded_client, live_show_id):
     """Advancing without entering anything in Set 1 hides Set 1 entirely."""
     seeded_client.post(
