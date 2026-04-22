@@ -69,6 +69,45 @@ def seeded_client(tmp_path, monkeypatch, fixtures_dir) -> Iterator[TestClient]:
 
 
 @pytest.fixture
+def seeded_read_db(tmp_path, fixtures_dir):
+    """Standalone read DB with the same seed data as seeded_client, for
+    tests that need the read conn directly (no FastAPI / lifespan)."""
+    from phishpicker.db.connection import apply_schema, open_db
+    from phishpicker.ingest.derive import recompute_run_and_tour_positions
+    from phishpicker.ingest.pipeline import upsert_tour_stubs
+    from phishpicker.ingest.shows import upsert_setlist_songs, upsert_show
+    from phishpicker.ingest.songs import upsert_songs
+    from phishpicker.ingest.venues import upsert_venues
+
+    db = open_db(tmp_path / "phishpicker.db")
+    apply_schema(db)
+    upsert_songs(
+        db, json.loads((fixtures_dir / "phishnet_songs_sample.json").read_text())["data"]
+    )
+    upsert_venues(
+        db,
+        json.loads((fixtures_dir / "phishnet_venues_sample.json").read_text())["data"],
+    )
+    shows_data = json.loads(
+        (fixtures_dir / "phishnet_shows_sample.json").read_text()
+    )["data"]
+    upsert_tour_stubs(db, shows_data)
+    for show in shows_data:
+        upsert_show(db, show)
+    upsert_setlist_songs(
+        db,
+        json.loads(
+            (fixtures_dir / "phishnet_setlist_show1234567.json").read_text()
+        )["data"],
+    )
+    recompute_run_and_tour_positions(db)
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@pytest.fixture
 def small_train_db(tmp_path):
     """30 shows, 5 songs. Song 1 always opens set 1; song 2 always closes;
     songs 3/4 fill the middle; song 5 is never played.
