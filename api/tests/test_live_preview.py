@@ -52,13 +52,9 @@ def test_preview_extends_past_default_when_current_set_overflows(
     assert set1[10]["state"] == "predicted"
 
 
-def test_preview_does_not_extend_past_default_when_set_is_closed(
-    seeded_client, live_show_id
-):
-    """A set the user has moved past gets exactly its entered count — no
-    phantom +1 prediction."""
-    # Enter a couple in Set 1, then advance. No overflow, but verify the
-    # boundary: a non-current set with entered < default still shows default.
+def test_preview_shrinks_past_set_to_entered_count(seeded_client, live_show_id):
+    """Once a set is in the past (user advanced), its slot count collapses
+    to exactly what the user entered — unused predictions vanish."""
     seeded_client.post(
         "/live/song",
         json={"show_id": live_show_id, "song_id": 100, "set_number": "1"},
@@ -68,14 +64,48 @@ def test_preview_does_not_extend_past_default_when_set_is_closed(
     )
     r = seeded_client.get(f"/live/show/{live_show_id}/preview")
     slots = r.json()["slots"]
-    # Set 1 still gets its default 9 (1 entered + 8 predicted) — we don't
-    # shrink below default, and no +1 because Set 1 isn't current.
     set1 = [s for s in slots if s["set_number"] == "1"]
-    assert len(set1) == 9
-    # Set 2 is current: default 7 + 1 speculative = 8? No — no entered in Set 2
-    # yet, so max(7, 0+1) = 7. Still 7 slots.
+    # Set 1 is past — exactly 1 entered, no phantom predictions.
+    assert len(set1) == 1
+    assert set1[0]["state"] == "entered"
+    # Set 2 is active, no entered yet — default 7 (max(7, 0+1) = 7).
     set2 = [s for s in slots if s["set_number"] == "2"]
     assert len(set2) == 7
+
+
+def test_preview_hides_past_set_with_no_entered(seeded_client, live_show_id):
+    """Advancing without entering anything in Set 1 hides Set 1 entirely."""
+    seeded_client.post(
+        "/live/set-boundary", json={"show_id": live_show_id, "set_number": "2"}
+    )
+    r = seeded_client.get(f"/live/show/{live_show_id}/preview")
+    slots = r.json()["slots"]
+    assert not [s for s in slots if s["set_number"] == "1"]
+
+
+def test_preview_restores_predictions_when_walking_back_to_set(
+    seeded_client, live_show_id
+):
+    """If the user walks back via /set-boundary, the predicted slots return
+    up to the default."""
+    seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": 100, "set_number": "1"},
+    )
+    seeded_client.post(
+        "/live/set-boundary", json={"show_id": live_show_id, "set_number": "2"}
+    )
+    r = seeded_client.get(f"/live/show/{live_show_id}/preview")
+    assert len([s for s in r.json()["slots"] if s["set_number"] == "1"]) == 1
+
+    seeded_client.post(
+        "/live/set-boundary", json={"show_id": live_show_id, "set_number": "1"}
+    )
+    r2 = seeded_client.get(f"/live/show/{live_show_id}/preview")
+    set1 = [s for s in r2.json()["slots"] if s["set_number"] == "1"]
+    assert len(set1) == 9
+    assert set1[0]["state"] == "entered"
+    assert all(s["state"] == "predicted" for s in set1[1:])
 
 
 def test_preview_respects_live_show_meta_sizes(seeded_client, live_show_id):

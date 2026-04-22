@@ -79,15 +79,24 @@ def build_preview(
         played_rows[-1]["set_number"] if played_rows else None
     )
 
-    # Per-set slot count: never below the default, never below entered_count,
-    # and one extra speculative "set-closer" slot if this is the set the user
-    # is currently in. That way filling Set 1 past the default 9 still shows a
-    # prediction for a possible 10th song, but we don't phantom-extend a set
-    # the user has already moved past.
+    # Per-set slot count depends on whether the set is active, past, or future
+    # relative to current_set:
+    #   - active (s == current_set): max(default, entered + 1). Shows the
+    #     default prediction view plus one speculative set-closer once the user
+    #     fills past the default (e.g. Set 1 slot 10 after 9 entered).
+    #   - past (s < current_set): exactly entered. The set is closed — no more
+    #     slots will be played, so drop the unused predictions. A past set with
+    #     zero entered rows yields n=0 and is hidden entirely.
+    #   - future (s > current_set): default. Preview what might come.
+    set_order = {"1": 1, "2": 2, "E": 3}
+
     def _n_for(s: str, default: int) -> int:
         entered = per_set_seen.get(s, 0)
-        buffer = 1 if s == current_set else 0
-        return max(default, entered + buffer)
+        if s == current_set:
+            return max(default, entered + 1)
+        if set_order.get(s, 0) < set_order.get(current_set, 0):
+            return entered
+        return default
 
     structure = [
         ("1", _n_for("1", set1)),
