@@ -42,7 +42,7 @@ export function AddSongSheet({ songs, onAdd }: Props) {
                 ✕
               </button>
             </div>
-            <SongSearch songs={songs} onSelect={handleSelect} />
+            <SongSearch songs={songs} onSelect={handleSelect} autoFocus />
           </div>
         </div>
       )}
