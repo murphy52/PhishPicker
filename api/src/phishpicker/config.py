@@ -21,6 +21,21 @@ class Settings(BaseSettings):
     )
     phishnet_base_url: str = "https://api.phish.net/v5"
 
+    # Web Push / VAPID. Optional — push is a no-op if the keypair is
+    # missing, so dev + test environments don't need to set these.
+    vapid_public_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("VAPID_PUBLIC_KEY", "vapid_public_key"),
+    )
+    vapid_private_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("VAPID_PRIVATE_KEY", "vapid_private_key"),
+    )
+    vapid_subject: str = Field(
+        default="mailto:murphy52@gmail.com",
+        validation_alias=AliasChoices("VAPID_SUBJECT", "vapid_subject"),
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -397,4 +397,43 @@ def create_app() -> FastAPI:
             )
         }
 
+    # ---- Web Push / VAPID --------------------------------------------------
+
+    class PushSubscribeBody(BaseModel):
+        endpoint: str
+        keys: dict  # {"p256dh": "...", "auth": "..."}
+
+    @app.get("/push/vapid-key")
+    def push_vapid_key(request: Request):
+        """Return the VAPID public key the client uses in pushManager.subscribe().
+        Empty string signals push is disabled on this server."""
+        return {"key": request.app.state.settings.vapid_public_key}
+
+    @app.post("/push/subscribe")
+    def push_subscribe(
+        body: PushSubscribeBody,
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.push import save_subscription
+
+        p256dh = body.keys.get("p256dh")
+        auth = body.keys.get("auth")
+        if not p256dh or not auth:
+            raise HTTPException(400, "subscription keys missing p256dh or auth")
+        save_subscription(live, body.endpoint, p256dh, auth)
+        return {"ok": True}
+
+    @app.delete("/push/subscribe")
+    def push_unsubscribe(
+        body: dict,
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.push import delete_subscription
+
+        endpoint = body.get("endpoint")
+        if not endpoint:
+            raise HTTPException(400, "endpoint required")
+        deleted = delete_subscription(live, endpoint)
+        return {"deleted": deleted}
+
     return app

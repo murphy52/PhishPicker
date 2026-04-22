@@ -28,3 +28,14 @@ CREATE TABLE IF NOT EXISTS live_show_meta (
     set2_size INTEGER NOT NULL DEFAULT 7,
     encore_size INTEGER NOT NULL DEFAULT 2
 );
+
+-- Web Push subscriptions. endpoint is the full https URL returned by the
+-- browser's pushManager.subscribe(); its opaque tail identifies the device.
+-- p256dh + auth are the ECDH public key and auth secret the push service
+-- needs to encrypt payloads.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    subscribed_at TEXT NOT NULL
+);
