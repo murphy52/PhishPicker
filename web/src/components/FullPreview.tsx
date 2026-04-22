@@ -57,16 +57,29 @@ function SlotRow({
   onSlotClick: (slotIdx: number) => void;
 }) {
   if (slot.state === "entered" && slot.entered_song) {
+    const pendingStyle =
+      slot.pending === "adding"
+        ? "bg-indigo-950/70 text-neutral-300 animate-pulse ring-1 ring-indigo-600/40"
+        : slot.pending === "removing"
+          ? "bg-neutral-800/60 text-neutral-500 line-through animate-pulse"
+          : "bg-neutral-800 text-neutral-100";
     return (
       <li
         data-testid="slot"
         data-state="entered"
-        className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded bg-neutral-800 text-neutral-100"
+        data-pending={slot.pending ?? undefined}
+        className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded ${pendingStyle}`}
       >
         <span className="text-neutral-500 w-6 tabular-nums text-right text-xs">
           {slot.position}
         </span>
         <span className="flex-1 text-base truncate">{slot.entered_song.name}</span>
+        {slot.pending === "adding" && (
+          <span
+            aria-label="Saving…"
+            className="inline-block w-3 h-3 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin shrink-0"
+          />
+        )}
       </li>
     );
   }

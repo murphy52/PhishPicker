@@ -10,7 +10,12 @@ import { FullPreview } from "@/components/FullPreview";
 import { SlotAltsModal } from "@/components/SlotAltsModal";
 import { SyncStatus } from "@/components/SyncStatus";
 import { useLiveShow } from "@/lib/liveShow";
-import { usePreview, type PreviewCandidate } from "@/lib/preview";
+import {
+  applyPendingMutation,
+  usePreview,
+  type PendingMutation,
+  type PreviewCandidate,
+} from "@/lib/preview";
 import { getCachedSongs, setCachedSongs, type Song } from "@/lib/songs";
 
 interface Meta {
@@ -25,6 +30,7 @@ export default function Home() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
+  const [pending, setPending] = useState<PendingMutation>(null);
   const initialized = useRef(false);
   const autoStarted = useRef(false);
 
@@ -109,8 +115,17 @@ export default function Home() {
   }, [showId, songs, clearShow, hydrate]);
 
   async function handleAdd(song: Song) {
-    await addSong(song);
-    await mutatePreview();
+    setPending({
+      kind: "add",
+      song: { song_id: song.song_id, name: song.name },
+      setNumber: currentSet,
+    });
+    try {
+      await addSong(song);
+      await mutatePreview();
+    } finally {
+      setPending(null);
+    }
     // After the new preview renders, scroll the just-added slot into view so
     // the user sees both the confirmation and the next prediction beneath it.
     // rAF waits for React's flush; a second rAF covers the case where preview
@@ -127,8 +142,14 @@ export default function Home() {
   }
 
   async function handleUndo() {
-    await undoLast();
-    mutatePreview();
+    const last = playedSongs[playedSongs.length - 1];
+    if (last) setPending({ kind: "undo", songId: last.song_id });
+    try {
+      await undoLast();
+      await mutatePreview();
+    } finally {
+      setPending(null);
+    }
   }
 
   async function handleAdvanceSet(nextSet: string) {
@@ -147,7 +168,7 @@ export default function Home() {
     startShow(upcoming.show_date).then(() => mutatePreview());
   }, [showId, upcoming, startShow, mutatePreview]);
 
-  const slots = preview?.slots ?? [];
+  const slots = applyPendingMutation(preview?.slots ?? [], pending);
 
   return (
     <div className="min-h-dvh bg-neutral-950 text-neutral-100 flex flex-col">
