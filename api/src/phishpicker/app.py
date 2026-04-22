@@ -5,6 +5,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, closing
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
@@ -19,7 +20,9 @@ from phishpicker.live import (
     get_live_show,
 )
 from phishpicker.model.scorer import load_runtime_scorer
+from phishpicker.phishnet.client import PhishNetClient
 from phishpicker.predict import predict_next
+from phishpicker.venue_tz import tz_for_state
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +58,11 @@ def create_app() -> FastAPI:
         app.state.metrics_path = settings.data_dir / "metrics.json"
         app.state.scorer = load_runtime_scorer(app.state.model_path)
         log.info("loaded scorer: %s", app.state.scorer.name)
-        yield
+        app.state.phishnet_client = PhishNetClient(api_key=settings.phishnet_api_key)
+        try:
+            yield
+        finally:
+            app.state.phishnet_client.close()
 
     app = FastAPI(title="Phishpicker", lifespan=lifespan)
     get_read = _read_conn_dep(settings)
@@ -109,6 +116,24 @@ def create_app() -> FastAPI:
             "SELECT song_id, name, original_artist FROM songs ORDER BY name"
         ).fetchall()
         return [dict(r) for r in rows]
+
+    @app.get("/upcoming")
+    def upcoming(request: Request):
+        today = datetime.now(ZoneInfo("UTC")).date().isoformat()
+        shows = request.app.state.phishnet_client.fetch_upcoming_shows(today)
+        if not shows:
+            raise HTTPException(status_code=404, detail="no upcoming Phish shows")
+        first = shows[0]
+        state = first.get("state", "")
+        return {
+            "show_id": int(first["showid"]),
+            "show_date": first["showdate"],
+            "venue": first.get("venue", ""),
+            "city": first.get("city", ""),
+            "state": state,
+            "timezone": tz_for_state(state),
+            "start_time_local": "19:00",
+        }
 
     @app.post("/live/show")
     def create_show(body: LiveShowCreate, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
