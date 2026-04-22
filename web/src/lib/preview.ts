@@ -35,5 +35,9 @@ export function usePreview(showId: string | null, playedCount: number) {
   return useSWR<PreviewResponse>(key, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 1_000,
+    // Keep the prior preview on screen while refetching for a new key —
+    // /preview takes several seconds, and flashing to the skeleton on every
+    // song add is jarring.
+    keepPreviousData: true,
   });
 }
