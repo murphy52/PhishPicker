@@ -1,4 +1,4 @@
-# Live Picker Implementation Plan (v2)
+# Live Picker Implementation Plan (v3)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -28,6 +28,22 @@ section — that supersedes earlier design ambiguities).
 - Backend lint: `cd api && uv run ruff check src tests`
 - Frontend tests: `cd web && npm test`
 - Frontend lint: `cd web && npm run lint`
+
+**Known gaps flagged but deferred to execution-time discovery:**
+- `/upcoming` not cached — hits phish.net on every page load. Add a 5-min
+  TTL cache before shipping to NAS.
+- Phase 3 (Tasks 14-20) is outline-only; expand task-by-task during
+  execution after reading relevant Next 16 docs for each.
+- `pytest-asyncio` not in `pyproject.toml` dev-deps yet — add when Task 12
+  needs it.
+- Several pytest fixtures (`seeded_read_db`, `live_show_id`,
+  `live_show_with_one_song`, `seeded_live_show`, `live_conn`, `live_setup`,
+  bare `client`) aren't yet in conftest.py — create them inline with
+  Tasks 3-11 as needed.
+- `apply_live_schema` currently only runs `executescript`; Task 1 must
+  also extend it with a try/except ALTER block analogous to `apply_schema`.
+- `songs.name` has INDEX but not UNIQUE — bustout insert race. Defer UNIQUE
+  migration unless duplicates actually appear.
 
 **⚠ Next.js 16 caveat:** `web/AGENTS.md` warns APIs may differ from training
 data. Before writing Next server code, read
@@ -407,6 +423,64 @@ def upcoming(request: Request):
 ```bash
 git commit -am "feat(api): /upcoming — next Phish show with timezone + start time"
 ```
+
+---
+
+### Task 3b: `POST /live/show` idempotency on `show_date`
+
+React 19 + Next.js StrictMode double-fires effects in dev, so the
+auto-load flow (Task 15) would call `POST /live/show` twice for the same
+`show_date` on every dev page load, creating orphan live shows in the DB.
+Make the endpoint idempotent server-side.
+
+**Files:**
+- Modify: `api/src/phishpicker/live.py` — `create_live_show` returns the
+  existing show_id if one exists for that date.
+- Modify: `api/tests/test_live.py` (or create).
+
+**Step 1: Failing test**
+
+```python
+def test_create_live_show_idempotent_on_date(live_conn):
+    from phishpicker.live import create_live_show
+    first = create_live_show(live_conn, "2026-04-23", venue_id=1597)
+    second = create_live_show(live_conn, "2026-04-23", venue_id=1597)
+    assert first == second
+    rows = live_conn.execute(
+        "SELECT COUNT(*) FROM live_show WHERE show_date = ?", ("2026-04-23",),
+    ).fetchone()[0]
+    assert rows == 1
+
+
+def test_create_live_show_different_dates_get_distinct_ids(live_conn):
+    from phishpicker.live import create_live_show
+    a = create_live_show(live_conn, "2026-04-23", venue_id=1597)
+    b = create_live_show(live_conn, "2026-04-24", venue_id=1597)
+    assert a != b
+```
+
+**Step 2-4: Implement**
+
+```python
+def create_live_show(conn, show_date: str, venue_id: int | None) -> str:
+    existing = conn.execute(
+        "SELECT show_id FROM live_show WHERE show_date = ? ORDER BY started_at DESC LIMIT 1",
+        (show_date,),
+    ).fetchone()
+    if existing:
+        return existing["show_id"]
+    show_id = str(uuid.uuid4())
+    now = datetime.now(UTC).isoformat()
+    conn.execute(
+        "INSERT INTO live_show (show_id, show_date, venue_id, started_at) VALUES (?, ?, ?, ?)",
+        (show_id, show_date, venue_id, now),
+    )
+    conn.commit()
+    return show_id
+```
+
+**Step 5: Commit**
+`feat(live): create_live_show idempotent on show_date — prevents StrictMode double-create`
 
 ---
 
@@ -930,45 +1004,122 @@ def insert_song(body: NewSong, response: Response,
 
 ## Phase 2 — Phish.net live sync
 
-### Task 9: `reconcile` pure function
+### Task 9: `reconcile` pure function (REVISED v3)
+
+**Key correction from v2:** the earlier reconcile used linear-index matching
+(`user_rows[i]` vs `net_rows[i]`), which silently rewrote the wrong slot
+whenever `entered_order` diverged from phish.net position (after any
+`delete_last_song` or out-of-order entry). v3 matches by
+`(set_number, within-set-position)` and threads the user row's actual
+`entered_order` into the `override` action.
 
 **Files:**
 - Create: `api/src/phishpicker/live_sync.py`
 - Create: `api/tests/test_live_sync_reconcile.py`
 
-**Step 1: Tests** (5 cases from the design's reconciliation table)
+**Step 1: Tests**
+
+Inputs:
+- `user_rows`: `[{song_id, set_number, entered_order}]` — the live_songs
+  table contents, one dict per row, in insertion order.
+- `net_rows`: `[{song_id, set_number, position, is_unknown?}]` — phish.net
+  rows sorted by phish.net's set/position.
+
+The reconcile derives a `(set_number, within-set-position)` key for each
+user row by numbering occurrences within each set (1-indexed by insertion
+order), and the same key for net rows. Matches are by key.
 
 ```python
 from phishpicker.live_sync import reconcile, ReconcileAction
 
-def _u(sid, s="1"): return {"song_id": sid, "set_number": s}
+
+def _u(sid, s="1", eo=1):
+    return {"song_id": sid, "set_number": s, "entered_order": eo}
+
+
+def _n(sid, s="1", pos=1, **kw):
+    return {"song_id": sid, "set_number": s, "position": pos, **kw}
+
 
 def test_append_when_net_ahead():
-    actions = reconcile([_u(1), _u(2)], [_u(1), _u(2), _u(3), _u(4)])
+    # user has 2 songs in Set 1; phish.net has 4.
+    actions = reconcile(
+        [_u(1, "1", 1), _u(2, "1", 2)],
+        [_n(1, "1", 1), _n(2, "1", 2), _n(3, "1", 3), _n(4, "1", 4)],
+    )
     assert [a.kind for a in actions] == ["append", "append"]
     assert actions[0].song_id == 3
+    assert actions[0].entered_order is None  # appends have no existing row
+
 
 def test_noop_when_aligned():
-    assert reconcile([_u(1), _u(2)], [_u(1), _u(2)]) == []
+    assert reconcile(
+        [_u(1, "1", 1), _u(2, "1", 2)],
+        [_n(1, "1", 1), _n(2, "1", 2)],
+    ) == []
+
 
 def test_noop_when_user_ahead():
-    assert reconcile([_u(1), _u(2), _u(3)], [_u(1), _u(2)]) == []
+    # user has 3 set-1 rows; phish.net has 2 — nothing to reconcile.
+    assert reconcile(
+        [_u(1, "1", 1), _u(2, "1", 2), _u(3, "1", 3)],
+        [_n(1, "1", 1), _n(2, "1", 2)],
+    ) == []
 
-def test_override_on_mismatch():
-    actions = reconcile([_u(1), _u(99)], [_u(1), _u(2)])
+
+def test_override_carries_real_entered_order():
+    # user entered songs 1,99 into Set 1 with entered_orders 1,2
+    # phish.net disagrees at position 2 — wants song 2.
+    actions = reconcile(
+        [_u(1, "1", 1), _u(99, "1", 2)],
+        [_n(1, "1", 1), _n(2, "1", 2)],
+    )
     assert len(actions) == 1
     assert actions[0].kind == "override"
-    assert actions[0].slot_idx == 2
+    assert actions[0].set_number == "1"
+    assert actions[0].position_in_set == 2
+    assert actions[0].entered_order == 2  # <-- the real row's entered_order
     assert actions[0].old_song_id == 99
     assert actions[0].song_id == 2
 
-def test_append_with_bustout_flag():
-    actions = reconcile([], [{"song_id": 5, "set_number": "1", "is_unknown": True}])
+
+def test_entered_order_gap_after_undo_is_respected():
+    # Simulates: user added 3 songs, undid the last, added a new one.
+    # live_songs now has entered_orders 1, 2, 4 (3 was deleted).
+    # phish.net disagrees at position 3 in Set 1 — wants song 99.
+    actions = reconcile(
+        [_u(10, "1", 1), _u(20, "1", 2), _u(30, "1", 4)],
+        [_n(10, "1", 1), _n(20, "1", 2), _n(99, "1", 3)],
+    )
+    assert len(actions) == 1
+    assert actions[0].kind == "override"
+    assert actions[0].entered_order == 4  # the REAL entered_order, not 3
+
+
+def test_cross_set_matching_by_in_set_position():
+    # phish.net swaps a user's Set-2 opener with a different song.
+    actions = reconcile(
+        [_u(1, "1", 1), _u(2, "1", 2), _u(99, "2", 3)],
+        [_n(1, "1", 1), _n(2, "1", 2), _n(77, "2", 1)],
+    )
+    assert len(actions) == 1
+    assert actions[0].kind == "override"
+    assert actions[0].set_number == "2"
+    assert actions[0].position_in_set == 1
+    assert actions[0].entered_order == 3
+    assert actions[0].song_id == 77
+
+
+def test_bustout_flagged_on_append():
+    actions = reconcile(
+        [],
+        [_n(5, "1", 1, is_unknown=True)],
+    )
     assert actions[0].kind == "append"
     assert actions[0].is_bustout is True
 ```
 
-**Step 2-4: Implement** (same as the v1 plan — pure function)
+**Step 2-4: Implement**
 
 ```python
 from dataclasses import dataclass
@@ -976,32 +1127,62 @@ from dataclasses import dataclass
 
 @dataclass
 class ReconcileAction:
-    kind: str  # "append" | "override"
-    slot_idx: int
+    kind: str                       # "append" | "override"
     song_id: int
     set_number: str
+    position_in_set: int            # 1-indexed within set
     old_song_id: int | None = None
+    entered_order: int | None = None  # set only for "override"; the live_songs row
     is_bustout: bool = False
 
 
+def _index_by_set_position(rows, *, position_source: str) -> dict[tuple[str, int], dict]:
+    """Map (set_number, within-set-position) to row.
+
+    For user rows, position within a set is the order of occurrence in the
+    input (sorted by entered_order upstream). For net rows, trust the
+    `position` field phish.net supplies.
+    """
+    if position_source == "user":
+        out: dict[tuple[str, int], dict] = {}
+        counter: dict[str, int] = {}
+        for r in rows:
+            s = r["set_number"]
+            counter[s] = counter.get(s, 0) + 1
+            out[(s, counter[s])] = r
+        return out
+    if position_source == "net":
+        return {(r["set_number"], int(r["position"])): r for r in rows}
+    raise ValueError(position_source)
+
+
 def reconcile(user_rows, net_rows) -> list[ReconcileAction]:
+    user_by_key = _index_by_set_position(user_rows, position_source="user")
+    net_by_key = _index_by_set_position(net_rows, position_source="net")
+
     actions: list[ReconcileAction] = []
-    for i in range(len(net_rows)):
-        net = net_rows[i]
-        if i >= len(user_rows):
+    for (set_number, pos), net in sorted(net_by_key.items()):
+        user = user_by_key.get((set_number, pos))
+        if user is None:
             actions.append(ReconcileAction(
-                kind="append", slot_idx=i + 1,
-                song_id=net["song_id"], set_number=net["set_number"],
-                is_bustout=bool(net.get("is_unknown"))))
+                kind="append",
+                song_id=net["song_id"],
+                set_number=set_number,
+                position_in_set=pos,
+                is_bustout=bool(net.get("is_unknown")),
+            ))
             continue
-        user = user_rows[i]
         if user["song_id"] == net["song_id"]:
             continue
         actions.append(ReconcileAction(
-            kind="override", slot_idx=i + 1,
-            song_id=net["song_id"], set_number=net["set_number"],
+            kind="override",
+            song_id=net["song_id"],
+            set_number=set_number,
+            position_in_set=pos,
             old_song_id=user["song_id"],
-            is_bustout=bool(net.get("is_unknown"))))
+            entered_order=user["entered_order"],
+            is_bustout=bool(net.get("is_unknown")),
+        ))
     return actions
 ```
 
@@ -1123,20 +1304,36 @@ def sync_show_with_phishnet(
         if not live_show:
             return {"status": "no-show", "appended": 0, "overrides": 0, "bustouts": 0}
 
+        # live_show["songs"] is ordered by entered_order (per get_live_show's
+        # ORDER BY). Each song carries entered_order in the dict.
         user_rows = [
-            {"song_id": s["song_id"], "set_number": s["set_number"]}
+            {"song_id": s["song_id"], "set_number": s["set_number"],
+             "entered_order": s["entered_order"]}
             for s in live_show["songs"]
         ]
-        actions = reconcile(user_rows, net_rows)
+        # net_rows are already keyed by phish.net position, which
+        # reconcile uses as within-set-position.
+        for r in net_rows:
+            r.setdefault("position", None)  # safety
+        # Preserve position on net_rows — _resolve_or_insert_song above
+        # loses it; so build net_rows with position carried through:
+        net_rows_with_pos = []
+        for raw, resolved in zip(net_raw, net_rows, strict=True):
+            net_rows_with_pos.append({
+                "song_id": resolved["song_id"],
+                "set_number": resolved["set_number"],
+                "position": int(raw["position"]),
+                "is_unknown": resolved["is_unknown"],
+            })
+        actions = reconcile(user_rows, net_rows_with_pos)
 
         appended = overrides = bustouts = 0
         for a in actions:
             if a.kind == "append":
                 append_song(live, show_id, a.song_id, a.set_number)
                 appended += 1
-            else:  # override
-                # slot_idx is 1-indexed; entered_order matches 1-indexed insertion order
-                replace_song_at(live, show_id, entered_order=a.slot_idx,
+            else:  # override — uses the real entered_order from live DB
+                replace_song_at(live, show_id, entered_order=a.entered_order,
                                  new_song_id=a.song_id,
                                  source="phishnet", superseded_by=a.old_song_id)
                 overrides += 1
@@ -1261,13 +1458,28 @@ class PollerRegistry:
         )
 
     async def stop(self, show_id: str):
+        """Cancel the poller task AND wait for it to finish, so any
+        in-flight asyncio.to_thread work completes (or its cancellation
+        error propagates) before we return. Prevents races where a
+        cancelled task still writes to a closing DB."""
         task = self._tasks.pop(show_id, None)
-        if task and not task.done():
-            task.cancel()
+        if not task or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     async def stop_all(self):
-        for sid in list(self._tasks):
-            await self.stop(sid)
+        tasks = list(self._tasks.values())
+        self._tasks.clear()
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        # gather with return_exceptions so a single tick error in one task
+        # doesn't mask cancellation of the others.
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def last_error(self, show_id: str) -> str | None:
         return self._meta.get(show_id, {}).get("last_error")

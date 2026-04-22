@@ -104,21 +104,11 @@ scores. Solid (entered) slots open a smaller panel allowing edit/undo.
 
 ## API surface
 
-All under `/api/picker/`:
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/upcoming` | Next Phish show (date, venue, city, show_id) |
-| GET | `/sessions/{date}` | Current session state (entered songs, set, predictions, sync status) |
-| POST | `/sessions/{date}/songs` | Append an entered song (body: `{song_id, set_number}`) |
-| DELETE | `/sessions/{date}/songs/last` | Undo last entry |
-| POST | `/sessions/{date}/sets/end` | Advance to next set (body: `{current_set: "1" | "2"}`) |
-| POST | `/sessions/{date}/slots/append` | Add an extra predicted slot to a set |
-| GET | `/sessions/{date}/predictions` | Full predicted setlist (grayed preview — autoregressive top-1 per slot + top-10 alts per slot) |
-| GET | `/sessions/{date}/slots/{idx}/alternatives` | Top-10 alts for one slot |
-| GET | `/songs?q=<prefix>` | Typeahead search |
-| POST | `/songs` | Insert bustout placeholder (body: `{name}`, sets `is_bustout_placeholder=1`) |
-| POST | `/sessions/{date}/sync/toggle` | Enable/disable phish.net auto-sync |
+**Authoritative list is in the implementation plan, keyed on the existing
+`/live/*` endpoints + new stateless `POST /predict` + sync endpoints.**
+The earlier `/api/picker/sessions/*` shape in this section was obsoleted by
+the revision note above; the implementation uses the SQLite-backed
+`/live/show/{id}/*` endpoints directly.
 
 ## phish.net live sync
 
@@ -152,44 +142,15 @@ For each index i in `max(len(user_rows), len(net_rows))`:
 
 ## Session state model
 
-One JSON blob per `show_date`. Stored server-side in
-`api/data/picker-sessions/<date>.json` (new directory, git-ignored).
+See the **Revision note** section above. State lives in SQLite
+(`live_show`, `live_songs`, and a new `live_show_meta` table). `live_songs`
+gains `source TEXT` and `superseded_by INTEGER` columns for
+reconciliation history. `live_show_meta` holds `sync_enabled`,
+`last_updated`, `last_error`, and per-show structure (`set1_size`,
+`set2_size`, `encore_size`). No JSON blob, no `picker-sessions/` directory.
 
-```ts
-interface PickerSession {
-  show_date: string;              // "2026-04-23"
-  show_id: number | null;         // phish.net showid
-  venue: string;
-  city: string;
-  state: string;
-  entered_songs: EnteredSong[];   // user + phish.net merged
-  structure: SetStructure;        // current slot count per set
-  sync_enabled: boolean;
-  sync_status: "live" | "stale" | "dead" | "off";
-  sync_last_updated: string | null;
-  sync_last_error: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface EnteredSong {
-  song_id: number;
-  name: string;                   // denormalized for client speed
-  set_number: string;             // "1" | "2" | "E"
-  position: number;               // within-set 1-indexed
-  source: "user" | "phishnet";
-  superseded_by?: number;         // song_id, if phish.net overrode
-  entered_at: string;
-}
-
-interface SetStructure {
-  set1: number;  // default 9
-  set2: number;  // default 7
-  encore: number; // default 2
-}
-```
-
-LocalStorage mirrors this on the client for instant restore.
+LocalStorage mirrors the live-show id + last-known predictions for instant
+phone-reload restore, but it is never the authoritative store.
 
 ## Predictions model
 
