@@ -26,11 +26,13 @@ services:
     build: ./web
     environment:
       API_INTERNAL_URL: http://api:8000
-    # Bind to loopback — Cloudflare tunnel / Authentik reaches this via docker
-    # bridge or host 127.0.0.1. Port is configurable in .env (default 3400)
-    # to avoid clashes with other docker stacks on the same host.
+    # Bind on all host interfaces so the cloudflared container (host net,
+    # reaches origins via 172.17.0.1 = docker0 gateway) and the LAN can both
+    # hit it. LAN exposure is gated by the router firewall; public access
+    # goes through Cloudflare Access. Port is configurable to avoid clashes
+    # with other docker stacks on the same host.
     ports:
-      - "127.0.0.1:${PHISHPICKER_WEB_PORT:-3400}:3000"
+      - "${PHISHPICKER_WEB_PORT:-3400}:3000"
     depends_on:
       api:
         condition: service_healthy
