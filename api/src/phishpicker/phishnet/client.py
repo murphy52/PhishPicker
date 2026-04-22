@@ -43,14 +43,21 @@ class PhishNetClient:
         return self._get("shows.json", {"order_by": "showdate", "direction": "desc"})
 
     def fetch_upcoming_shows(self, from_date: str) -> list[dict]:
-        """Phish-only shows on or after from_date (YYYY-MM-DD), asc by date."""
-        data = self._get("shows.json", {"order_by": "showdate", "direction": "asc"})
-        return [
+        """Phish-only shows on or after from_date (YYYY-MM-DD), asc by date.
+
+        NB: phish.net v5 `shows.json` ignores `direction=asc` in practice —
+        results come back newest-first. So we sort the filtered slice in
+        Python before returning.
+        """
+        data = self._get("shows.json", {"order_by": "showdate"})
+        filtered = [
             d
             for d in data
             if str(d.get("artist_name")) == "Phish"
             and str(d.get("showdate", "")) >= from_date
         ]
+        filtered.sort(key=lambda d: str(d.get("showdate", "")))
+        return filtered
 
     def fetch_setlist_by_date(self, show_date: str) -> list[dict]:
         """Phish-only rows for the show on show_date."""

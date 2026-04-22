@@ -7,7 +7,7 @@ def test_upcoming_returns_next_phish_with_tz(
     httpx_mock.add_response(
         url=(
             "https://api.phish.net/v5/shows.json"
-            "?apikey=test-key&order_by=showdate&direction=asc"
+            "?apikey=test-key&order_by=showdate"
         ),
         json={
             "data": [
@@ -39,7 +39,7 @@ def test_upcoming_404s_when_no_future_shows(httpx_mock: HTTPXMock, seeded_client
     httpx_mock.add_response(
         url=(
             "https://api.phish.net/v5/shows.json"
-            "?apikey=test-key&order_by=showdate&direction=asc"
+            "?apikey=test-key&order_by=showdate"
         ),
         json={"data": []},
     )

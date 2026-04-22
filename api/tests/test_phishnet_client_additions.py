@@ -5,7 +5,7 @@ from phishpicker.phishnet.client import PhishNetClient
 
 def test_fetch_upcoming_shows_filters_by_date_and_phish(httpx_mock: HTTPXMock):
     httpx_mock.add_response(
-        url="https://api.phish.net/v5/shows.json?apikey=k&order_by=showdate&direction=asc",
+        url="https://api.phish.net/v5/shows.json?apikey=k&order_by=showdate",
         json={
             "data": [
                 {
@@ -38,6 +38,26 @@ def test_fetch_upcoming_shows_filters_by_date_and_phish(httpx_mock: HTTPXMock):
     with PhishNetClient(api_key="k") as c:
         shows = c.fetch_upcoming_shows(from_date="2026-04-20")
     assert [s["showid"] for s in shows] == [2]
+
+
+def test_fetch_upcoming_shows_sorts_ascending_even_when_api_returns_desc(
+    httpx_mock: HTTPXMock,
+):
+    """Regression: phish.net v5 ignores direction=asc and always returns
+    newest-first. We must sort in Python so shows[0] is the NEXT show."""
+    httpx_mock.add_response(
+        url="https://api.phish.net/v5/shows.json?apikey=k&order_by=showdate",
+        json={
+            "data": [
+                {"showid": 10, "showdate": "2027-01-30", "artist_name": "Phish"},
+                {"showid": 20, "showdate": "2026-09-04", "artist_name": "Phish"},
+                {"showid": 30, "showdate": "2026-04-23", "artist_name": "Phish"},
+            ]
+        },
+    )
+    with PhishNetClient(api_key="k") as c:
+        shows = c.fetch_upcoming_shows(from_date="2026-04-20")
+    assert [s["showid"] for s in shows] == [30, 20, 10]
 
 
 def test_fetch_setlist_by_date_filters_to_phish(httpx_mock: HTTPXMock):
