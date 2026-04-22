@@ -28,8 +28,25 @@ def apply_schema(conn: sqlite3.Connection) -> None:
     sql = SCHEMA_PATH.read_text()
     conn.executescript(sql)
     conn.commit()
+    for alter in [
+        "ALTER TABLE songs ADD COLUMN is_bustout_placeholder INTEGER NOT NULL DEFAULT 0",
+    ]:
+        try:
+            conn.execute(alter)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
 
 def apply_live_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(LIVE_SCHEMA_PATH.read_text())
     conn.commit()
+    for alter in [
+        "ALTER TABLE live_songs ADD COLUMN source TEXT NOT NULL DEFAULT 'user'",
+        "ALTER TABLE live_songs ADD COLUMN superseded_by INTEGER",
+    ]:
+        try:
+            conn.execute(alter)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
