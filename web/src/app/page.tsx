@@ -6,6 +6,7 @@ import { Leaderboard, type Candidate } from "@/components/Leaderboard";
 import { PlayedStrip } from "@/components/PlayedStrip";
 import { AddSongSheet } from "@/components/AddSongSheet";
 import { SetBoundaryButton } from "@/components/SetBoundaryButton";
+import { ShowHeader, type UpcomingShow } from "@/components/ShowHeader";
 import { useLiveShow } from "@/lib/liveShow";
 import { getCachedSongs, setCachedSongs, type Song } from "@/lib/songs";
 
@@ -26,8 +27,8 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 export default function Home() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
-  const [starting, setStarting] = useState(false);
   const initialized = useRef(false);
+  const autoStarted = useRef(false);
 
   const { showId, playedSongs, currentSet, startShow, addSong, undoLast, advanceSet, clearShow } =
     useLiveShow();
@@ -37,6 +38,19 @@ export default function Home() {
     predictKey,
     fetcher,
     { refreshInterval: 30_000 },
+  );
+
+  // Next Phish show (used to populate ShowHeader + auto-start).
+  // 404 is a valid "no upcoming show" answer, not an error — surface it
+  // as `upcoming = null` rather than letting SWR throw.
+  const { data: upcoming } = useSWR<UpcomingShow | null>(
+    "/api/upcoming",
+    async (url: string) => {
+      const r = await fetch(url);
+      if (r.status === 404) return null;
+      return r.json();
+    },
+    { revalidateOnFocus: false, dedupingInterval: 60_000 },
   );
 
   // Load songs with localStorage cache keyed on data_snapshot_at.
@@ -93,39 +107,43 @@ export default function Home() {
     mutatePrediction();
   }
 
-  async function handleStartShow() {
-    setStarting(true);
-    const today = new Date().toISOString().slice(0, 10);
-    await startShow(today);
-    setStarting(false);
-    mutatePrediction();
-  }
+  // Auto-start the next show when we have upcoming data and no active show.
+  // Ref guard prevents StrictMode double-mount from calling startShow twice
+  // (backend is also idempotent on show_date, but this avoids extra round-trips).
+  useEffect(() => {
+    if (showId || !upcoming || autoStarted.current) return;
+    autoStarted.current = true;
+    startShow(upcoming.show_date).then(() => mutatePrediction());
+  }, [showId, upcoming, startShow, mutatePrediction]);
 
   const candidates = prediction?.candidates ?? [];
 
   return (
     <div className="min-h-dvh bg-neutral-950 text-neutral-100 flex flex-col">
-      <header className="px-4 pt-6 pb-2">
-        <h1 className="text-xl font-bold tracking-tight">Phishpicker</h1>
-        {showId && (
-          <p className="text-sm text-neutral-400 mt-1">
-            Set {currentSet} · {playedSongs.length} songs played
-          </p>
-        )}
-      </header>
+      {upcoming ? (
+        <ShowHeader show={upcoming} />
+      ) : (
+        <header className="px-4 pt-6 pb-2">
+          <h1 className="text-xl font-bold tracking-tight">Phishpicker</h1>
+        </header>
+      )}
 
-      <main className="flex-1 flex flex-col gap-4 px-4 pb-24">
+      {showId && (
+        <div className="px-4 pt-2 text-xs text-neutral-500">
+          Set {currentSet} · {playedSongs.length} songs played
+        </div>
+      )}
+
+      <main className="flex-1 flex flex-col gap-4 px-4 pt-3 pb-24">
         {!showId ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-4">
-            <p className="text-neutral-400 text-sm">No active show.</p>
-            <button
-              type="button"
-              onClick={handleStartShow}
-              disabled={starting}
-              className="px-6 py-3 rounded-full bg-indigo-600 text-white font-medium disabled:opacity-50"
-            >
-              {starting ? "Starting…" : "Start show"}
-            </button>
+            <p className="text-neutral-400 text-sm">
+              {upcoming === undefined
+                ? "Loading next show…"
+                : upcoming === null
+                  ? "No upcoming Phish shows."
+                  : "Starting show…"}
+            </p>
           </div>
         ) : (
           <>
