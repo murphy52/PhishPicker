@@ -73,5 +73,23 @@ export function useLiveShow() {
     setCurrentSet("1");
   }, []);
 
-  return { showId, playedSongs, currentSet, startShow, addSong, undoLast, advanceSet, clearShow };
+  const hydrate = useCallback(
+    (played: LiveSong[], currentSet: string) => {
+      setPlayedSongs(played);
+      setCurrentSet(currentSet);
+    },
+    [],
+  );
+
+  return {
+    showId,
+    playedSongs,
+    currentSet,
+    startShow,
+    addSong,
+    undoLast,
+    advanceSet,
+    clearShow,
+    hydrate,
+  };
 }

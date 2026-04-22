@@ -37,6 +37,7 @@ export default function Home() {
     undoLast,
     advanceSet,
     clearShow,
+    hydrate,
   } = useLiveShow();
 
   const { data: preview, mutate: mutatePreview } = usePreview(
@@ -76,12 +77,27 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!showId) return;
-    fetch(`/api/live/show/${showId}`).then((r) => {
-      if (r.status === 404) clearShow();
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!showId || songs.length === 0) return;
+    (async () => {
+      const r = await fetch(`/api/live/show/${showId}`);
+      if (r.status === 404) {
+        clearShow();
+        return;
+      }
+      const data = (await r.json()) as {
+        current_set: string;
+        songs: { song_id: number; set_number: string }[];
+      };
+      const byId = new Map(songs.map((s) => [s.song_id, s]));
+      const played = data.songs
+        .map((row) => {
+          const song = byId.get(row.song_id);
+          return song ? { ...song, set_number: row.set_number } : null;
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== null);
+      hydrate(played, data.current_set);
+    })();
+  }, [showId, songs, clearShow, hydrate]);
 
   async function handleAdd(song: Song) {
     await addSong(song);
