@@ -9,6 +9,7 @@ import { ShowHeader, type UpcomingShow } from "@/components/ShowHeader";
 import { FullPreview } from "@/components/FullPreview";
 import { SlotAltsModal } from "@/components/SlotAltsModal";
 import { SyncStatus } from "@/components/SyncStatus";
+import { PushToggle } from "@/components/PushToggle";
 import { useLiveShow } from "@/lib/liveShow";
 import {
   applyPendingMutation,
@@ -176,7 +177,8 @@ export default function Home() {
             <ShowHeader show={upcoming} />
           </div>
           {showId && (
-            <div className="px-4 pt-5 shrink-0">
+            <div className="px-4 pt-5 shrink-0 flex items-center gap-2">
+              <PushToggle />
               <SyncStatus showId={showId} showDate={upcoming.show_date} />
             </div>
           )}
