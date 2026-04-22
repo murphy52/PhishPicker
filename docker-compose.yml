@@ -9,6 +9,10 @@ services:
       # ${VAR:?} fails fast if the var isn't set — prevents the silent-empty-key footgun.
       PHISHNET_API_KEY: ${PHISHNET_API_KEY:?PHISHNET_API_KEY must be set in .env}
       PHISHPICKER_ADMIN_TOKEN: ${PHISHPICKER_ADMIN_TOKEN:?PHISHPICKER_ADMIN_TOKEN must be set in .env}
+      # Web Push / VAPID. Optional — push is a no-op if unset, so we don't fail fast.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
     networks: [internal]
     restart: unless-stopped
     healthcheck:
