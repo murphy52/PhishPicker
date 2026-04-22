@@ -120,25 +120,23 @@ export default function Home() {
       song: { song_id: song.song_id, name: song.name },
       setNumber: currentSet,
     });
+    // Scroll to the pending ghost slot as soon as React flushes it — don't
+    // wait for the API roundtrip. Two rAFs: one to wait for React, one more
+    // in case the slot was mid-transition when the mutation fired.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const ghost = document.querySelector(
+          '[data-testid="slot"][data-pending="adding"]',
+        );
+        ghost?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }),
+    );
     try {
       await addSong(song);
       await mutatePreview();
     } finally {
       setPending(null);
     }
-    // After the new preview renders, scroll the just-added slot into view so
-    // the user sees both the confirmation and the next prediction beneath it.
-    // rAF waits for React's flush; a second rAF covers the case where preview
-    // re-renders synchronously after the mutate resolves.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        const entered = document.querySelectorAll(
-          '[data-testid="slot"][data-state="entered"]',
-        );
-        const last = entered[entered.length - 1];
-        last?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }),
-    );
   }
 
   async function handleUndo() {
