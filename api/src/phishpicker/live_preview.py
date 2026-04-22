@@ -4,7 +4,10 @@ import sqlite3
 
 from fastapi import HTTPException
 
+from phishpicker.model.stats import compute_song_stats
 from phishpicker.predict import predict_next_stateless
+from phishpicker.train.bigrams import compute_bigram_probs
+from phishpicker.train.extended_stats import compute_extended_stats
 
 
 def build_preview(
@@ -35,10 +38,29 @@ def build_preview(
         "WHERE show_id = ? ORDER BY entered_order",
         (show_id,),
     ).fetchall()
-    played_names = (
-        dict(read_conn.execute("SELECT song_id, name FROM songs").fetchall())
-        if played_rows
-        else {}
+    # One-shot song name lookup — reused for both entered-slot labels and
+    # for decorating scored candidates in each slot loop iteration.
+    song_names = dict(read_conn.execute("SELECT song_id, name FROM songs").fetchall())
+    song_ids = list(song_names.keys())
+
+    # Per-show caches. These depend only on (show_date, venue_id, song set),
+    # which are fixed across all 18 slots — so compute once, reuse.
+    show_date = show["show_date"]
+    venue_id = show["venue_id"]
+    stats_cache = (
+        compute_song_stats(read_conn, show_date, venue_id, song_ids)
+        if scorer.name in ("lightgbm", "heuristic")
+        else None
+    )
+    ext_cache = (
+        compute_extended_stats(read_conn, show_date, venue_id, song_ids)
+        if scorer.name == "lightgbm"
+        else None
+    )
+    bigram_cache = (
+        compute_bigram_probs(read_conn, cutoff_date=show_date)
+        if scorer.name == "lightgbm"
+        else None
     )
 
     entered_by_pos: dict[tuple[str, int], dict] = {}
@@ -47,7 +69,7 @@ def build_preview(
         per_set_seen[r["set_number"]] = per_set_seen.get(r["set_number"], 0) + 1
         entered_by_pos[(r["set_number"], per_set_seen[r["set_number"]])] = {
             "song_id": r["song_id"],
-            "name": played_names.get(r["song_id"], f"#{r['song_id']}"),
+            "name": song_names.get(r["song_id"], f"#{r['song_id']}"),
         }
 
     virtual_played: list[int] = [r["song_id"] for r in played_rows]
@@ -78,12 +100,17 @@ def build_preview(
                 read_conn=read_conn,
                 played_songs=virtual_played,
                 current_set=set_number,
-                show_date=show["show_date"],
-                venue_id=show["venue_id"],
+                show_date=show_date,
+                venue_id=venue_id,
                 prev_trans_mark=prev_trans_mark,
                 prev_set_number=prev_set_number,
                 top_n=top_k,
                 scorer=scorer,
+                song_ids_cache=song_ids,
+                song_names_cache=song_names,
+                stats_cache=stats_cache,
+                ext_cache=ext_cache,
+                bigram_cache=bigram_cache,
             )
             slots.append(
                 {

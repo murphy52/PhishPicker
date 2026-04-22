@@ -33,12 +33,16 @@ def build_feature_rows(
     all_show_dates: list[str] | None = None,
     prev_trans_mark: str = ",",
     prev_set_number: str | None = None,
+    stats_cache: dict | None = None,
+    ext_cache: dict | None = None,
 ) -> list[FeatureRow]:
     """Emit one FeatureRow per candidate song at the given slot.
 
     show_id=0 is used for live shows not yet ingested into the shows table.
-    bigram_cache, if supplied, skips the per-call bigram computation — critical
-    during training where we compute bigrams once per fold.
+    bigram_cache / stats_cache / ext_cache, if supplied, skip the
+    corresponding per-call compute. These caches are keyed per show (not per
+    slot), so the preview builder can precompute them once and reuse across
+    all 18 slots — saves ~1.3s per slot at ~18 slots.
     """
     ctx = compute_show_context(conn, show_date=show_date, venue_id=venue_id)
     # Resolve tour_id: if show_id is populated (training, or a live show whose
@@ -60,21 +64,29 @@ def build_feature_rows(
         if r:
             tour_id = int(r["tour_id"])
 
-    stats = compute_song_stats(
-        conn,
-        show_date,
-        venue_id,
-        candidate_song_ids,
-        all_show_dates=all_show_dates,
-        tour_id=tour_id,
+    stats = (
+        stats_cache
+        if stats_cache is not None
+        else compute_song_stats(
+            conn,
+            show_date,
+            venue_id,
+            candidate_song_ids,
+            all_show_dates=all_show_dates,
+            tour_id=tour_id,
+        )
     )
-    ext = compute_extended_stats(
-        conn,
-        show_date,
-        venue_id,
-        candidate_song_ids,
-        tour_id=tour_id,
-        all_show_dates=all_show_dates,
+    ext = (
+        ext_cache
+        if ext_cache is not None
+        else compute_extended_stats(
+            conn,
+            show_date,
+            venue_id,
+            candidate_song_ids,
+            tour_id=tour_id,
+            all_show_dates=all_show_dates,
+        )
     )
 
     prev_song_id = played_songs[-1] if played_songs else MISSING_INT

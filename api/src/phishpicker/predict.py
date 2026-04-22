@@ -15,14 +15,26 @@ def predict_next_stateless(
     prev_set_number: str | None = None,
     top_n: int = 20,
     scorer: Scorer | None = None,
+    song_ids_cache: list[int] | None = None,
+    song_names_cache: dict[int, str] | None = None,
+    stats_cache: dict | None = None,
+    ext_cache: dict | None = None,
+    bigram_cache: dict | None = None,
 ) -> list[dict]:
-    """Pure prediction over an explicit played list — no live DB."""
+    """Pure prediction over an explicit played list — no live DB.
+
+    The *_cache kwargs let a caller (notably the preview loop) precompute
+    per-show artefacts once and reuse them across many slot calls.
+    """
     if scorer is None:
         scorer = HeuristicScorer()
 
-    song_ids = [
-        r["song_id"] for r in read_conn.execute("SELECT song_id FROM songs").fetchall()
-    ]
+    if song_ids_cache is not None:
+        song_ids = song_ids_cache
+    else:
+        song_ids = [
+            r["song_id"] for r in read_conn.execute("SELECT song_id FROM songs").fetchall()
+        ]
     if not song_ids:
         return []
 
@@ -35,6 +47,9 @@ def predict_next_stateless(
         candidate_song_ids=song_ids,
         prev_trans_mark=prev_trans_mark,
         prev_set_number=prev_set_number,
+        stats_cache=stats_cache,
+        ext_cache=ext_cache,
+        bigram_cache=bigram_cache,
     )
     scored = apply_post_rules(scored, played_tonight=set(played_songs))
     scored = [(sid, s) for sid, s in scored if s > 0.0]
@@ -45,16 +60,19 @@ def predict_next_stateless(
     normalized = [(sid, s, s / total) for sid, s in top]
 
     top_ids = [sid for sid, _, _ in normalized]
-    names = (
-        dict(
-            read_conn.execute(
-                f"SELECT song_id, name FROM songs WHERE song_id IN ({','.join('?' * len(top_ids))})",
-                top_ids,
-            ).fetchall()
+    if song_names_cache is not None:
+        names = song_names_cache
+    else:
+        names = (
+            dict(
+                read_conn.execute(
+                    f"SELECT song_id, name FROM songs WHERE song_id IN ({','.join('?' * len(top_ids))})",
+                    top_ids,
+                ).fetchall()
+            )
+            if top_ids
+            else {}
         )
-        if top_ids
-        else {}
-    )
     return [
         {"song_id": sid, "name": names.get(sid, f"#{sid}"), "score": s, "probability": p}
         for sid, s, p in normalized

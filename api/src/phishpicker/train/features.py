@@ -9,7 +9,7 @@ sentinels (MISSING_INT = -1, MISSING_FLOAT = -1.0). LightGBM handles sentinels
 natively — we do NOT substitute column means.
 """
 
-from dataclasses import asdict, dataclass, fields
+from dataclasses import dataclass, fields
 
 MISSING_INT: int = -1
 MISSING_FLOAT: float = -1.0
@@ -92,8 +92,10 @@ class FeatureRow:
         return cls(song_id=song_id, show_id=show_id, slot_number=slot_number)
 
     def to_vector(self) -> list[float]:
-        d = asdict(self)
-        return [float(d[col]) for col in FEATURE_COLUMNS]
+        # Direct attribute access; asdict(self) was ~50% of runtime in the
+        # preview hot loop because it deep-copies every scalar field into a
+        # new dict for every candidate.
+        return [float(getattr(self, col)) for col in FEATURE_COLUMNS]
 
 
 _IDENTITY = {"song_id", "show_id", "slot_number"}
