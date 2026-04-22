@@ -5,6 +5,10 @@ from the order of occurrence in `user_rows` (which the caller must pass in
 entered_order order). For `net_rows`, we trust phish.net's `position` field.
 """
 
+import asyncio
+import contextlib
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +16,8 @@ from pathlib import Path
 from phishpicker.db.connection import open_db
 from phishpicker.live import append_song, get_live_show, replace_song_at
 from phishpicker.phishnet.client import PhishNetClient
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -181,3 +187,82 @@ def sync_show_with_phishnet(
         "bustouts": bustouts,
         "last_updated": now,
     }
+
+
+async def _default_sync(
+    *, show_id, show_date, db_path, live_db_path, api_key
+):
+    await asyncio.to_thread(
+        sync_show_with_phishnet,
+        db_path=db_path,
+        live_db_path=live_db_path,
+        api_key=api_key,
+        show_id=show_id,
+        show_date=show_date,
+    )
+
+
+class PollerRegistry:
+    """Per-show async poller. Tasks live on app.state so they're scoped to
+    the FastAPI app lifecycle (not a module global). Each tick of a poller
+    runs `sync_fn` with the show's kwargs; errors are caught and stored in
+    `_meta[show_id]['last_error']` for /sync/status."""
+
+    def __init__(self, sync_fn: Callable | None = None):
+        self._tasks: dict[str, asyncio.Task] = {}
+        self._meta: dict[str, dict] = {}
+        self._sync_fn = sync_fn or _default_sync
+
+    async def start(
+        self,
+        show_id: str,
+        show_date: str,
+        interval: float = 60.0,
+        **sync_kwargs,
+    ) -> None:
+        if show_id in self._tasks and not self._tasks[show_id].done():
+            return
+        self._tasks[show_id] = asyncio.create_task(
+            self._loop(show_id, show_date, interval, sync_kwargs)
+        )
+
+    async def stop(self, show_id: str) -> None:
+        """Cancel the task AND await it so any in-flight asyncio.to_thread
+        work completes (or its cancellation propagates) before returning.
+        Prevents races where a cancelled task still writes to a closing DB."""
+        task = self._tasks.pop(show_id, None)
+        if not task or task.done():
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    async def stop_all(self) -> None:
+        tasks = list(self._tasks.values())
+        self._tasks.clear()
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    def last_error(self, show_id: str) -> str | None:
+        return self._meta.get(show_id, {}).get("last_error")
+
+    async def _loop(
+        self, show_id: str, show_date: str, interval: float, sync_kwargs: dict
+    ) -> None:
+        while True:
+            try:
+                await self._sync_fn(
+                    show_id=show_id, show_date=show_date, **sync_kwargs
+                )
+                self._meta.setdefault(show_id, {})["last_error"] = None
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.warning("sync failed for %s: %s", show_id, e)
+                self._meta.setdefault(show_id, {})["last_error"] = str(e)
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                raise

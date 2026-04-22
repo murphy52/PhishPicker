@@ -19,6 +19,7 @@ from phishpicker.live import (
     delete_last_song,
     get_live_show,
 )
+from phishpicker.live_sync import PollerRegistry
 from phishpicker.model.scorer import load_runtime_scorer
 from phishpicker.phishnet.client import PhishNetClient
 from phishpicker.predict import predict_next, predict_next_stateless
@@ -67,9 +68,11 @@ def create_app() -> FastAPI:
         app.state.scorer = load_runtime_scorer(app.state.model_path)
         log.info("loaded scorer: %s", app.state.scorer.name)
         app.state.phishnet_client = PhishNetClient(api_key=settings.phishnet_api_key)
+        app.state.pollers = PollerRegistry()
         try:
             yield
         finally:
+            await app.state.pollers.stop_all()
             app.state.phishnet_client.close()
 
     app = FastAPI(title="Phishpicker", lifespan=lifespan)
