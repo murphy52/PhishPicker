@@ -69,6 +69,56 @@ def seeded_client(tmp_path, monkeypatch, fixtures_dir) -> Iterator[TestClient]:
 
 
 @pytest.fixture
+def live_setup(tmp_path, fixtures_dir):
+    """Fully seeded read DB + live DB + one live show, for end-to-end sync
+    tests that need real DB paths (not live shared connections)."""
+    from types import SimpleNamespace
+
+    from phishpicker.db.connection import apply_live_schema, apply_schema, open_db
+    from phishpicker.ingest.derive import recompute_run_and_tour_positions
+    from phishpicker.ingest.pipeline import upsert_tour_stubs
+    from phishpicker.ingest.shows import upsert_setlist_songs, upsert_show
+    from phishpicker.ingest.songs import upsert_songs
+    from phishpicker.ingest.venues import upsert_venues
+    from phishpicker.live import create_live_show
+
+    db_path = tmp_path / "phishpicker.db"
+    live_db_path = tmp_path / "live.db"
+
+    db = open_db(db_path)
+    apply_schema(db)
+    upsert_songs(
+        db, json.loads((fixtures_dir / "phishnet_songs_sample.json").read_text())["data"]
+    )
+    upsert_venues(
+        db, json.loads((fixtures_dir / "phishnet_venues_sample.json").read_text())["data"]
+    )
+    shows_data = json.loads(
+        (fixtures_dir / "phishnet_shows_sample.json").read_text()
+    )["data"]
+    upsert_tour_stubs(db, shows_data)
+    for show in shows_data:
+        upsert_show(db, show)
+    upsert_setlist_songs(
+        db,
+        json.loads(
+            (fixtures_dir / "phishnet_setlist_show1234567.json").read_text()
+        )["data"],
+    )
+    recompute_run_and_tour_positions(db)
+    db.close()
+
+    live = open_db(live_db_path)
+    apply_live_schema(live)
+    show_id = create_live_show(live, "2026-04-23", venue_id=1597)
+    live.close()
+
+    return SimpleNamespace(
+        db_path=db_path, live_db_path=live_db_path, show_id=show_id
+    )
+
+
+@pytest.fixture
 def seeded_live_show(live_conn) -> str:
     """Create a live show directly against live_conn; returns show_id."""
     from phishpicker.live import create_live_show
