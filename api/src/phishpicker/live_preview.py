@@ -19,11 +19,12 @@ def build_preview(
     scorer,
 ) -> dict:
     show = live_conn.execute(
-        "SELECT show_date, venue_id FROM live_show WHERE show_id = ?",
+        "SELECT show_date, venue_id, current_set FROM live_show WHERE show_id = ?",
         (show_id,),
     ).fetchone()
     if not show:
         raise HTTPException(404, "show not found")
+    current_set = show["current_set"]
     meta = live_conn.execute(
         "SELECT set1_size, set2_size, encore_size FROM live_show_meta WHERE show_id = ?",
         (show_id,),
@@ -78,7 +79,21 @@ def build_preview(
         played_rows[-1]["set_number"] if played_rows else None
     )
 
-    structure = [("1", set1), ("2", set2), ("E", enc)]
+    # Per-set slot count: never below the default, never below entered_count,
+    # and one extra speculative "set-closer" slot if this is the set the user
+    # is currently in. That way filling Set 1 past the default 9 still shows a
+    # prediction for a possible 10th song, but we don't phantom-extend a set
+    # the user has already moved past.
+    def _n_for(s: str, default: int) -> int:
+        entered = per_set_seen.get(s, 0)
+        buffer = 1 if s == current_set else 0
+        return max(default, entered + buffer)
+
+    structure = [
+        ("1", _n_for("1", set1)),
+        ("2", _n_for("2", set2)),
+        ("E", _n_for("E", enc)),
+    ]
     slots = []
     slot_idx = 0
     for set_number, n in structure:
