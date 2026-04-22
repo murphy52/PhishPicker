@@ -21,6 +21,20 @@ function slot(
   };
 }
 
+test("renders skeleton when loading with no slots", () => {
+  render(<FullPreview slots={[]} loading onSlotClick={() => {}} />);
+  expect(screen.getByTestId("preview-skeleton")).toBeInTheDocument();
+  expect(screen.queryByTestId("slot")).not.toBeInTheDocument();
+});
+
+test("skeleton is hidden once data arrives", () => {
+  render(
+    <FullPreview slots={[slot(1, "1", 1)]} loading onSlotClick={() => {}} />,
+  );
+  expect(screen.queryByTestId("preview-skeleton")).not.toBeInTheDocument();
+  expect(screen.getAllByTestId("slot")).toHaveLength(1);
+});
+
 test("renders one slot element per preview slot", () => {
   const slots: PreviewSlot[] = [slot(1, "1", 1), slot(2, "1", 2), slot(3, "2", 1)];
   render(<FullPreview slots={slots} onSlotClick={() => {}} />);

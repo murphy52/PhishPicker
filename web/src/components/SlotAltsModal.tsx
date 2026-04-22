@@ -46,7 +46,24 @@ export function SlotAltsModal({ showId, slotIdx, onClose, onPick }: Props) {
           </button>
         </div>
         {loading ? (
-          <div className="text-sm text-neutral-500 py-4">Loading…</div>
+          <ol
+            data-testid="slot-alts-skeleton"
+            className="flex-1 overflow-y-auto animate-pulse"
+          >
+            {Array.from({ length: 10 }).map((_, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-3 py-3 min-h-[44px] px-2"
+              >
+                <span className="w-6 h-3 bg-neutral-800 rounded" />
+                <span
+                  className="flex-1 h-4 bg-neutral-800 rounded"
+                  style={{ maxWidth: `${55 + ((i * 11) % 35)}%` }}
+                />
+                <span className="w-8 h-3 bg-neutral-800 rounded shrink-0" />
+              </li>
+            ))}
+          </ol>
         ) : (
           <ol className="flex-1 overflow-y-auto">
             {candidates.map((c) => (

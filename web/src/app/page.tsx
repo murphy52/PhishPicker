@@ -151,7 +151,11 @@ export default function Home() {
           <>
             <PlayedStrip songs={playedSongs} onUndo={handleUndo} />
 
-            <FullPreview slots={slots} onSlotClick={setActiveSlot} />
+            <FullPreview
+              slots={slots}
+              loading={!preview}
+              onSlotClick={setActiveSlot}
+            />
 
             <SetBoundaryButton currentSet={currentSet} onAdvance={handleAdvanceSet} />
 

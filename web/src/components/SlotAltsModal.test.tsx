@@ -26,6 +26,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test("renders skeleton rows while loading", async () => {
+  global.fetch = vi.fn(() => new Promise(() => {})) as unknown as typeof fetch;
+  render(
+    <SlotAltsModal
+      showId={`show-${Math.random()}`}
+      slotIdx={5}
+      onClose={() => {}}
+      onPick={() => {}}
+    />,
+  );
+  expect(await screen.findByTestId("slot-alts-skeleton")).toBeInTheDocument();
+});
+
 test("renders nothing when slotIdx is null", () => {
   render(
     <SlotAltsModal showId="abc" slotIdx={null} onClose={() => {}} onPick={() => {}} />,
