@@ -29,9 +29,13 @@ export function SlotAltsModal({ showId, slotIdx, onClose, onPick }: Props) {
   return (
     <div
       data-testid="slot-alts-modal"
+      onClick={onClose}
       className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60"
     >
-      <div className="bg-neutral-900 rounded-t-2xl p-4 max-h-[80dvh] flex flex-col">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-neutral-900 rounded-t-2xl p-4 max-h-[80dvh] flex flex-col"
+      >
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-medium text-neutral-300">
             Slot {slotIdx} · alternatives

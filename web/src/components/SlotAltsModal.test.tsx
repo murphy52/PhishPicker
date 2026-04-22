@@ -78,6 +78,28 @@ test("clicking a candidate calls onPick with the song", async () => {
   );
 });
 
+test("clicking the backdrop calls onClose", async () => {
+  const onClose = vi.fn();
+  render(
+    <SlotAltsModal showId="abc" slotIdx={5} onClose={onClose} onPick={() => {}} />,
+  );
+  const backdrop = await screen.findByTestId("slot-alts-modal");
+  backdrop.click();
+  expect(onClose).toHaveBeenCalled();
+});
+
+test("clicking inside the sheet does NOT call onClose", async () => {
+  const onClose = vi.fn();
+  render(
+    <SlotAltsModal showId="abc" slotIdx={5} onClose={onClose} onPick={() => {}} />,
+  );
+  const candidate = await screen.findByText("Reba");
+  const sheet = candidate.closest("div.bg-neutral-900");
+  expect(sheet).toBeTruthy();
+  sheet!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(onClose).not.toHaveBeenCalled();
+});
+
 test("clicking close calls onClose", async () => {
   const onClose = vi.fn();
   render(
