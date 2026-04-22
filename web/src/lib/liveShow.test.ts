@@ -75,6 +75,45 @@ test("undoLast removes the last played song", async () => {
   expect(result.current.playedSongs[0].name).toBe("A");
 });
 
+test("undoLast resets currentSet to 1 when list becomes empty", async () => {
+  localStorage.setItem("phishpicker:live_show_id", "s1");
+  mockFetch.mockResolvedValue({ json: async () => ({}) });
+  const { result } = renderHook(() => useLiveShow());
+
+  await act(async () => {
+    await result.current.addSong({ song_id: 1, name: "A" });
+    await result.current.advanceSet("E");
+  });
+  expect(result.current.currentSet).toBe("E");
+
+  await act(async () => {
+    await result.current.undoLast();
+  });
+
+  expect(result.current.playedSongs).toHaveLength(0);
+  expect(result.current.currentSet).toBe("1");
+});
+
+test("undoLast leaves currentSet alone when list is still non-empty", async () => {
+  localStorage.setItem("phishpicker:live_show_id", "s1");
+  mockFetch.mockResolvedValue({ json: async () => ({}) });
+  const { result } = renderHook(() => useLiveShow());
+
+  await act(async () => {
+    await result.current.addSong({ song_id: 1, name: "A" });
+    await result.current.advanceSet("2");
+    await result.current.addSong({ song_id: 2, name: "B" });
+  });
+  expect(result.current.currentSet).toBe("2");
+
+  await act(async () => {
+    await result.current.undoLast();
+  });
+
+  expect(result.current.currentSet).toBe("2");
+  expect(result.current.playedSongs).toHaveLength(1);
+});
+
 test("advanceSet changes currentSet", async () => {
   localStorage.setItem("phishpicker:live_show_id", "s1");
   mockFetch.mockResolvedValue({ json: async () => ({ updated: true }) });

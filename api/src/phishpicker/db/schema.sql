@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS songs (
     name TEXT NOT NULL,
     original_artist TEXT,
     debut_date TEXT,
-    first_seen_at TEXT NOT NULL
+    first_seen_at TEXT NOT NULL,
+    is_bustout_placeholder INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_songs_name ON songs(name);
 

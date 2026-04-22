@@ -4,6 +4,12 @@ from datetime import UTC, datetime
 
 
 def create_live_show(conn: sqlite3.Connection, show_date: str, venue_id: int | None) -> str:
+    existing = conn.execute(
+        "SELECT show_id FROM live_show WHERE show_date = ? ORDER BY started_at DESC LIMIT 1",
+        (show_date,),
+    ).fetchone()
+    if existing:
+        return existing["show_id"]
     show_id = str(uuid.uuid4())
     now = datetime.now(UTC).isoformat()
     conn.execute(
@@ -69,6 +75,23 @@ def delete_last_song(conn: sqlite3.Connection, show_id: str) -> bool:
     )
     conn.commit()
     return True
+
+
+def replace_song_at(
+    conn: sqlite3.Connection,
+    show_id: str,
+    entered_order: int,
+    new_song_id: int,
+    source: str = "phishnet",
+    superseded_by: int | None = None,
+) -> bool:
+    cur = conn.execute(
+        "UPDATE live_songs SET song_id = ?, source = ?, superseded_by = ? "
+        "WHERE show_id = ? AND entered_order = ?",
+        (new_song_id, source, superseded_by, show_id, entered_order),
+    )
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def advance_set(conn: sqlite3.Connection, show_id: str, set_number: str) -> bool:

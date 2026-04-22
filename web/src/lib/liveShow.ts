@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Song } from "./songs";
 
 const LS_KEY = "phishpicker:live_show_id";
@@ -10,12 +10,15 @@ export interface LiveSong extends Song {
 }
 
 export function useLiveShow() {
-  const [showId, setShowId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem(LS_KEY);
-  });
+  const [showId, setShowId] = useState<string | null>(null);
   const [playedSongs, setPlayedSongs] = useState<LiveSong[]>([]);
   const [currentSet, setCurrentSet] = useState("1");
+
+  useEffect(() => {
+    const stored = localStorage.getItem(LS_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot SSR-safe localStorage hydration
+    if (stored) setShowId(stored);
+  }, []);
 
   const startShow = useCallback(async (show_date: string, venue_id?: number) => {
     const res = await fetch("/api/live/show", {
@@ -47,8 +50,17 @@ export function useLiveShow() {
   const undoLast = useCallback(async () => {
     if (!showId || playedSongs.length === 0) return;
     await fetch(`/api/live/song/last?show_id=${showId}`, { method: "DELETE" });
-    setPlayedSongs((prev) => prev.slice(0, -1));
-  }, [showId, playedSongs]);
+    const next = playedSongs.slice(0, -1);
+    setPlayedSongs(next);
+    if (next.length === 0 && currentSet !== "1") {
+      await fetch("/api/live/set-boundary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ show_id: showId, set_number: "1" }),
+      });
+      setCurrentSet("1");
+    }
+  }, [showId, playedSongs, currentSet]);
 
   const advanceSet = useCallback(
     async (nextSet: string) => {
@@ -70,5 +82,23 @@ export function useLiveShow() {
     setCurrentSet("1");
   }, []);
 
-  return { showId, playedSongs, currentSet, startShow, addSong, undoLast, advanceSet, clearShow };
+  const hydrate = useCallback(
+    (played: LiveSong[], currentSet: string) => {
+      setPlayedSongs(played);
+      setCurrentSet(currentSet);
+    },
+    [],
+  );
+
+  return {
+    showId,
+    playedSongs,
+    currentSet,
+    startShow,
+    addSong,
+    undoLast,
+    advanceSet,
+    clearShow,
+    hydrate,
+  };
 }

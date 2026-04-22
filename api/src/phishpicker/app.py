@@ -5,8 +5,9 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, closing
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from phishpicker.config import Settings
@@ -18,8 +19,11 @@ from phishpicker.live import (
     delete_last_song,
     get_live_show,
 )
+from phishpicker.live_sync import PollerRegistry
 from phishpicker.model.scorer import load_runtime_scorer
-from phishpicker.predict import predict_next
+from phishpicker.phishnet.client import PhishNetClient
+from phishpicker.predict import predict_next, predict_next_stateless
+from phishpicker.venue_tz import tz_for_state
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +49,14 @@ def _live_conn_dep(settings: Settings) -> Iterator[sqlite3.Connection]:
     return _dep
 
 
+def _read_write_conn_dep(settings: Settings) -> Iterator[sqlite3.Connection]:
+    def _dep() -> Iterator[sqlite3.Connection]:
+        with closing(open_db(settings.db_path, read_only=False)) as c:
+            yield c
+
+    return _dep
+
+
 def create_app() -> FastAPI:
     settings = Settings()  # type: ignore[call-arg]
 
@@ -55,15 +67,23 @@ def create_app() -> FastAPI:
         app.state.metrics_path = settings.data_dir / "metrics.json"
         app.state.scorer = load_runtime_scorer(app.state.model_path)
         log.info("loaded scorer: %s", app.state.scorer.name)
-        yield
+        app.state.phishnet_client = PhishNetClient(api_key=settings.phishnet_api_key)
+        app.state.pollers = PollerRegistry()
+        try:
+            yield
+        finally:
+            await app.state.pollers.stop_all()
+            app.state.phishnet_client.close()
 
     app = FastAPI(title="Phishpicker", lifespan=lifespan)
     get_read = _read_conn_dep(settings)
     get_live = _live_conn_dep(settings)
+    get_rw = _read_write_conn_dep(settings)
     # Expose dependency factories on app.state so endpoints in other modules
     # can access them via request.app.state.
     app.state.get_read = get_read
     app.state.get_live = get_live
+    app.state.get_rw = get_rw
 
     class LiveShowCreate(BaseModel):
         show_date: str
@@ -110,6 +130,57 @@ def create_app() -> FastAPI:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    class NewSong(BaseModel):
+        name: str
+
+    @app.post("/songs", status_code=201)
+    def insert_song(
+        body: NewSong,
+        response: Response,
+        conn: sqlite3.Connection = Depends(get_rw),  # noqa: B008
+    ):
+        existing = conn.execute(
+            "SELECT song_id, name, is_bustout_placeholder FROM songs WHERE name = ?",
+            (body.name,),
+        ).fetchone()
+        if existing:
+            response.status_code = 200
+            return {
+                "song_id": existing["song_id"],
+                "name": existing["name"],
+                "is_bustout_placeholder": bool(existing["is_bustout_placeholder"]),
+            }
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        cur = conn.execute(
+            "INSERT INTO songs (name, first_seen_at, is_bustout_placeholder) "
+            "VALUES (?, ?, 1)",
+            (body.name, now),
+        )
+        conn.commit()
+        return {
+            "song_id": cur.lastrowid,
+            "name": body.name,
+            "is_bustout_placeholder": True,
+        }
+
+    @app.get("/upcoming")
+    def upcoming(request: Request):
+        today = datetime.now(ZoneInfo("UTC")).date().isoformat()
+        shows = request.app.state.phishnet_client.fetch_upcoming_shows(today)
+        if not shows:
+            raise HTTPException(status_code=404, detail="no upcoming Phish shows")
+        first = shows[0]
+        state = first.get("state", "")
+        return {
+            "show_id": int(first["showid"]),
+            "show_date": first["showdate"],
+            "venue": first.get("venue", ""),
+            "city": first.get("city", ""),
+            "state": state,
+            "timezone": tz_for_state(state),
+            "start_time_local": "19:00",
+        }
+
     @app.post("/live/show")
     def create_show(body: LiveShowCreate, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
         show_id = create_live_show(conn, body.show_date, body.venue_id)
@@ -147,6 +218,170 @@ def create_app() -> FastAPI:
         request.app.state.scorer = load_runtime_scorer(request.app.state.model_path)
         log.info("reloaded scorer: %s", request.app.state.scorer.name)
         return {"reloaded": True, "scorer": request.app.state.scorer.name}
+
+    class PredictRequest(BaseModel):
+        played_songs: list[int] = []
+        current_set: str
+        show_date: str
+        venue_id: int | None = None
+        prev_trans_mark: str = ","
+        prev_set_number: str | None = None
+        top_n: int = 20
+
+    @app.post("/predict")
+    def predict_post(
+        body: PredictRequest,
+        request: Request,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+    ):
+        return {
+            "candidates": predict_next_stateless(
+                read_conn=read,
+                scorer=request.app.state.scorer,
+                **body.model_dump(),
+            )
+        }
+
+    class StructureUpdate(BaseModel):
+        set1: int = 9
+        set2: int = 7
+        encore: int = 2
+
+    @app.post("/live/show/{show_id}/structure")
+    def set_structure(
+        show_id: str,
+        body: StructureUpdate,
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        live.execute(
+            "INSERT INTO live_show_meta (show_id, set1_size, set2_size, encore_size) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(show_id) DO UPDATE SET "
+            "set1_size=excluded.set1_size, "
+            "set2_size=excluded.set2_size, "
+            "encore_size=excluded.encore_size",
+            (show_id, body.set1, body.set2, body.encore),
+        )
+        live.commit()
+        return {"ok": True}
+
+    @app.get("/live/show/{show_id}/preview")
+    def preview_endpoint(
+        show_id: str,
+        request: Request,
+        top_k: int = 10,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.live_preview import build_preview
+
+        return build_preview(
+            read_conn=read,
+            live_conn=live,
+            show_id=show_id,
+            top_k=top_k,
+            scorer=request.app.state.scorer,
+        )
+
+    class SyncStart(BaseModel):
+        show_date: str
+
+    @app.post("/live/show/{show_id}/sync/start")
+    async def sync_start(show_id: str, body: SyncStart, request: Request):
+        s = request.app.state.settings
+        await request.app.state.pollers.start(
+            show_id,
+            show_date=body.show_date,
+            interval=60.0,
+            db_path=s.db_path,
+            live_db_path=s.live_db_path,
+            api_key=s.phishnet_api_key,
+        )
+        # Open our own connection: this async endpoint may run on a different
+        # thread than whichever thread Depends(get_live) would have opened on.
+        with closing(open_db(s.live_db_path)) as live:
+            live.execute(
+                "INSERT INTO live_show_meta (show_id, sync_enabled) VALUES (?, 1) "
+                "ON CONFLICT(show_id) DO UPDATE SET sync_enabled=1",
+                (show_id,),
+            )
+            live.commit()
+        return {"started": True}
+
+    @app.post("/live/show/{show_id}/sync/stop")
+    async def sync_stop(show_id: str, request: Request):
+        s = request.app.state.settings
+        await request.app.state.pollers.stop(show_id)
+        with closing(open_db(s.live_db_path)) as live:
+            live.execute(
+                "UPDATE live_show_meta SET sync_enabled=0 WHERE show_id = ?",
+                (show_id,),
+            )
+            live.commit()
+        return {"stopped": True}
+
+    @app.get("/live/show/{show_id}/sync/status")
+    def sync_status(
+        show_id: str,
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        row = live.execute(
+            "SELECT sync_enabled, last_updated, last_error "
+            "FROM live_show_meta WHERE show_id = ?",
+            (show_id,),
+        ).fetchone()
+        if not row:
+            return {
+                "state": "off",
+                "sync_enabled": False,
+                "last_updated": None,
+                "last_error": None,
+            }
+        state = "off"
+        if row["sync_enabled"]:
+            if row["last_updated"]:
+                last = datetime.fromisoformat(
+                    row["last_updated"].replace("Z", "+00:00")
+                )
+                age = (datetime.now(UTC) - last).total_seconds()
+                if age < 120:
+                    state = "live"
+                elif age < 600:
+                    state = "stale"
+                else:
+                    state = "dead"
+            else:
+                state = "stale"
+            if row["last_error"]:
+                state = "dead"
+        return {
+            "state": state,
+            "sync_enabled": bool(row["sync_enabled"]),
+            "last_updated": row["last_updated"],
+            "last_error": row["last_error"],
+        }
+
+    @app.get("/live/show/{show_id}/slot/{slot_idx}/alternatives")
+    def slot_alternatives(
+        show_id: str,
+        slot_idx: int,
+        request: Request,
+        top_k: int = 10,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.live_preview import build_preview
+
+        pr = build_preview(
+            read_conn=read,
+            live_conn=live,
+            show_id=show_id,
+            top_k=top_k,
+            scorer=request.app.state.scorer,
+        )
+        if slot_idx < 1 or slot_idx > len(pr["slots"]):
+            raise HTTPException(404, "slot out of range")
+        return pr["slots"][slot_idx - 1]
 
     @app.get("/predict/{show_id}")
     def predict(

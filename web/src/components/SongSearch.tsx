@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Fuse from "fuse.js";
 import type { Song } from "@/lib/songs";
 
@@ -9,10 +9,16 @@ export type { Song };
 interface Props {
   songs: Song[];
   onSelect: (song: Song) => void;
+  autoFocus?: boolean;
 }
 
-export function SongSearch({ songs, onSelect }: Props) {
+export function SongSearch({ songs, onSelect, autoFocus }: Props) {
   const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
 
   const fuse = useMemo(
     () => new Fuse(songs, { keys: ["name", "original_artist"], threshold: 0.4 }),
@@ -24,6 +30,7 @@ export function SongSearch({ songs, onSelect }: Props) {
   return (
     <div>
       <input
+        ref={inputRef}
         type="text"
         aria-label="Search songs"
         placeholder="Search songs…"

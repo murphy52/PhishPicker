@@ -18,9 +18,16 @@ test("calls onAdvance with next set when clicked", () => {
   expect(onAdvance).toHaveBeenCalledWith("2");
 });
 
-test("advances from set 2 to encore", () => {
+test("advances from set 2 to encore (uppercase E)", () => {
   const onAdvance = vi.fn();
   render(<SetBoundaryButton currentSet="2" onAdvance={onAdvance} />);
   fireEvent.click(screen.getByRole("button"));
-  expect(onAdvance).toHaveBeenCalledWith("e");
+  expect(onAdvance).toHaveBeenCalledWith("E");
+});
+
+test("renders nothing when already in encore", () => {
+  const { container } = render(
+    <SetBoundaryButton currentSet="E" onAdvance={() => {}} />,
+  );
+  expect(container.firstChild).toBeNull();
 });

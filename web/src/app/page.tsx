@@ -2,11 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import { Leaderboard, type Candidate } from "@/components/Leaderboard";
 import { PlayedStrip } from "@/components/PlayedStrip";
 import { AddSongSheet } from "@/components/AddSongSheet";
 import { SetBoundaryButton } from "@/components/SetBoundaryButton";
+import { ShowHeader, type UpcomingShow } from "@/components/ShowHeader";
+import { FullPreview } from "@/components/FullPreview";
+import { SlotAltsModal } from "@/components/SlotAltsModal";
+import { SyncStatus } from "@/components/SyncStatus";
 import { useLiveShow } from "@/lib/liveShow";
+import { usePreview, type PreviewCandidate } from "@/lib/preview";
 import { getCachedSongs, setCachedSongs, type Song } from "@/lib/songs";
 
 interface Meta {
@@ -17,29 +21,40 @@ interface Meta {
   version: string;
 }
 
-interface PredictResponse {
-  candidates: Candidate[];
-}
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
-
 export default function Home() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
-  const [starting, setStarting] = useState(false);
+  const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const initialized = useRef(false);
+  const autoStarted = useRef(false);
 
-  const { showId, playedSongs, currentSet, startShow, addSong, undoLast, advanceSet, clearShow } =
-    useLiveShow();
+  const {
+    showId,
+    playedSongs,
+    currentSet,
+    startShow,
+    addSong,
+    undoLast,
+    advanceSet,
+    clearShow,
+    hydrate,
+  } = useLiveShow();
 
-  const predictKey = showId ? `/api/predict/${showId}` : null;
-  const { data: prediction, mutate: mutatePrediction } = useSWR<PredictResponse>(
-    predictKey,
-    fetcher,
-    { refreshInterval: 30_000 },
+  const { data: preview, mutate: mutatePreview } = usePreview(
+    showId,
+    playedSongs.length,
   );
 
-  // Load songs with localStorage cache keyed on data_snapshot_at.
+  const { data: upcoming } = useSWR<UpcomingShow | null>(
+    "/api/upcoming",
+    async (url: string) => {
+      const r = await fetch(url);
+      if (r.status === 404) return null;
+      return r.json();
+    },
+    { revalidateOnFocus: false, dedupingInterval: 60_000 },
+  );
+
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
@@ -61,84 +76,111 @@ export default function Home() {
     })().catch(console.error);
   }, []);
 
-  // On mount with existing showId: verify it's still alive; clear if 404.
   useEffect(() => {
-    if (!showId) return;
-    fetch(`/api/predict/${showId}`).then((r) => {
-      if (r.status === 404) clearShow();
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!showId || songs.length === 0) return;
+    (async () => {
+      const r = await fetch(`/api/live/show/${showId}`);
+      if (r.status === 404) {
+        clearShow();
+        return;
+      }
+      const data = (await r.json()) as {
+        current_set: string;
+        songs: { song_id: number; set_number: string }[];
+      };
+      const byId = new Map(songs.map((s) => [s.song_id, s]));
+      const played = data.songs
+        .map((row) => {
+          const song = byId.get(row.song_id);
+          return song ? { ...song, set_number: row.set_number } : null;
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== null);
+      let currentSetFromServer = data.current_set;
+      if (played.length === 0 && currentSetFromServer !== "1") {
+        await fetch("/api/live/set-boundary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ show_id: showId, set_number: "1" }),
+        });
+        currentSetFromServer = "1";
+      }
+      hydrate(played, currentSetFromServer);
+    })();
+  }, [showId, songs, clearShow, hydrate]);
 
   async function handleAdd(song: Song) {
-    // Optimistic: remove from leaderboard immediately.
-    mutatePrediction(
-      (cur) =>
-        cur
-          ? { candidates: cur.candidates.filter((c) => c.song_id !== song.song_id) }
-          : cur,
-      false,
-    );
     await addSong(song);
-    mutatePrediction(); // revalidate
+    mutatePreview();
   }
 
   async function handleUndo() {
     await undoLast();
-    mutatePrediction();
+    mutatePreview();
   }
 
   async function handleAdvanceSet(nextSet: string) {
     await advanceSet(nextSet);
-    mutatePrediction();
+    mutatePreview();
   }
 
-  async function handleStartShow() {
-    setStarting(true);
-    const today = new Date().toISOString().slice(0, 10);
-    await startShow(today);
-    setStarting(false);
-    mutatePrediction();
+  function handlePickFromAlts(candidate: PreviewCandidate) {
+    handleAdd({ song_id: candidate.song_id, name: candidate.name });
+    setActiveSlot(null);
   }
 
-  const candidates = prediction?.candidates ?? [];
+  useEffect(() => {
+    if (showId || !upcoming || autoStarted.current) return;
+    autoStarted.current = true;
+    startShow(upcoming.show_date).then(() => mutatePreview());
+  }, [showId, upcoming, startShow, mutatePreview]);
+
+  const slots = preview?.slots ?? [];
 
   return (
     <div className="min-h-dvh bg-neutral-950 text-neutral-100 flex flex-col">
-      <header className="px-4 pt-6 pb-2">
-        <h1 className="text-xl font-bold tracking-tight">Phishpicker</h1>
-        {showId && (
-          <p className="text-sm text-neutral-400 mt-1">
-            Set {currentSet} · {playedSongs.length} songs played
-          </p>
-        )}
-      </header>
+      {upcoming ? (
+        <div className="flex items-start justify-between gap-3 border-b border-neutral-900">
+          <div className="flex-1 min-w-0">
+            <ShowHeader show={upcoming} />
+          </div>
+          {showId && (
+            <div className="px-4 pt-5 shrink-0">
+              <SyncStatus showId={showId} showDate={upcoming.show_date} />
+            </div>
+          )}
+        </div>
+      ) : (
+        <header className="px-4 pt-6 pb-2">
+          <h1 className="text-xl font-bold tracking-tight">Phishpicker</h1>
+        </header>
+      )}
 
-      <main className="flex-1 flex flex-col gap-4 px-4 pb-24">
+      {showId && (
+        <div className="px-4 pt-2 text-xs text-neutral-500">
+          Set {currentSet} · {playedSongs.length} songs played
+        </div>
+      )}
+
+      <main className="flex-1 flex flex-col gap-4 px-4 pt-3 pb-24">
         {!showId ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-4">
-            <p className="text-neutral-400 text-sm">No active show.</p>
-            <button
-              type="button"
-              onClick={handleStartShow}
-              disabled={starting}
-              className="px-6 py-3 rounded-full bg-indigo-600 text-white font-medium disabled:opacity-50"
-            >
-              {starting ? "Starting…" : "Start show"}
-            </button>
+            <p className="text-neutral-400 text-sm">
+              {upcoming === undefined
+                ? "Loading next show…"
+                : upcoming === null
+                  ? "No upcoming Phish shows."
+                  : "Starting show…"}
+            </p>
           </div>
         ) : (
           <>
             <PlayedStrip songs={playedSongs} onUndo={handleUndo} />
 
-            {candidates.length > 0 && (
-              <section>
-                <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-500 mb-2">
-                  Next song
-                </h2>
-                <Leaderboard candidates={candidates} />
-              </section>
-            )}
+            <FullPreview
+              slots={slots}
+              loading={!preview}
+              onSlotClick={setActiveSlot}
+            />
 
             <SetBoundaryButton currentSet={currentSet} onAdvance={handleAdvanceSet} />
 
@@ -154,6 +196,15 @@ export default function Home() {
       </main>
 
       {showId && <AddSongSheet songs={songs} onAdd={handleAdd} />}
+
+      {showId && (
+        <SlotAltsModal
+          showId={showId}
+          slotIdx={activeSlot}
+          onClose={() => setActiveSlot(null)}
+          onPick={handlePickFromAlts}
+        />
+      )}
 
       <footer className="px-4 py-3 text-xs text-neutral-600 border-t border-neutral-900 flex justify-between items-center">
         <span>
