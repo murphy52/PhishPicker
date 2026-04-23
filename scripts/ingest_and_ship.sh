@@ -16,16 +16,19 @@ on_error() {
 }
 trap 'on_error $LINENO' ERR
 
+# cron launches with a bare PATH; make sure uv (installed under ~/.local/bin) resolves.
+export PATH="$HOME/.local/bin:$PATH"
+
 REPO_DIR="${REPO_DIR:-$HOME/phishpicker}"
-NAS_DATA_DIR="${NAS_DATA_DIR:-/volume/phishpicker/data}"
-NAS_APP_DIR="${NAS_APP_DIR:-/volume/phishpicker/app}"
+NAS_DATA_DIR="${NAS_DATA_DIR:-/home/Murphy52/docker/apps/phishpicker/data}"
+NAS_APP_DIR="${NAS_APP_DIR:-/home/Murphy52/docker/apps/phishpicker}"
 NAS_HOST="${NAS_HOST:-nas-ssh}"
 
 cd "$REPO_DIR/api"
 uv run phishpicker ingest
 
-SRC_DB="$REPO_DIR/data/phishpicker.db"
-SNAP="$REPO_DIR/data/phishpicker.snapshot.db"
+SRC_DB="$REPO_DIR/api/data/phishpicker.db"
+SNAP="$REPO_DIR/api/data/phishpicker.snapshot.db"
 
 # Produce a clean single-file snapshot even with an open writer on the source.
 rm -f "$SNAP"
@@ -34,7 +37,10 @@ sqlite3 "$SRC_DB" "VACUUM INTO '$SNAP';"
 # Ship to NAS.
 STAGING="$NAS_DATA_DIR/phishpicker.db.new"
 FINAL="$NAS_DATA_DIR/phishpicker.db"
-scp "$SNAP" "$NAS_HOST:$STAGING"
+# -O forces legacy scp protocol. The NAS ssh endpoint is fronted by
+# `cloudflared access ssh`, which the OpenSSH 9+ default SFTP subsystem
+# can't negotiate cleanly (fails with "No such file or directory").
+scp -O "$SNAP" "$NAS_HOST:$STAGING"
 
 # Load admin token from repo-root .env. DO NOT echo it.
 # shellcheck disable=SC2046
