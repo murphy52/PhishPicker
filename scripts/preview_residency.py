@@ -13,11 +13,17 @@ Tests two things:
 
 Run from the api/ directory:
     ~/.local/bin/uv run python ../scripts/preview_residency.py
+    ~/.local/bin/uv run python ../scripts/preview_residency.py --pace
+
+--pace applies a post-scoring discount to the top-25 12-mo favorites,
+scaled by nights remaining in the residency. Intent: keep the model
+from front-loading its A-list onto N4 when later nights will starve.
 
 Hardcoded for the 2026 Sphere residency. Adapt NIGHTS + PRIOR_RESIDENCY_SHOW_IDS
 for future residencies.
 """
 
+import argparse
 import json
 import shutil
 import sqlite3
@@ -25,14 +31,17 @@ from datetime import date as date_type
 from datetime import datetime, timezone
 from pathlib import Path
 
-from phishpicker.db.connection import open_db
+from phishpicker.db.connection import apply_live_schema, open_db
 from phishpicker.live import advance_set, append_song, create_live_show
 from phishpicker.model.scorer import load_runtime_scorer
 from phishpicker.predict import predict_next
 
 SIM_DB_PATH = Path("/tmp/sim_residency.db")
 REAL_DB_PATH = Path("data/phishpicker.db")
-LIVE_DB_PATH = Path("data/live.db")
+# Don't touch the user's real live.db — leftover live_show rows from prior
+# runs leak into the scorer somehow (empirically, N4 pick flips between
+# runs). Use an isolated tmp live DB and reapply the schema every run.
+LIVE_DB_PATH = Path("/tmp/sim_residency_live.db")
 MODEL_PATH = Path("data/model.lgb")
 PREVIEW_DIR = Path("data/previews")
 
@@ -48,16 +57,55 @@ VENUE_ID = 1597
 STRUCTURE = [("1", 9), ("2", 7), ("E", 2)]
 PRIOR_RESIDENCY_SHOW_IDS = (1764702178, 1764702334, 1764702381)
 
-TOP_N = 30  # must exceed STRUCTURE slot count so late-residency nights don't run out
+TOP_N = 100  # must exceed STRUCTURE slot count so late-residency nights don't run out
+
+
+def pace_candidates(
+    cands: list[dict],
+    *,
+    top25_ids_eligible: set[int],
+    remaining_nights_inclusive: int,
+    premiums_picked_tonight: int,
+    strength: float,
+) -> list[dict]:
+    """Budget-based residency pacing.
+
+    Each night's "fair share" of the remaining top-25 favorites is
+        fair_share = len(top25_ids_eligible) / remaining_nights_inclusive
+    (counting tonight). Before tonight has picked its share, no discount —
+    the argmax pick wins. Once we've met/exceeded fair share, the remaining
+    eligible top-25 candidates get their score multiplied by (1 - strength),
+    so mid-tier songs fill the rest of tonight's slots and later nights
+    still have A-list material to reach for.
+
+    On the final night (remaining_nights_inclusive == 1) no pacing is
+    applied — the argmax pick wins every slot.
+    """
+    if not cands or not top25_ids_eligible or remaining_nights_inclusive <= 1:
+        return cands
+    fair_share = len(top25_ids_eligible) / remaining_nights_inclusive
+    if premiums_picked_tonight < fair_share:
+        return cands
+    factor = 1.0 - strength
+    adjusted = [
+        {**c, "score": c["score"] * factor}
+        if c["song_id"] in top25_ids_eligible
+        else c
+        for c in cands
+    ]
+    adjusted.sort(key=lambda x: -x["score"])
+    return adjusted
 
 
 def save_forward_sim(
     all_picks_by_night: dict[str, list[str]],
     night_metadata: list[tuple[str, str, int]],
+    *,
+    suffix: str = "",
 ) -> Path:
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
     today = date_type.today().isoformat()
-    out_path = PREVIEW_DIR / f"forward-sim-{today}.json"
+    out_path = PREVIEW_DIR / f"forward-sim-{today}{suffix}.json"
     nights = []
     for night_label, show_date, show_id in night_metadata:
         names = all_picks_by_night.get(night_label, [])
@@ -83,9 +131,30 @@ def save_forward_sim(
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument(
+        "--pace",
+        action="store_true",
+        help="apply residency pacing discount to top-25 12mo favorites",
+    )
+    ap.add_argument(
+        "--strength",
+        type=float,
+        default=0.8,
+        help="pacing discount applied to over-budget top-25 picks "
+        "(range 0..1; 1.0 fully blocks further premiums, default 0.8)",
+    )
+    args = ap.parse_args()
+
     if SIM_DB_PATH.exists():
         SIM_DB_PATH.unlink()
     shutil.copy(REAL_DB_PATH, SIM_DB_PATH)
+
+    if LIVE_DB_PATH.exists():
+        LIVE_DB_PATH.unlink()
+    _live_init = open_db(LIVE_DB_PATH, read_only=False)
+    apply_live_schema(_live_init)
+    _live_init.close()
 
     sim_conn = sqlite3.connect(SIM_DB_PATH)
     sim_conn.row_factory = sqlite3.Row
@@ -94,11 +163,10 @@ def main() -> None:
         "SELECT MAX(show_date) FROM shows WHERE show_date <= '2026-04-19'"
     ).fetchone()[0]
     twelve_mo_ago = "2025-04-19"
-    top_12mo = [
-        r["name"]
-        for r in sim_conn.execute(
+    top_12mo_rows = list(
+        sim_conn.execute(
             """
-            SELECT s.name, COUNT(*) AS n
+            SELECT s.song_id, s.name, COUNT(*) AS n
             FROM setlist_songs ss
             JOIN shows sh USING (show_id)
             JOIN songs s USING (song_id)
@@ -109,7 +177,11 @@ def main() -> None:
             """,
             (twelve_mo_ago, latest_cutoff),
         )
-    ]
+    )
+    top_12mo = [r["name"] for r in top_12mo_rows]
+    top12mo_rank_by_id: dict[int, int] = {
+        r["song_id"]: rank for rank, r in enumerate(top_12mo_rows)
+    }
 
     already_played_ids = {
         r[0]
@@ -126,12 +198,19 @@ def main() -> None:
     all_picks_by_night: dict[str, list[str]] = {}
     total_repeats = 0
 
-    for night_label, show_date, show_id in NIGHTS:
+    if args.pace:
+        print(f"[pace] strength={args.strength} applied to top-25 12mo favorites")
+        print()
+
+    top25_ids_all = set(top12mo_rank_by_id)
+    for night_idx, (night_label, show_date, show_id) in enumerate(NIGHTS):
         scorer = load_runtime_scorer(MODEL_PATH)
         live = open_db(LIVE_DB_PATH)
         live_show_id = create_live_show(live, show_date, VENUE_ID)
         picks: list[tuple[str, int, str]] = []
         repeats: list[str] = []
+        remaining_nights_inclusive = len(NIGHTS) - night_idx
+        premiums_picked_tonight = 0
 
         print(f"=== {night_label} ({show_date}) show_id={show_id} ===")
         for set_num, n_slots in STRUCTURE:
@@ -140,6 +219,15 @@ def main() -> None:
             print(f"--- {slot_label} ---")
             for i in range(n_slots):
                 cands = predict_next(sim_conn, live, live_show_id, top_n=TOP_N, scorer=scorer)
+                if args.pace:
+                    eligible = top25_ids_all - already_played_ids
+                    cands = pace_candidates(
+                        cands,
+                        top25_ids_eligible=eligible,
+                        remaining_nights_inclusive=remaining_nights_inclusive,
+                        premiums_picked_tonight=premiums_picked_tonight,
+                        strength=args.strength,
+                    )
                 if not cands:
                     print(f"  {i + 1:>2}. (no candidates)")
                     break
@@ -147,6 +235,8 @@ def main() -> None:
                 song_id, name = pick["song_id"], pick["name"]
                 if song_id in already_played_ids:
                     repeats.append(name)
+                if song_id in top12mo_rank_by_id:
+                    premiums_picked_tonight += 1
                 marker = " *" if song_id in already_played_ids else "  "
                 print(f"  {i + 1:>2}.{marker}{name}")
                 picks.append((slot_label, song_id, name))
@@ -168,7 +258,11 @@ def main() -> None:
             print(f"  !! RESIDENCY REPEATS this night: {repeats}")
         print()
 
-    saved = save_forward_sim(all_picks_by_night, NIGHTS)
+    saved = save_forward_sim(
+        all_picks_by_night,
+        NIGHTS,
+        suffix=f"-paced-{args.strength}" if args.pace else "",
+    )
     print(f"\nSaved forward-sim JSON: {saved}\n")
 
     print("=" * 70)
