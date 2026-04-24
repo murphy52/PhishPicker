@@ -5,7 +5,6 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, closing
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel
