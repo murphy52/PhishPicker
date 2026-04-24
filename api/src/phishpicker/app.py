@@ -4,7 +4,7 @@ import logging
 import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, closing
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
@@ -165,7 +165,14 @@ def create_app() -> FastAPI:
 
     @app.get("/upcoming")
     def upcoming(request: Request):
-        today = datetime.now(ZoneInfo("UTC")).date().isoformat()
+        # Compute "today" with a 15-hour lag so the rollover from one show
+        # to the next happens the morning AFTER a show, not during it.
+        # Plain UTC midnight = 5pm Pacific / 8pm Eastern, which is before
+        # a typical 7pm-11pm show even starts — causing the next day's
+        # show to appear "upcoming" while tonight's is still pending or
+        # in progress. 15h shifts the rollover to 15:00 UTC = 8am PDT
+        # / 11am EDT, comfortably after any US show has ended.
+        today = (datetime.now(UTC) - timedelta(hours=15)).date().isoformat()
         shows = request.app.state.phishnet_client.fetch_upcoming_shows(today)
         if not shows:
             raise HTTPException(status_code=404, detail="no upcoming Phish shows")
