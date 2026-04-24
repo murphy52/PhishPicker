@@ -1,20 +1,25 @@
 "use client";
 
-import type { Song } from "@/lib/songs";
+import type { LiveSong } from "@/lib/liveShow";
 
 interface Props {
-  songs: Song[];
+  songs: LiveSong[];
   onUndo: () => void;
 }
 
 export function PlayedStrip({ songs, onUndo }: Props) {
-  if (songs.length === 0) return null;
+  // Only show songs that haven't been reconciled against phish.net yet.
+  // Once a song is confirmed by the authoritative setlist it's no longer
+  // meaningful to "undo" it — the strip is strictly for managing the
+  // user's own in-flight entries.
+  const undoable = songs.filter((s) => s.source === "user");
+  if (undoable.length === 0) return null;
 
   return (
     <div className="flex gap-2 overflow-x-auto py-2">
       <ul className="flex gap-2 list-none p-0 m-0">
-        {songs.map((song, i) => {
-          const isLast = i === songs.length - 1;
+        {undoable.map((song, i) => {
+          const isLast = i === undoable.length - 1;
           if (isLast) {
             return (
               <li key={`${song.song_id}-${i}`}>

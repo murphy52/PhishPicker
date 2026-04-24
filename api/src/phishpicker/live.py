@@ -28,8 +28,8 @@ def get_live_show(conn: sqlite3.Connection, show_id: str) -> dict | None:
     if not row:
         return None
     songs = conn.execute(
-        "SELECT entered_order, song_id, set_number, trans_mark FROM live_songs "
-        "WHERE show_id = ? ORDER BY entered_order",
+        "SELECT entered_order, song_id, set_number, trans_mark, source "
+        "FROM live_songs WHERE show_id = ? ORDER BY entered_order",
         (show_id,),
     ).fetchall()
     return {
@@ -47,6 +47,7 @@ def append_song(
     song_id: int,
     set_number: str,
     trans_mark: str = ",",
+    source: str = "user",
 ) -> int:
     now = datetime.now(UTC).isoformat()
     next_order = conn.execute(
@@ -54,17 +55,22 @@ def append_song(
         (show_id,),
     ).fetchone()[0]
     conn.execute(
-        "INSERT INTO live_songs (show_id, entered_order, song_id, set_number, trans_mark, entered_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (show_id, next_order, song_id, set_number, trans_mark, now),
+        "INSERT INTO live_songs "
+        "(show_id, entered_order, song_id, set_number, trans_mark, entered_at, source) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (show_id, next_order, song_id, set_number, trans_mark, now, source),
     )
     conn.commit()
     return next_order
 
 
 def delete_last_song(conn: sqlite3.Connection, show_id: str) -> bool:
+    # Only undo un-reconciled (source='user') rows — once phish.net has
+    # confirmed a song, treat it as authoritative and skip over it.
     last = conn.execute(
-        "SELECT entered_order FROM live_songs WHERE show_id = ? ORDER BY entered_order DESC LIMIT 1",
+        "SELECT entered_order FROM live_songs "
+        "WHERE show_id = ? AND source = 'user' "
+        "ORDER BY entered_order DESC LIMIT 1",
         (show_id,),
     ).fetchone()
     if not last:

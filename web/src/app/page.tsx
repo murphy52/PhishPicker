@@ -93,13 +93,16 @@ export default function Home() {
       }
       const data = (await r.json()) as {
         current_set: string;
-        songs: { song_id: number; set_number: string }[];
+        songs: { song_id: number; set_number: string; source?: string }[];
       };
       const byId = new Map(songs.map((s) => [s.song_id, s]));
       const played = data.songs
         .map((row) => {
           const song = byId.get(row.song_id);
-          return song ? { ...song, set_number: row.set_number } : null;
+          if (!song) return null;
+          const source: "user" | "phishnet" =
+            row.source === "phishnet" ? "phishnet" : "user";
+          return { ...song, set_number: row.set_number, source };
         })
         .filter((s): s is NonNullable<typeof s> => s !== null);
       let currentSetFromServer = data.current_set;
@@ -141,8 +144,17 @@ export default function Home() {
   }
 
   async function handleUndo() {
-    const last = playedSongs[playedSongs.length - 1];
-    if (last) setPending({ kind: "undo", songId: last.song_id });
+    // The button targets the last un-reconciled entry — skip past any
+    // phish.net-confirmed tail rows when setting up the pending marker.
+    let lastUserIdx = -1;
+    for (let i = playedSongs.length - 1; i >= 0; i--) {
+      if (playedSongs[i].source === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx === -1) return;
+    setPending({ kind: "undo", songId: playedSongs[lastUserIdx].song_id });
     try {
       await undoLast();
       await mutatePreview();

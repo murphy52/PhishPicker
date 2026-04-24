@@ -220,7 +220,7 @@ def sync_show_with_phishnet(
                     ).fetchone()
                     name = row["name"] if row else f"#{a.song_id}"
 
-                append_song(live, show_id, a.song_id, a.set_number)
+                append_song(live, show_id, a.song_id, a.set_number, source="phishnet")
                 appended += 1
                 virtual_played = virtual_played + [a.song_id]
                 last_set = a.set_number
@@ -255,6 +255,21 @@ def sync_show_with_phishnet(
                 overrides += 1
             if a.is_bustout:
                 bustouts += 1
+
+        # Mark user-entered songs that match phish.net's setlist as reconciled.
+        # `reconcile()` skips these (no placement action needed), but once the
+        # net confirms them they should no longer appear in the "undoable"
+        # area — the frontend filters on source != 'user' for that.
+        user_rows_by_key = _index_by_set_position(user_rows, position_source="user")
+        net_rows_by_key = _index_by_set_position(net_rows, position_source="net")
+        for (set_number, pos), user in user_rows_by_key.items():
+            net = net_rows_by_key.get((set_number, pos))
+            if net is not None and net["song_id"] == user["song_id"]:
+                live.execute(
+                    "UPDATE live_songs SET source = 'phishnet' "
+                    "WHERE show_id = ? AND entered_order = ? AND source = 'user'",
+                    (show_id, user["entered_order"]),
+                )
 
         now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         live.execute(

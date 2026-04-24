@@ -7,6 +7,9 @@ const LS_KEY = "phishpicker:live_show_id";
 
 export interface LiveSong extends Song {
   set_number: string;
+  // "user"   = manually added, still un-reconciled
+  // "phishnet" = confirmed against phish.net's setlist (via append or match)
+  source: "user" | "phishnet";
 }
 
 export function useLiveShow() {
@@ -42,15 +45,27 @@ export function useLiveShow() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ show_id: showId, song_id: song.song_id, set_number: currentSet }),
       });
-      setPlayedSongs((prev) => [...prev, { ...song, set_number: currentSet }]);
+      setPlayedSongs((prev) => [...prev, { ...song, set_number: currentSet, source: "user" }]);
     },
     [showId, currentSet],
   );
 
   const undoLast = useCallback(async () => {
-    if (!showId || playedSongs.length === 0) return;
+    if (!showId) return;
+    // Only un-reconciled (source='user') rows are deletable — matches the
+    // backend's delete_last_song, which skips phish.net-confirmed entries.
+    const lastUserIdx = (() => {
+      for (let i = playedSongs.length - 1; i >= 0; i--) {
+        if (playedSongs[i].source === "user") return i;
+      }
+      return -1;
+    })();
+    if (lastUserIdx === -1) return;
     await fetch(`/api/live/song/last?show_id=${showId}`, { method: "DELETE" });
-    const next = playedSongs.slice(0, -1);
+    const next = [
+      ...playedSongs.slice(0, lastUserIdx),
+      ...playedSongs.slice(lastUserIdx + 1),
+    ];
     setPlayedSongs(next);
     if (next.length === 0 && currentSet !== "1") {
       await fetch("/api/live/set-boundary", {
