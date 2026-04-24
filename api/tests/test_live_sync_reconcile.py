@@ -79,6 +79,19 @@ def test_cross_set_matching_by_in_set_position():
     assert actions[0].song_id == 77
 
 
+def test_idempotent_when_net_uses_continuous_positions():
+    # phish.net numbers positions monotonically across the whole show —
+    # Set 2 starts at 9, not back at 1. Regression for a bug where the
+    # reconciler indexed user rows by within-set position but net rows
+    # by raw phish.net position, so user (2,1) never matched net (2,9)
+    # and the same Set 2 song got appended on every 60s poll.
+    user_rows = [_u(sid, "1", eo) for sid, eo in zip(range(1, 9), range(1, 9), strict=True)]
+    user_rows.append(_u(575, "2", 9))  # The Curtain With already appended once
+    net_rows = [_n(sid, "1", pos) for sid, pos in zip(range(1, 9), range(1, 9), strict=True)]
+    net_rows.append(_n(575, "2", 9))  # phish.net reports position 9, not 1
+    assert reconcile(user_rows, net_rows) == []
+
+
 def test_bustout_flagged_on_append():
     actions = reconcile(
         [],

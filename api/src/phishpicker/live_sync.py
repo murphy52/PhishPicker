@@ -36,17 +36,30 @@ class ReconcileAction:
 def _index_by_set_position(
     rows: list[dict], *, position_source: str
 ) -> dict[tuple[str, int], dict]:
+    """Index rows by (set_number, within-set position).
+
+    phish.net numbers positions monotonically across the whole show
+    (Set 2 starts at 9, Encore continues from there). User-entered rows
+    only know their entered_order, which is also monotonic across sets.
+    To compare apples-to-apples we walk rows in their natural order and
+    derive a 1-based within-set position for both sides. Previously the
+    "net" branch used the raw phish.net position as-is, which caused
+    every poll to re-append the same Set 2 song (user (2,1) never
+    matched net (2,9) → append action on every tick).
+    """
+    out: dict[tuple[str, int], dict] = {}
+    counter: dict[str, int] = {}
     if position_source == "user":
-        out: dict[tuple[str, int], dict] = {}
-        counter: dict[str, int] = {}
-        for r in rows:
-            s = r["set_number"]
-            counter[s] = counter.get(s, 0) + 1
-            out[(s, counter[s])] = r
-        return out
-    if position_source == "net":
-        return {(r["set_number"], int(r["position"])): r for r in rows}
-    raise ValueError(position_source)
+        walk = rows
+    elif position_source == "net":
+        walk = sorted(rows, key=lambda r: int(r["position"]))
+    else:
+        raise ValueError(position_source)
+    for r in walk:
+        s = r["set_number"]
+        counter[s] = counter.get(s, 0) + 1
+        out[(s, counter[s])] = r
+    return out
 
 
 def reconcile(
