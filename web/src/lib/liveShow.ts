@@ -105,6 +105,31 @@ export function useLiveShow() {
     [],
   );
 
+  const refresh = useCallback(
+    async (allSongs: Song[]) => {
+      if (!showId || allSongs.length === 0) return;
+      const r = await fetch(`/api/live/show/${showId}`);
+      if (!r.ok) return;
+      const data = (await r.json()) as {
+        current_set: string;
+        songs: { song_id: number; set_number: string; source?: string }[];
+      };
+      const byId = new Map(allSongs.map((s) => [s.song_id, s]));
+      const played = data.songs
+        .map((row) => {
+          const song = byId.get(row.song_id);
+          if (!song) return null;
+          const source: "user" | "phishnet" =
+            row.source === "phishnet" ? "phishnet" : "user";
+          return { ...song, set_number: row.set_number, source };
+        })
+        .filter((s): s is LiveSong => s !== null);
+      setPlayedSongs(played);
+      setCurrentSet(data.current_set);
+    },
+    [showId],
+  );
+
   return {
     showId,
     playedSongs,
@@ -115,5 +140,6 @@ export function useLiveShow() {
     advanceSet,
     clearShow,
     hydrate,
+    refresh,
   };
 }

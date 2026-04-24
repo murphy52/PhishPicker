@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 import json
 import logging
@@ -328,6 +329,37 @@ def create_app() -> FastAPI:
             )
             live.commit()
         return {"stopped": True}
+
+    @app.post("/live/show/{show_id}/sync/now")
+    async def sync_now(show_id: str, body: SyncStart, request: Request):
+        """Fire an immediate sync pass, bypassing the 60s poller interval.
+        Called by the web when the PWA returns to the foreground so the
+        user sees the current setlist state without waiting for the next
+        tick. Skips if sync is disabled — a backgrounded tab returning
+        shouldn't reactivate sync that the user explicitly turned off.
+        """
+        from phishpicker.live_sync import sync_show_with_phishnet
+
+        s = request.app.state.settings
+        with closing(open_db(s.live_db_path)) as live:
+            row = live.execute(
+                "SELECT sync_enabled FROM live_show_meta WHERE show_id = ?",
+                (show_id,),
+            ).fetchone()
+        if not row or not row["sync_enabled"]:
+            return {"status": "skipped", "reason": "sync_disabled"}
+        result = await asyncio.to_thread(
+            sync_show_with_phishnet,
+            db_path=s.db_path,
+            live_db_path=s.live_db_path,
+            api_key=s.phishnet_api_key,
+            show_id=show_id,
+            show_date=body.show_date,
+            scorer=request.app.state.scorer,
+            vapid_private_key=s.vapid_private_key,
+            vapid_subject=s.vapid_subject,
+        )
+        return result
 
     @app.get("/live/show/{show_id}/sync/status")
     def sync_status(

@@ -45,6 +45,7 @@ export default function Home() {
     advanceSet,
     clearShow,
     hydrate,
+    refresh,
   } = useLiveShow();
 
   const { data: preview, mutate: mutatePreview } = usePreview(
@@ -178,6 +179,33 @@ export default function Home() {
     autoStarted.current = true;
     startShow(upcoming.show_date).then(() => mutatePreview());
   }, [showId, upcoming, startShow, mutatePreview]);
+
+  // When the PWA returns to the foreground, skip the 60s poller wait:
+  // kick an immediate sync pass (backend skips if sync is disabled), then
+  // re-hydrate the played list and the preview so the UI shows the latest
+  // phish.net state without the user having to wait for the next tick.
+  useEffect(() => {
+    if (!showId || !upcoming) return;
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      (async () => {
+        try {
+          await fetch(`/api/live/show/${showId}/sync/now`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ show_date: upcoming!.show_date }),
+          });
+        } catch {
+          // Network hiccup on resume — fall through and still re-hydrate
+          // from whatever the server already has.
+        }
+        await refresh(songs);
+        mutatePreview();
+      })();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [showId, upcoming, refresh, songs, mutatePreview]);
 
   const slots = applyPendingMutation(preview?.slots ?? [], pending);
 
