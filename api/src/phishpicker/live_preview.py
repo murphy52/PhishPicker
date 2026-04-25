@@ -72,6 +72,7 @@ def _compute_hit_rank(
     stats_cache,
     ext_cache,
     bigram_cache,
+    played_in_run: set[int] | None = None,
 ) -> int | None:
     """Return 1-based rank of `target_song_id` in the top-10 predictions, or None if absent."""
     cands = predict_next_stateless(
@@ -89,6 +90,7 @@ def _compute_hit_rank(
         stats_cache=stats_cache,
         ext_cache=ext_cache,
         bigram_cache=bigram_cache,
+        played_in_run=played_in_run,
     )
     for i, c in enumerate(cands):
         if c["song_id"] == target_song_id:
@@ -149,6 +151,9 @@ def build_preview(
         if scorer.name == "lightgbm"
         else None
     )
+    # Songs played earlier in this run (prior same-venue same-tour shows).
+    # Computed once per /preview call and reused across all slots.
+    played_in_run = _played_in_run(read_conn, show_date, venue_id)
 
     entered_by_pos: dict[tuple[str, int], dict] = {}
     per_set_seen: dict[str, int] = {}
@@ -216,6 +221,7 @@ def build_preview(
                     stats_cache=stats_cache,
                     ext_cache=ext_cache,
                     bigram_cache=bigram_cache,
+                    played_in_run=played_in_run,
                 )
                 slots.append(
                     {
@@ -249,6 +255,7 @@ def build_preview(
                 stats_cache=stats_cache,
                 ext_cache=ext_cache,
                 bigram_cache=bigram_cache,
+                played_in_run=played_in_run,
             )
             slots.append(
                 {

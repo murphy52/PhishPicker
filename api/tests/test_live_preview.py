@@ -388,3 +388,77 @@ def test_played_in_run_includes_prior_run_mate_setlist(seeded_client, monkeypatc
         result = _played_in_run(conn, show_date="2099-06-02", venue_id=9999)
 
     assert sid in result
+
+
+def test_preview_excludes_songs_played_earlier_in_run(seeded_client, live_show_id):
+    """A song from a prior run-mate show must not appear in any predicted
+    slot's top_k of /preview."""
+    from contextlib import closing
+    from phishpicker.config import Settings
+    from phishpicker.db.connection import open_db
+
+    settings = Settings()
+    # Live-show metadata lives in the live DB; canonical shows/setlists in
+    # the read DB. Seed a prior run-mate canonical show with a known song.
+    with closing(open_db(settings.live_db_path)) as live_conn:
+        live = live_conn.execute(
+            "SELECT show_date, venue_id FROM live_show WHERE show_id = ?",
+            (live_show_id,),
+        ).fetchone()
+        assert live, "expected live show in fixture"
+        # If the live show has no venue/tour mapping in fixtures, this test
+        # can't exercise the filter — bail with skip.
+        if live["venue_id"] is None:
+            import pytest
+            pytest.skip("live fixture lacks venue_id; can't construct run")
+        live_show_date = live["show_date"]
+        live_venue_id = live["venue_id"]
+
+    with closing(open_db(settings.db_path)) as conn:
+        sid_row = conn.execute("SELECT song_id FROM songs LIMIT 1").fetchone()
+        assert sid_row
+        target_song_id = sid_row["song_id"]
+
+        # Find or use the live show's tour; if missing, create one.
+        tour_id = 9998
+        conn.execute(
+            "INSERT OR IGNORE INTO tours (tour_id, name, start_date, end_date) "
+            "VALUES (?, 'Run Filter Test', '1900-01-01', '2999-12-31')",
+            (tour_id,),
+        )
+        # Ensure the venue row exists (live_show fixtures don't seed it).
+        conn.execute(
+            "INSERT OR IGNORE INTO venues (venue_id, name) VALUES (?, 'Live Test Venue')",
+            (live_venue_id,),
+        )
+        # Anchor live show into shows so tour resolution finds it.
+        conn.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at, reconciled) "
+            "VALUES (90100, ?, ?, ?, '1900-01-01', 0)",
+            (live_show_date, live_venue_id, tour_id),
+        )
+        # Prior run-mate (one day earlier) with target song in setlist.
+        from datetime import date, timedelta
+        prior_date = (date.fromisoformat(live_show_date) - timedelta(days=1)).isoformat()
+        conn.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at, reconciled) "
+            "VALUES (90101, ?, ?, ?, '1900-01-01', 1)",
+            (prior_date, live_venue_id, tour_id),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO setlist_songs "
+            "(show_id, set_number, position, song_id) "
+            "VALUES (90101, '1', 1, ?)",
+            (target_song_id,),
+        )
+        conn.commit()
+
+    slots = seeded_client.get(f"/live/show/{live_show_id}/preview").json()["slots"]
+    for s in slots:
+        if s["state"] == "predicted":
+            ids = [c["song_id"] for c in s.get("top_k", [])]
+            assert target_song_id not in ids, (
+                f"target song {target_song_id} leaked into top_k for slot {s['slot_idx']}"
+            )
