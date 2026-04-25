@@ -7,8 +7,6 @@ import { AddSongSheet } from "@/components/AddSongSheet";
 import { ShowHeader, type UpcomingShow } from "@/components/ShowHeader";
 import { FullPreview } from "@/components/FullPreview";
 import { SlotAltsModal } from "@/components/SlotAltsModal";
-import { SyncStatus } from "@/components/SyncStatus";
-import { PushToggle } from "@/components/PushToggle";
 import { useLiveShow } from "@/lib/liveShow";
 import {
   applyPendingMutation,
@@ -212,17 +210,7 @@ export default function Home() {
   return (
     <div className="min-h-dvh bg-neutral-950 text-neutral-100 flex flex-col">
       {upcoming ? (
-        <div className="flex items-start justify-between gap-3 border-b border-neutral-900">
-          <div className="flex-1 min-w-0">
-            <ShowHeader show={upcoming} />
-          </div>
-          {showId && (
-            <div className="px-4 pt-5 shrink-0 flex items-center gap-2">
-              <PushToggle />
-              <SyncStatus showId={showId} showDate={upcoming.show_date} />
-            </div>
-          )}
-        </div>
+        <ShowHeader show={upcoming} liveShowId={showId} />
       ) : (
         <header className="px-4 pt-6 pb-2">
           <h1 className="text-xl font-bold tracking-tight">Phishpicker</h1>
