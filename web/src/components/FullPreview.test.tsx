@@ -90,3 +90,43 @@ test("entered slots are not clickable", () => {
   screen.getByTestId("slot").click();
   expect(onSlotClick).not.toHaveBeenCalled();
 });
+
+function enteredSlot(
+  opts: { hit_rank?: number | null; pending?: "adding" | "removing" } = {},
+): PreviewSlot {
+  return {
+    slot_idx: 1,
+    set_number: "1",
+    position: 1,
+    state: "entered",
+    entered_song: { song_id: 7, name: "Buried Alive" },
+    ...opts,
+  };
+}
+
+test("entered slot with hit_rank=1 renders the bullseye icon", () => {
+  render(<FullPreview slots={[enteredSlot({ hit_rank: 1 })]} onSlotClick={() => {}} />);
+  expect(screen.getByTestId("hit-rank-bullseye")).toBeInTheDocument();
+});
+
+test("entered slot with hit_rank=3 renders the #N chip", () => {
+  render(<FullPreview slots={[enteredSlot({ hit_rank: 3 })]} onSlotClick={() => {}} />);
+  expect(screen.getByText("#3")).toBeInTheDocument();
+  expect(screen.queryByTestId("hit-rank-bullseye")).not.toBeInTheDocument();
+});
+
+test("entered slot with hit_rank=null renders an em-dash", () => {
+  render(<FullPreview slots={[enteredSlot({ hit_rank: null })]} onSlotClick={() => {}} />);
+  expect(screen.getByTestId("hit-rank-miss")).toHaveTextContent("—");
+});
+
+test("entered slot in 'adding' pending state suppresses the hit-rank indicator", () => {
+  render(
+    <FullPreview
+      slots={[enteredSlot({ hit_rank: 1, pending: "adding" })]}
+      onSlotClick={() => {}}
+    />,
+  );
+  expect(screen.queryByTestId("hit-rank-bullseye")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("hit-rank-miss")).not.toBeInTheDocument();
+});

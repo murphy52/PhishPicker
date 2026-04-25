@@ -49,6 +49,42 @@ export function FullPreview({ slots, onSlotClick, loading }: Props) {
   );
 }
 
+function HitRankIndicator({ hitRank }: { hitRank: number | null | undefined }) {
+  if (hitRank === undefined) return null;
+  if (hitRank === 1) {
+    return (
+      <svg
+        data-testid="hit-rank-bullseye"
+        aria-label="Top prediction"
+        viewBox="0 0 16 16"
+        className="w-3.5 h-3.5 text-emerald-400 shrink-0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <circle cx="8" cy="8" r="6.25" />
+        <circle cx="8" cy="8" r="3.5" />
+        <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+  if (hitRank === null) {
+    return (
+      <span
+        data-testid="hit-rank-miss"
+        className="text-xs text-neutral-700 tabular-nums shrink-0"
+      >
+        —
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs text-neutral-500 tabular-nums shrink-0">
+      #{hitRank}
+    </span>
+  );
+}
+
 function SlotRow({
   slot,
   onSlotClick,
@@ -80,6 +116,7 @@ function SlotRow({
             className="inline-block w-3 h-3 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin shrink-0"
           />
         )}
+        {slot.pending !== "adding" && <HitRankIndicator hitRank={slot.hit_rank} />}
       </li>
     );
   }
