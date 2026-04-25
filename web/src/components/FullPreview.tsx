@@ -58,14 +58,12 @@ function HitRankIndicator({ hitRank }: { hitRank: number | null | undefined }) {
         role="img"
         aria-label="Top prediction"
         viewBox="0 0 16 16"
-        className="w-3.5 h-3.5 text-emerald-400 shrink-0"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
+        className="w-3.5 h-3.5 shrink-0"
       >
-        <circle cx="8" cy="8" r="6.25" />
-        <circle cx="8" cy="8" r="3.5" />
-        <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+        <circle cx="8" cy="8" r="7" fill="#ef4444" />
+        <circle cx="8" cy="8" r="5" fill="#ffffff" />
+        <circle cx="8" cy="8" r="3" fill="#ef4444" />
+        <circle cx="8" cy="8" r="1.25" fill="#ffffff" />
       </svg>
     );
   }
