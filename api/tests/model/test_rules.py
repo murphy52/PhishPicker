@@ -23,3 +23,26 @@ def test_rule_zeros_multiple_played_tonight():
     assert d[100] == 0.0
     assert d[102] == 0.0
     assert d[101] == 3.0
+
+
+def test_rule_zeros_played_earlier_in_run():
+    scored = [(100, 5.0), (101, 3.0), (102, 2.0)]
+    out = apply_post_rules(scored, played_tonight=set(), played_in_run={101})
+    d = dict(out)
+    assert d[101] == 0.0
+    assert d[100] == 5.0
+    assert d[102] == 2.0
+
+
+def test_rule_zeros_song_in_both_sets_idempotent():
+    scored = [(100, 5.0), (101, 3.0)]
+    out = apply_post_rules(scored, played_tonight={101}, played_in_run={101})
+    assert dict(out)[101] == 0.0
+
+
+def test_rule_played_in_run_defaults_to_no_filter():
+    scored = [(100, 5.0), (101, 3.0)]
+    out = apply_post_rules(scored, played_tonight={101})
+    d = dict(out)
+    assert d[101] == 0.0
+    assert d[100] == 5.0
