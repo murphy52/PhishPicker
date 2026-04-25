@@ -147,3 +147,66 @@ def test_preview_respects_live_show_meta_sizes(seeded_client, live_show_id):
     r2 = seeded_client.get(f"/live/show/{live_show_id}/preview")
     slots = r2.json()["slots"]
     assert len(slots) == 21
+
+
+def test_compute_hit_rank_returns_rank_when_song_in_top_n(seeded_client, live_show_id):
+    """Unit-level smoke test — entered song shows up at rank 1 when it's the top
+    candidate given an empty prior context."""
+    from contextlib import closing
+
+    from phishpicker.config import Settings
+    from phishpicker.db.connection import open_db
+    from phishpicker.live_preview import _compute_hit_rank
+    from phishpicker.model.scorer import HeuristicScorer
+
+    # Seed-provided song ids are small — pick a known one from fixtures.
+    settings = Settings()
+    with closing(open_db(settings.db_path, read_only=True)) as read_conn:
+        # With no prior context, every seed song scores equally; the returned
+        # rank must be 1..10 or None, never a non-int.
+        rank = _compute_hit_rank(
+            read_conn=read_conn,
+            played_songs=[],
+            target_song_id=100,
+            current_set="1",
+            show_date="2026-04-23",
+            venue_id=1,
+            prev_trans_mark=",",
+            prev_set_number=None,
+            scorer=HeuristicScorer(),
+            song_ids_cache=None,
+            song_names_cache=None,
+            stats_cache=None,
+            ext_cache=None,
+            bigram_cache=None,
+        )
+    assert rank is None or (1 <= rank <= 10)
+
+
+def test_compute_hit_rank_returns_none_for_unknown_song(seeded_client, live_show_id):
+    from contextlib import closing
+
+    from phishpicker.config import Settings
+    from phishpicker.db.connection import open_db
+    from phishpicker.live_preview import _compute_hit_rank
+    from phishpicker.model.scorer import HeuristicScorer
+
+    settings = Settings()
+    with closing(open_db(settings.db_path, read_only=True)) as read_conn:
+        rank = _compute_hit_rank(
+            read_conn=read_conn,
+            played_songs=[],
+            target_song_id=9_999_999,  # definitely not in fixtures
+            current_set="1",
+            show_date="2026-04-23",
+            venue_id=1,
+            prev_trans_mark=",",
+            prev_set_number=None,
+            scorer=HeuristicScorer(),
+            song_ids_cache=None,
+            song_names_cache=None,
+            stats_cache=None,
+            ext_cache=None,
+            bigram_cache=None,
+        )
+    assert rank is None

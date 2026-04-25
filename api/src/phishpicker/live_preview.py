@@ -10,6 +10,45 @@ from phishpicker.train.bigrams import compute_bigram_probs
 from phishpicker.train.extended_stats import compute_extended_stats
 
 
+def _compute_hit_rank(
+    *,
+    read_conn,
+    played_songs: list[int],
+    target_song_id: int,
+    current_set: str,
+    show_date: str,
+    venue_id: int | None,
+    prev_trans_mark: str,
+    prev_set_number: str | None,
+    scorer,
+    song_ids_cache,
+    song_names_cache,
+    stats_cache,
+    ext_cache,
+    bigram_cache,
+) -> int | None:
+    cands = predict_next_stateless(
+        read_conn=read_conn,
+        played_songs=played_songs,
+        current_set=current_set,
+        show_date=show_date,
+        venue_id=venue_id,
+        prev_trans_mark=prev_trans_mark,
+        prev_set_number=prev_set_number,
+        top_n=10,
+        scorer=scorer,
+        song_ids_cache=song_ids_cache,
+        song_names_cache=song_names_cache,
+        stats_cache=stats_cache,
+        ext_cache=ext_cache,
+        bigram_cache=bigram_cache,
+    )
+    for i, c in enumerate(cands):
+        if c["song_id"] == target_song_id:
+            return i + 1
+    return None
+
+
 def build_preview(
     *,
     read_conn: sqlite3.Connection,
