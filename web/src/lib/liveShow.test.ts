@@ -1,5 +1,5 @@
 import { renderHook, act } from "@testing-library/react";
-import { useLiveShow } from "@/lib/liveShow";
+import { useLiveShow, isStaleLiveShow } from "@/lib/liveShow";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -124,4 +124,28 @@ test("advanceSet changes currentSet", async () => {
   });
 
   expect(result.current.currentSet).toBe("2");
+});
+
+test("isStaleLiveShow flags showId from a different date than today's upcoming", () => {
+  expect(
+    isStaleLiveShow({ show_date: "2026-04-23" }, { show_date: "2026-04-25" }),
+  ).toBe(true);
+});
+
+test("isStaleLiveShow returns false when dates match", () => {
+  expect(
+    isStaleLiveShow({ show_date: "2026-04-25" }, { show_date: "2026-04-25" }),
+  ).toBe(false);
+});
+
+test("isStaleLiveShow returns false while upcoming is still loading", () => {
+  // upcoming === undefined means SWR hasn't returned yet — don't clear
+  // the stored showId based on a comparison we can't make.
+  expect(isStaleLiveShow({ show_date: "2026-04-23" }, undefined)).toBe(false);
+});
+
+test("isStaleLiveShow returns false when there is no upcoming show", () => {
+  // upcoming === null means /api/upcoming returned 404 (no scheduled
+  // Phish shows). Keep whatever's in localStorage.
+  expect(isStaleLiveShow({ show_date: "2026-04-23" }, null)).toBe(false);
 });

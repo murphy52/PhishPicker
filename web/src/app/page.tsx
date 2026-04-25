@@ -7,7 +7,7 @@ import { AddSongSheet } from "@/components/AddSongSheet";
 import { ShowHeader, type UpcomingShow } from "@/components/ShowHeader";
 import { FullPreview } from "@/components/FullPreview";
 import { SlotAltsModal } from "@/components/SlotAltsModal";
-import { useLiveShow } from "@/lib/liveShow";
+import { useLiveShow, isStaleLiveShow } from "@/lib/liveShow";
 import {
   applyPendingMutation,
   usePreview,
@@ -90,9 +90,19 @@ export default function Home() {
         return;
       }
       const data = (await r.json()) as {
+        show_date: string;
         current_set: string;
         songs: { song_id: number; set_number: string; source?: string }[];
       };
+      // Self-heal when localStorage points at yesterday's residency-night
+      // showId. The show row still exists in the live DB so we won't get
+      // a 404 — compare the date directly against today's upcoming and
+      // clear if they disagree. The auto-start effect below will then
+      // create a fresh show for tonight.
+      if (isStaleLiveShow(data, upcoming)) {
+        clearShow();
+        return;
+      }
       const byId = new Map(songs.map((s) => [s.song_id, s]));
       const played = data.songs
         .map((row) => {
@@ -114,7 +124,7 @@ export default function Home() {
       }
       hydrate(played, currentSetFromServer);
     })();
-  }, [showId, songs, clearShow, hydrate]);
+  }, [showId, songs, upcoming, clearShow, hydrate]);
 
   async function handleAdd(song: Song) {
     setPending({

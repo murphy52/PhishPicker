@@ -12,6 +12,23 @@ export interface LiveSong extends Song {
   source: "user" | "phishnet";
 }
 
+/**
+ * True when the showId hydrated from localStorage points to a show whose
+ * date doesn't match the next upcoming Phish show — e.g. a phone that
+ * still has yesterday's residency-night showId in localStorage when
+ * tonight's show date has already rolled over.
+ *
+ * Returns false (don't clear) when upcoming is undefined (still loading)
+ * or null (no upcoming shows known) — there's nothing to compare against.
+ */
+export function isStaleLiveShow(
+  serverShow: { show_date: string },
+  upcoming: { show_date: string } | null | undefined,
+): boolean {
+  if (!upcoming) return false;
+  return serverShow.show_date !== upcoming.show_date;
+}
+
 export function useLiveShow() {
   const [showId, setShowId] = useState<string | null>(null);
   const [playedSongs, setPlayedSongs] = useState<LiveSong[]>([]);
