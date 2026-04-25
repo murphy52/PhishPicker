@@ -4,15 +4,17 @@ import type { PreviewSlot } from "@/lib/preview";
 
 interface Props {
   slots: PreviewSlot[];
+  currentSet: string;
   onSlotClick: (slotIdx: number) => void;
+  onSetChange: (setKey: string) => void;
   loading?: boolean;
 }
 
-const SET_LABELS: Record<string, string> = {
-  "1": "Set 1",
-  "2": "Set 2",
-  E: "Encore",
-};
+const SET_ORDER: { key: string; label: string }[] = [
+  { key: "1", label: "Set 1" },
+  { key: "2", label: "Set 2" },
+  { key: "E", label: "Encore" },
+];
 
 const DEFAULT_STRUCTURE: [string, number][] = [
   ["1", 9],
@@ -20,32 +22,83 @@ const DEFAULT_STRUCTURE: [string, number][] = [
   ["E", 2],
 ];
 
-export function FullPreview({ slots, onSlotClick, loading }: Props) {
+export function FullPreview({
+  slots,
+  currentSet,
+  onSlotClick,
+  onSetChange,
+  loading,
+}: Props) {
   if (loading && slots.length === 0) {
-    return <FullPreviewSkeleton />;
+    return <FullPreviewSkeleton currentSet={currentSet} />;
   }
-  const groups: { set: string; slots: PreviewSlot[] }[] = [];
+
+  const slotsBySet = new Map<string, PreviewSlot[]>();
   for (const s of slots) {
-    const last = groups[groups.length - 1];
-    if (last && last.set === s.set_number) last.slots.push(s);
-    else groups.push({ set: s.set_number, slots: [s] });
+    const list = slotsBySet.get(s.set_number) ?? [];
+    list.push(s);
+    slotsBySet.set(s.set_number, list);
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {groups.map((g) => (
-        <section key={g.set}>
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-neutral-500 mb-2">
-            {SET_LABELS[g.set] ?? `Set ${g.set}`}
-          </h3>
-          <ul className="flex flex-col gap-1">
-            {g.slots.map((slot) => (
-              <SlotRow key={slot.slot_idx} slot={slot} onSlotClick={onSlotClick} />
-            ))}
-          </ul>
-        </section>
-      ))}
+      {SET_ORDER.map(({ key, label }) => {
+        const setSlots = slotsBySet.get(key) ?? [];
+        return (
+          <section key={key}>
+            <SetHeader
+              label={label}
+              active={key === currentSet}
+              onClick={() => onSetChange(key)}
+            />
+            {setSlots.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {setSlots.map((slot) => (
+                  <SlotRow
+                    key={slot.slot_idx}
+                    slot={slot}
+                    onSlotClick={onSlotClick}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        );
+      })}
     </div>
+  );
+}
+
+function SetHeader({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      data-testid="set-header"
+      data-active={active ? "true" : "false"}
+      className={`flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-widest transition-colors ${
+        active
+          ? "text-neutral-100"
+          : "text-neutral-600 hover:text-neutral-400"
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`inline-block w-1.5 h-1.5 rounded-full transition-colors ${
+          active ? "bg-indigo-400" : "bg-transparent"
+        }`}
+      />
+      {label}
+    </button>
   );
 }
 
@@ -145,32 +198,42 @@ function SlotRow({
   );
 }
 
-function FullPreviewSkeleton() {
+function FullPreviewSkeleton({ currentSet }: { currentSet: string }) {
   return (
     <div
       data-testid="preview-skeleton"
       className="flex flex-col gap-4 animate-pulse"
     >
-      {DEFAULT_STRUCTURE.map(([set, n]) => (
-        <section key={set}>
-          <div className="h-3 w-14 bg-neutral-800 rounded mb-2" />
-          <ul className="flex flex-col gap-1">
-            {Array.from({ length: n }).map((_, i) => (
-              <li
-                key={i}
-                className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded border border-dashed border-neutral-900"
-              >
-                <span className="w-6 h-3 bg-neutral-800 rounded" />
-                <span
-                  className="flex-1 h-4 bg-neutral-800 rounded"
-                  style={{ maxWidth: `${50 + ((i * 13) % 40)}%` }}
-                />
-                <span className="w-8 h-3 bg-neutral-800 rounded shrink-0" />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      {DEFAULT_STRUCTURE.map(([set, n]) => {
+        const active = set === currentSet;
+        return (
+          <section key={set}>
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className={`inline-block w-1.5 h-1.5 rounded-full ${
+                  active ? "bg-indigo-400" : "bg-transparent"
+                }`}
+              />
+              <div className="h-3 w-14 bg-neutral-800 rounded" />
+            </div>
+            <ul className="flex flex-col gap-1">
+              {Array.from({ length: n }).map((_, i) => (
+                <li
+                  key={i}
+                  className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded border border-dashed border-neutral-900"
+                >
+                  <span className="w-6 h-3 bg-neutral-800 rounded" />
+                  <span
+                    className="flex-1 h-4 bg-neutral-800 rounded"
+                    style={{ maxWidth: `${50 + ((i * 13) % 40)}%` }}
+                  />
+                  <span className="w-8 h-3 bg-neutral-800 rounded shrink-0" />
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }

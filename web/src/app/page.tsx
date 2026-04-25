@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { PlayedStrip } from "@/components/PlayedStrip";
 import { AddSongSheet } from "@/components/AddSongSheet";
-import { SetBoundaryButton } from "@/components/SetBoundaryButton";
 import { ShowHeader, type UpcomingShow } from "@/components/ShowHeader";
 import { FullPreview } from "@/components/FullPreview";
 import { SlotAltsModal } from "@/components/SlotAltsModal";
@@ -164,7 +163,8 @@ export default function Home() {
     }
   }
 
-  async function handleAdvanceSet(nextSet: string) {
+  async function handleSetChange(nextSet: string) {
+    if (nextSet === currentSet) return;
     await advanceSet(nextSet);
     mutatePreview();
   }
@@ -252,11 +252,11 @@ export default function Home() {
 
             <FullPreview
               slots={slots}
+              currentSet={currentSet}
               loading={!preview}
               onSlotClick={setActiveSlot}
+              onSetChange={handleSetChange}
             />
-
-            <SetBoundaryButton currentSet={currentSet} onAdvance={handleAdvanceSet} />
 
             <button
               type="button"

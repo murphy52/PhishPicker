@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { FullPreview } from "./FullPreview";
 import type { PreviewSlot } from "@/lib/preview";
 
@@ -21,23 +21,33 @@ function slot(
   };
 }
 
+function renderPreview(props: Partial<React.ComponentProps<typeof FullPreview>> = {}) {
+  return render(
+    <FullPreview
+      slots={props.slots ?? []}
+      currentSet={props.currentSet ?? "1"}
+      onSlotClick={props.onSlotClick ?? (() => {})}
+      onSetChange={props.onSetChange ?? (() => {})}
+      loading={props.loading}
+    />,
+  );
+}
+
 test("renders skeleton when loading with no slots", () => {
-  render(<FullPreview slots={[]} loading onSlotClick={() => {}} />);
+  renderPreview({ loading: true });
   expect(screen.getByTestId("preview-skeleton")).toBeInTheDocument();
   expect(screen.queryByTestId("slot")).not.toBeInTheDocument();
 });
 
 test("skeleton is hidden once data arrives", () => {
-  render(
-    <FullPreview slots={[slot(1, "1", 1)]} loading onSlotClick={() => {}} />,
-  );
+  renderPreview({ slots: [slot(1, "1", 1)], loading: true });
   expect(screen.queryByTestId("preview-skeleton")).not.toBeInTheDocument();
   expect(screen.getAllByTestId("slot")).toHaveLength(1);
 });
 
 test("renders one slot element per preview slot", () => {
   const slots: PreviewSlot[] = [slot(1, "1", 1), slot(2, "1", 2), slot(3, "2", 1)];
-  render(<FullPreview slots={slots} onSlotClick={() => {}} />);
+  renderPreview({ slots });
   expect(screen.getAllByTestId("slot")).toHaveLength(3);
 });
 
@@ -51,26 +61,39 @@ test("entered slots show the entered song name", () => {
       entered_song: { song_id: 7, name: "Buried Alive" },
     },
   ];
-  render(<FullPreview slots={slots} onSlotClick={() => {}} />);
+  renderPreview({ slots });
   expect(screen.getByText("Buried Alive")).toBeInTheDocument();
 });
 
 test("predicted slots show their top-1 candidate name grayed", () => {
-  render(<FullPreview slots={[slot(1, "1", 1)]} onSlotClick={() => {}} />);
+  renderPreview({ slots: [slot(1, "1", 1)] });
   expect(screen.getByText("Chalk Dust Torture")).toBeInTheDocument();
 });
 
-test("groups slots by set with set labels", () => {
-  const slots: PreviewSlot[] = [slot(1, "1", 1), slot(2, "2", 1), slot(3, "E", 1)];
-  render(<FullPreview slots={slots} onSlotClick={() => {}} />);
-  expect(screen.getByText(/Set 1/i)).toBeInTheDocument();
-  expect(screen.getByText(/Set 2/i)).toBeInTheDocument();
-  expect(screen.getByText(/Encore/i)).toBeInTheDocument();
+test("always renders all three set headers in order, even when empty", () => {
+  renderPreview({ slots: [slot(1, "1", 1)] });
+  const headers = screen.getAllByTestId("set-header");
+  expect(headers.map((h) => h.textContent)).toEqual(["Set 1", "Set 2", "Encore"]);
+});
+
+test("the active set header is marked aria-pressed=true", () => {
+  renderPreview({ slots: [slot(1, "1", 1)], currentSet: "2" });
+  const headers = screen.getAllByTestId("set-header");
+  const active = headers.filter((h) => h.getAttribute("aria-pressed") === "true");
+  expect(active).toHaveLength(1);
+  expect(active[0]).toHaveTextContent("Set 2");
+});
+
+test("clicking a set header calls onSetChange with that set key", () => {
+  const onSetChange = vi.fn();
+  renderPreview({ slots: [slot(1, "1", 1)], currentSet: "1", onSetChange });
+  fireEvent.click(screen.getByRole("button", { name: /encore/i }));
+  expect(onSetChange).toHaveBeenCalledWith("E");
 });
 
 test("clicking a predicted slot calls onSlotClick with its index", () => {
   const onSlotClick = vi.fn();
-  render(<FullPreview slots={[slot(5, "1", 5)]} onSlotClick={onSlotClick} />);
+  renderPreview({ slots: [slot(5, "1", 5)], onSlotClick });
   screen.getByTestId("slot").click();
   expect(onSlotClick).toHaveBeenCalledWith(5);
 });
@@ -86,7 +109,7 @@ test("entered slots are not clickable", () => {
       entered_song: { song_id: 7, name: "Buried Alive" },
     },
   ];
-  render(<FullPreview slots={slots} onSlotClick={onSlotClick} />);
+  renderPreview({ slots, onSlotClick });
   screen.getByTestId("slot").click();
   expect(onSlotClick).not.toHaveBeenCalled();
 });
@@ -105,43 +128,33 @@ function enteredSlot(
 }
 
 test("entered slot with hit_rank=1 renders the bullseye icon", () => {
-  render(<FullPreview slots={[enteredSlot({ hit_rank: 1 })]} onSlotClick={() => {}} />);
+  renderPreview({ slots: [enteredSlot({ hit_rank: 1 })] });
   expect(screen.getByTestId("hit-rank-bullseye")).toBeInTheDocument();
 });
 
 test("entered slot with hit_rank=3 renders the #N chip", () => {
-  render(<FullPreview slots={[enteredSlot({ hit_rank: 3 })]} onSlotClick={() => {}} />);
+  renderPreview({ slots: [enteredSlot({ hit_rank: 3 })] });
   expect(screen.getByText("#3")).toBeInTheDocument();
   expect(screen.queryByTestId("hit-rank-bullseye")).not.toBeInTheDocument();
 });
 
 test("entered slot with hit_rank=null renders an em-dash", () => {
-  render(<FullPreview slots={[enteredSlot({ hit_rank: null })]} onSlotClick={() => {}} />);
+  renderPreview({ slots: [enteredSlot({ hit_rank: null })] });
   expect(screen.getByTestId("hit-rank-miss")).toHaveTextContent("—");
 });
 
 test("entered slot in 'adding' pending state suppresses the hit-rank indicator", () => {
-  render(
-    <FullPreview
-      slots={[enteredSlot({ hit_rank: 1, pending: "adding" })]}
-      onSlotClick={() => {}}
-    />,
-  );
+  renderPreview({ slots: [enteredSlot({ hit_rank: 1, pending: "adding" })] });
   expect(screen.queryByTestId("hit-rank-bullseye")).not.toBeInTheDocument();
   expect(screen.queryByTestId("hit-rank-miss")).not.toBeInTheDocument();
 });
 
 test("entered slot with hit_rank=1 exposes the bullseye aria-label", () => {
-  render(<FullPreview slots={[enteredSlot({ hit_rank: 1 })]} onSlotClick={() => {}} />);
+  renderPreview({ slots: [enteredSlot({ hit_rank: 1 })] });
   expect(screen.getByLabelText("Top prediction")).toBeInTheDocument();
 });
 
 test("entered slot with hit_rank=3 in 'adding' state suppresses the #N chip", () => {
-  render(
-    <FullPreview
-      slots={[enteredSlot({ hit_rank: 3, pending: "adding" })]}
-      onSlotClick={() => {}}
-    />,
-  );
+  renderPreview({ slots: [enteredSlot({ hit_rank: 3, pending: "adding" })] });
   expect(screen.queryByText("#3")).not.toBeInTheDocument();
 });
