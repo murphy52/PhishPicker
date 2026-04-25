@@ -59,7 +59,7 @@ export function ShowHeader({ show, liveShowId, now }: Props) {
           {show.venue}
         </div>
         <div
-          className="text-xs font-medium text-indigo-300 tabular-nums shrink-0"
+          className="text-xs font-medium text-indigo-300 tabular-nums shrink-0 justify-self-end"
           data-testid="show-countdown"
         >
           {countdown}
@@ -70,7 +70,7 @@ export function ShowHeader({ show, liveShowId, now }: Props) {
           {location && <> · {location}</>}
         </div>
         {liveShowId ? (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 justify-self-end">
             <PushToggle />
             <SyncStatus showId={liveShowId} showDate={show.show_date} />
           </div>
