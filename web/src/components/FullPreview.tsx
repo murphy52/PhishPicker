@@ -102,6 +102,34 @@ function SetHeader({
   );
 }
 
+function EnteredSongName({
+  entered,
+  pending,
+}: {
+  entered: NonNullable<PreviewSlot["entered_song"]>;
+  pending: PreviewSlot["pending"];
+}) {
+  // Link only fires when phish.net has confirmed the slot AND the slug is
+  // populated. Optimistic-add rows have no source/slug yet; pre-slug-ingest
+  // rows can have source="phishnet" with slug=null.
+  const linkable =
+    pending !== "adding" && entered.source === "phishnet" && !!entered.slug;
+  if (linkable) {
+    return (
+      <a
+        href={`https://phish.net/song/${entered.slug}`}
+        target="_blank"
+        rel="noreferrer"
+        data-testid="phishnet-link"
+        className="flex-1 text-base truncate underline decoration-dotted decoration-neutral-600 underline-offset-4 hover:decoration-indigo-400"
+      >
+        {entered.name}
+      </a>
+    );
+  }
+  return <span className="flex-1 text-base truncate">{entered.name}</span>;
+}
+
 function HitRankIndicator({ hitRank }: { hitRank: number | null | undefined }) {
   if (hitRank === undefined) return null;
   if (hitRank === 1) {
@@ -165,7 +193,7 @@ function SlotRow({
         <span className="text-neutral-500 w-6 tabular-nums text-right text-xs">
           {slot.position}
         </span>
-        <span className="flex-1 text-base truncate">{slot.entered_song.name}</span>
+        <EnteredSongName entered={slot.entered_song} pending={slot.pending} />
         {slot.pending === "adding" && (
           <span
             aria-label="Saving…"

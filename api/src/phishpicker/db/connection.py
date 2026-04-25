@@ -54,6 +54,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
     _enable_wal(conn)
     for alter in [
         "ALTER TABLE songs ADD COLUMN is_bustout_placeholder INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE songs ADD COLUMN slug TEXT",
     ]:
         try:
             conn.execute(alter)

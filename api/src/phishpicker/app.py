@@ -126,7 +126,7 @@ def create_app() -> FastAPI:
     @app.get("/songs")
     def songs(conn: sqlite3.Connection = Depends(get_read)):  # noqa: B008
         rows = conn.execute(
-            "SELECT song_id, name, original_artist FROM songs ORDER BY name"
+            "SELECT song_id, name, original_artist, slug FROM songs ORDER BY name"
         ).fetchall()
         return [dict(r) for r in rows]
 

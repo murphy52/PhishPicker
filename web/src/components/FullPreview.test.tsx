@@ -158,3 +158,50 @@ test("entered slot with hit_rank=3 in 'adding' state suppresses the #N chip", ()
   renderPreview({ slots: [enteredSlot({ hit_rank: 3, pending: "adding" })] });
   expect(screen.queryByText("#3")).not.toBeInTheDocument();
 });
+
+function verifiedSlot(
+  opts: { slug?: string | null; source?: "user" | "phishnet"; pending?: "adding" } = {},
+): PreviewSlot {
+  return {
+    slot_idx: 1,
+    set_number: "1",
+    position: 1,
+    state: "entered",
+    entered_song: {
+      song_id: 588,
+      name: "The Man Who Stepped Into Yesterday",
+      source: opts.source ?? "phishnet",
+      slug: opts.slug === undefined ? "the-man-who-stepped-into-yesterday" : opts.slug,
+    },
+    pending: opts.pending,
+  };
+}
+
+test("phishnet-verified entered slot links to the phish.net song page", () => {
+  renderPreview({ slots: [verifiedSlot()] });
+  const link = screen.getByTestId("phishnet-link");
+  expect(link).toHaveAttribute(
+    "href",
+    "https://phish.net/song/the-man-who-stepped-into-yesterday",
+  );
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveTextContent("The Man Who Stepped Into Yesterday");
+});
+
+test("user-entered (un-reconciled) slot does not render a link", () => {
+  renderPreview({ slots: [verifiedSlot({ source: "user" })] });
+  expect(screen.queryByTestId("phishnet-link")).not.toBeInTheDocument();
+  expect(
+    screen.getByText("The Man Who Stepped Into Yesterday"),
+  ).toBeInTheDocument();
+});
+
+test("phishnet-verified slot without a slug falls back to plain text", () => {
+  renderPreview({ slots: [verifiedSlot({ slug: null })] });
+  expect(screen.queryByTestId("phishnet-link")).not.toBeInTheDocument();
+});
+
+test("optimistic 'adding' slot does not link even if source is phishnet", () => {
+  renderPreview({ slots: [verifiedSlot({ pending: "adding" })] });
+  expect(screen.queryByTestId("phishnet-link")).not.toBeInTheDocument();
+});

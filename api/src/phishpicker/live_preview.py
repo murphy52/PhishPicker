@@ -155,13 +155,16 @@ def build_preview(
         set1, set2, enc = meta["set1_size"], meta["set2_size"], meta["encore_size"]
 
     played_rows = live_conn.execute(
-        "SELECT song_id, set_number, trans_mark FROM live_songs "
+        "SELECT song_id, set_number, trans_mark, source FROM live_songs "
         "WHERE show_id = ? ORDER BY entered_order",
         (show_id,),
     ).fetchall()
-    # One-shot song name lookup — reused for both entered-slot labels and
-    # for decorating scored candidates in each slot loop iteration.
-    song_names = dict(read_conn.execute("SELECT song_id, name FROM songs").fetchall())
+    # One-shot song name + slug lookup — reused for entered-slot labels (slug
+    # decorates phish.net-verified entries with a deep link in the UI) and
+    # for naming candidates in each slot loop iteration.
+    song_rows = read_conn.execute("SELECT song_id, name, slug FROM songs").fetchall()
+    song_names = {r["song_id"]: r["name"] for r in song_rows}
+    song_slugs = {r["song_id"]: r["slug"] for r in song_rows}
     song_ids = list(song_names.keys())
 
     # Per-show caches. These depend only on (show_date, venue_id, song set),
@@ -193,6 +196,8 @@ def build_preview(
             "song_id": r["song_id"],
             "name": song_names.get(r["song_id"], f"#{r['song_id']}"),
             "trans_mark": r["trans_mark"],
+            "source": r["source"],
+            "slug": song_slugs.get(r["song_id"]),
         }
 
     # Rebuilt set-by-set in the loop below. Correct iff entered songs are
@@ -262,6 +267,8 @@ def build_preview(
                         "entered_song": {
                             "song_id": entered["song_id"],
                             "name": entered["name"],
+                            "source": entered["source"],
+                            "slug": entered["slug"],
                         },
                         "hit_rank": hit_rank,
                     }

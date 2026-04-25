@@ -13,6 +13,13 @@ export interface PreviewCandidate {
 export interface EnteredSong {
   song_id: number;
   name: string;
+  // "phishnet" once reconciled against phish.net's setlist; "user" while
+  // still un-reconciled. Drives the verified-deep-link affordance in the UI.
+  source?: "user" | "phishnet";
+  // phish.net's canonical song slug (from /v5/songs.json) — used to build
+  // https://phish.net/song/{slug}. Absent on optimistic adds and on songs
+  // ingested before the slug column existed (until the next ingest).
+  slug?: string | null;
 }
 
 export interface PreviewSlot {
