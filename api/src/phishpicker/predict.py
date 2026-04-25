@@ -20,6 +20,7 @@ def predict_next_stateless(
     stats_cache: dict | None = None,
     ext_cache: dict | None = None,
     bigram_cache: dict | None = None,
+    played_in_run: set[int] | None = None,
 ) -> list[dict]:
     """Pure prediction over an explicit played list — no live DB.
 
@@ -51,7 +52,9 @@ def predict_next_stateless(
         ext_cache=ext_cache,
         bigram_cache=bigram_cache,
     )
-    scored = apply_post_rules(scored, played_tonight=set(played_songs))
+    scored = apply_post_rules(
+        scored, played_tonight=set(played_songs), played_in_run=played_in_run
+    )
     scored = [(sid, s) for sid, s in scored if s > 0.0]
     scored.sort(key=lambda x: x[1], reverse=True)
 
