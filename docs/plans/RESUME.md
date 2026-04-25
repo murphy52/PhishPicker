@@ -255,24 +255,31 @@ Fixed in three files (TDD'd, full suite 319 passing):
 Code-only — takes effect at next retrain (v11). Bundled into the v11
 candidate list below.
 
-### v11 plan — post-Sphere, bundle three feature/correctness changes
+### v11 plan — all three changes landed, awaiting retrain
 
-The Baker's Dozen test + N5 result upgraded `run_saturation_pressure`
-from "speculative" to **mechanically motivated**. v11 candidate list:
+All three v11 candidate changes are committed to main as of 2026-04-25.
+FEATURE_COLUMNS expands from 42 (v10) to 44 (v11): the v10 model on
+disk now fails `assert_compatible_with` and the runtime falls back to
+heuristic locally — production NAS still serves v10 unchanged until a
+v11 retrain ships.
 
-1. **`run_saturation_pressure`** — `(plays_last_12mo / shows_last_12mo)
-   × (run_position − 1) − plays_this_run_count`. Addresses long-run
-   signal-weight degradation. N5 result strengthens the case.
-2. **`slots_into_current_set`** — 1-indexed position within current set
-   (not global slot number). Addresses v7-residual-analysis set-2
-   closer misses (Antelope tied for #1 historical set-2 closer but v7
-   ranked it #92). See `docs/plans/v7-residual-analysis.md`.
-3. **Sandwich-repeat dedupe** (commit `63b3ac6`, code-only — already
-   on main). Counts and bigrams now treat sandwiches as one play.
+| Commit | What | Affects |
+|---|---|---|
+| `63b3ac6` | sandwich-repeat dedupe | bigrams + plays_last_*, plays_this_run_count, role-rate counts (no schema change) |
+| `2235407` | `slots_into_current_set` | new feature, plumbed through dataset/eval/replay/serving |
+| `7c4a1ca` | `run_saturation_pressure` | new feature, computed inline in build.py |
 
-All three are cheap TDD + walk-forward cycles. Target retrain after
-Sphere residency concludes (post 2026-05-02), using Night 4-9 outcomes
-as the validation signal.
+**Next step: kick off training on Mac mini after the residency.** Use
+`phishpicker train run --cutoff 2026-05-03` to include the full Sphere
+residency in training data. Expect 3-4h based on v10 timing. Validation
+signal: Night 4-9 holdout slot ranks should improve over v10.
+
+The Baker's Dozen test + N5's median rank 65 mid-run collapse upgraded
+`run_saturation_pressure` from "speculative" to **mechanically
+motivated** — the formula scales the expected-plays term by
+(run_position - 1), which for a 1×-played 12mo favorite at
+run_position=13 produces a much higher value than at run_position=3,
+giving the tree a clean split between short and long residencies.
 
 ### Phish DB show_ids (for replay)
 
