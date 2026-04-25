@@ -33,6 +33,7 @@ def build_feature_rows(
     all_show_dates: list[str] | None = None,
     prev_trans_mark: str = ",",
     prev_set_number: str | None = None,
+    slots_into_current_set: int = 1,
     stats_cache: dict | None = None,
     ext_cache: dict | None = None,
 ) -> list[FeatureRow]:
@@ -147,6 +148,7 @@ def build_feature_rows(
         row.set_position = slot_number
         row.is_set2 = is_set2_value
         row.is_first_in_set = is_first_in_set_value
+        row.slots_into_current_set = slots_into_current_set
         row.prev_song_id = prev_song_id
         row.bigram_prev_to_this = bigram_p
         row.day_of_week = ctx.day_of_week

@@ -82,8 +82,11 @@ def replay_show(
     played: list[int] = []
     prev_trans_mark = ","
     prev_set_number: str | None = None
+    slots_into_current_set = 1
     for slot_idx, row in enumerate(setlist, start=1):
         positive = int(row["song_id"])
+        if prev_set_number is not None and prev_set_number != row["set_number"]:
+            slots_into_current_set = 1
         feature_rows = build_feature_rows(
             conn,
             show_date=show["show_date"],
@@ -95,6 +98,7 @@ def replay_show(
             all_show_dates=all_show_dates,
             prev_trans_mark=prev_trans_mark,
             prev_set_number=prev_set_number,
+            slots_into_current_set=slots_into_current_set,
         )
         X = np.asarray([fr.to_vector() for fr in feature_rows], dtype=np.float32)
 
@@ -117,6 +121,7 @@ def replay_show(
         played.append(positive)
         prev_trans_mark = row["trans_mark"] or ","
         prev_set_number = row["set_number"]
+        slots_into_current_set += 1
 
     return {
         "show": {

@@ -73,6 +73,7 @@ def train_ranker(
             all_show_dates=all_show_dates,
             prev_trans_mark=tg.prev_trans_mark,
             prev_set_number=tg.prev_set_number,
+            slots_into_current_set=tg.slots_into_current_set,
         )
         w = _recency_weight(tg.show_date, cutoff_date, half_life_years)
         for r in rows:

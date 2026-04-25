@@ -145,12 +145,16 @@ def run_nightly_smoke(
     played_songs: list[int] = []
     prev_trans_mark = ","
     prev_set_number: str | None = None
+    slots_into_current_set = 1
     slot_records: list[dict] = []
 
     for idx, row in enumerate(rows, start=1):
         set_number = str(row["set"]).upper()
         actual_song_id = int(row["songid"])
         actual_song_name = row.get("song") or f"#{actual_song_id}"
+
+        if prev_set_number is not None and prev_set_number != set_number:
+            slots_into_current_set = 1
 
         scored = scorer.score_candidates(
             conn=conn,
@@ -161,6 +165,7 @@ def run_nightly_smoke(
             candidate_song_ids=candidate_ids,
             prev_trans_mark=prev_trans_mark,
             prev_set_number=prev_set_number,
+            slots_into_current_set=slots_into_current_set,
         )
         # Sort by score desc; tiebreak on song_id for determinism.
         ranked = sorted(scored, key=lambda pair: (-pair[1], pair[0]))
@@ -196,6 +201,7 @@ def run_nightly_smoke(
         played_songs.append(actual_song_id)
         prev_trans_mark = row.get("trans_mark") or ","
         prev_set_number = set_number
+        slots_into_current_set += 1
 
     record = {
         "date": date,

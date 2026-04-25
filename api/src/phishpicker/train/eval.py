@@ -122,6 +122,7 @@ def walk_forward_eval(
         played: list[int] = []
         prev_trans_mark = ","
         prev_set_number: str | None = None
+        slots_into_current_set = 1
         fold = FoldResult(
             heldout_show_id=int(sh["show_id"]),
             heldout_show_date=cutoff,
@@ -129,6 +130,8 @@ def walk_forward_eval(
         )
         for slot_idx, r in enumerate(setlist, start=1):
             positive = int(r["song_id"])
+            if prev_set_number is not None and prev_set_number != r["set_number"]:
+                slots_into_current_set = 1
             # Rank the positive against ALL songs, not just not-yet-played.
             # Two reasons: (1) shows legitimately repeat songs (reprises), so
             # the positive may already be in `played`; (2) production applies
@@ -147,6 +150,7 @@ def walk_forward_eval(
                 all_show_dates=all_show_dates,
                 prev_trans_mark=prev_trans_mark,
                 prev_set_number=prev_set_number,
+                slots_into_current_set=slots_into_current_set,
             )
             X = np.asarray([fr.to_vector() for fr in rows], dtype=np.float32)
             scores = booster.predict(X)
@@ -158,6 +162,7 @@ def walk_forward_eval(
             played.append(positive)
             prev_trans_mark = r["trans_mark"] or ","
             prev_set_number = r["set_number"]
+            slots_into_current_set += 1
         for k in (1, 5, 20):
             fold.top_k_hits[k] = sum(1 for rk in fold.ranks if rk <= k) / max(1, len(fold.ranks))
         fold_results.append(fold)

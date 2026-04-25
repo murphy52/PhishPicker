@@ -272,6 +272,8 @@ def test_smoke_actual_rank_is_correct(read_db, client, httpx_mock: HTTPXMock, tm
             candidate_song_ids,
             prev_trans_mark=",",
             prev_set_number=None,
+            slots_into_current_set=1,
+            **_unused,
         ):
             # Higher score for song_id=103, then 102, then others by id desc.
             priority = {103: 100.0, 102: 50.0, 104: 10.0, 101: 5.0, 100: 1.0}

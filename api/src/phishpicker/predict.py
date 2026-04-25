@@ -13,6 +13,7 @@ def predict_next_stateless(
     venue_id: int | None,
     prev_trans_mark: str = ",",
     prev_set_number: str | None = None,
+    slots_into_current_set: int = 1,
     top_n: int = 20,
     scorer: Scorer | None = None,
     song_ids_cache: list[int] | None = None,
@@ -48,6 +49,7 @@ def predict_next_stateless(
         candidate_song_ids=song_ids,
         prev_trans_mark=prev_trans_mark,
         prev_set_number=prev_set_number,
+        slots_into_current_set=slots_into_current_set,
         stats_cache=stats_cache,
         ext_cache=ext_cache,
         bigram_cache=bigram_cache,
@@ -103,6 +105,11 @@ def predict_next(
         "WHERE show_id = ? ORDER BY entered_order",
         (live_show_id,),
     ).fetchall()
+    # 1-indexed position within the current set: one past the number of
+    # already-played songs whose set_number matches the show's current set.
+    slots_into_current_set = (
+        sum(1 for r in played if r["set_number"] == show["current_set"]) + 1
+    )
     return predict_next_stateless(
         read_conn=read_conn,
         played_songs=[r["song_id"] for r in played],
@@ -111,6 +118,7 @@ def predict_next(
         venue_id=show["venue_id"],
         prev_trans_mark=played[-1]["trans_mark"] if played else ",",
         prev_set_number=played[-1]["set_number"] if played else None,
+        slots_into_current_set=slots_into_current_set,
         top_n=top_n,
         scorer=scorer,
     )

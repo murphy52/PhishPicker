@@ -84,6 +84,48 @@ def test_played_before_slot_accumulates(conn):
     assert s10[2].played_before_slot == (1, 2)
 
 
+def test_slots_into_current_set_resets_at_set_change(tmp_path):
+    """Slot 1 of each set should report slots_into_current_set=1, even if
+    earlier sets had many songs. Set 2 / encore reset the counter."""
+    from phishpicker.db.connection import apply_schema, open_db
+
+    c = open_db(tmp_path / "set_change.db")
+    apply_schema(c)
+    c.executescript(
+        """
+        INSERT INTO songs (song_id, name, first_seen_at) VALUES
+            (1, 'A', '2020-01-01'), (2, 'B', '2020-01-01'),
+            (3, 'C', '2020-01-01'), (4, 'D', '2020-01-01'),
+            (5, 'E', '2020-01-01'), (6, 'F', '2020-01-01');
+        INSERT INTO shows (show_id, show_date, fetched_at) VALUES
+            (20, '2024-03-01', '2024-03-02');
+        INSERT INTO setlist_songs (show_id, set_number, position, song_id) VALUES
+            (20, '1', 1, 1), (20, '1', 2, 2), (20, '1', 3, 3),
+            (20, '2', 1, 4), (20, '2', 2, 5),
+            (20, 'E', 1, 6);
+        """
+    )
+    c.commit()
+
+    groups = list(
+        iter_training_groups(c, cutoff_date="2024-12-31", negatives_per_positive=1, seed=0)
+    )
+    by_slot = {g.slot_number: g for g in groups}
+    # Slot 1 → set 1 pos 1
+    assert by_slot[1].slots_into_current_set == 1
+    # Slot 2 → set 1 pos 2
+    assert by_slot[2].slots_into_current_set == 2
+    # Slot 3 → set 1 pos 3
+    assert by_slot[3].slots_into_current_set == 3
+    # Slot 4 → set 2 pos 1 (reset)
+    assert by_slot[4].slots_into_current_set == 1
+    # Slot 5 → set 2 pos 2
+    assert by_slot[5].slots_into_current_set == 2
+    # Slot 6 → encore pos 1 (reset)
+    assert by_slot[6].slots_into_current_set == 1
+    c.close()
+
+
 def test_stratified_sampling_total_matches_sum(conn):
     # 1 frequency-weighted + 1 uniform = 2 negatives per positive.
     groups = list(

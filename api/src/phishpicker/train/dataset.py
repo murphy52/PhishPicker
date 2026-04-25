@@ -28,6 +28,9 @@ class TrainingGroup:
     # set_number of the slot immediately before this one (None for slot 1 of
     # a show). Feeds is_first_in_set — "2" != "1" marks set-2-opener, etc.
     prev_set_number: str | None = None
+    # 1-indexed position within the current set (1 = first song of current
+    # set, not first song of show). Resets to 1 at every set change.
+    slots_into_current_set: int = 1
 
 
 def iter_training_groups(
@@ -88,6 +91,7 @@ def iter_training_groups(
         played: list[int] = []
         prev_trans_mark = ","
         prev_set_number: str | None = None
+        slots_into_current_set = 1
         for idx, row in enumerate(setlist, start=1):
             positive = int(row["song_id"])
             pool = [s for s in all_song_ids if s != positive and s not in played]
@@ -97,6 +101,11 @@ def iter_training_groups(
             else:
                 k = min(negatives_per_positive or 0, len(pool))
                 negatives = tuple(rng.sample(pool, k)) if k > 0 else ()
+
+            # Reset the in-set counter at every set boundary; otherwise
+            # increment it.
+            if prev_set_number is not None and prev_set_number != row["set_number"]:
+                slots_into_current_set = 1
 
             yield TrainingGroup(
                 show_id=int(sh["show_id"]),
@@ -109,12 +118,14 @@ def iter_training_groups(
                 negative_song_ids=negatives,
                 prev_trans_mark=prev_trans_mark,
                 prev_set_number=prev_set_number,
+                slots_into_current_set=slots_into_current_set,
             )
             played.append(positive)
             # trans_mark on this row is the segue OUT of this song (into the
             # next slot). Preserve for the NEXT iteration's TrainingGroup.
             prev_trans_mark = row["trans_mark"] or ","
             prev_set_number = row["set_number"]
+            slots_into_current_set += 1
 
 
 def _stratified_sample(

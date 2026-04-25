@@ -58,6 +58,11 @@ class FeatureRow:
     # single-split path to slot type so slot-specific rates can engage.
     is_set2: int = 0
     is_first_in_set: int = 0
+    # 1-indexed position within the current set (1 = first song of current set,
+    # not first song of show). Lets trees split on "approaching set-2-closer
+    # territory" directly, instead of inferring it from global slot_number
+    # which conflates set 1 and set 2 length variation.
+    slots_into_current_set: int = 1
     set1_opener_rate: float = 0.0
     set2_opener_rate: float = 0.0
     encore_rate: float = 0.0

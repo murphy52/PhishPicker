@@ -34,6 +34,7 @@ class Scorer(Protocol):
         candidate_song_ids: list[int],
         prev_trans_mark: str = ",",
         prev_set_number: str | None = None,
+        slots_into_current_set: int = 1,
         stats_cache: dict | None = None,
         ext_cache: dict | None = None,
         bigram_cache: dict | None = None,
@@ -54,13 +55,15 @@ class HeuristicScorer:
         candidate_song_ids: list[int],
         prev_trans_mark: str = ",",
         prev_set_number: str | None = None,
+        slots_into_current_set: int = 1,
         stats_cache: dict | None = None,
         ext_cache: dict | None = None,
         bigram_cache: dict | None = None,
     ) -> list[tuple[int, float]]:
         # Heuristic only uses song_stats; ext_cache / bigram_cache kept for
         # Protocol compatibility.
-        del prev_trans_mark, prev_set_number, ext_cache, bigram_cache
+        del prev_trans_mark, prev_set_number, slots_into_current_set
+        del ext_cache, bigram_cache
         stats = (
             stats_cache
             if stats_cache is not None
@@ -85,6 +88,7 @@ class LightGBMRuntimeScorer:
         candidate_song_ids: list[int],
         prev_trans_mark: str = ",",
         prev_set_number: str | None = None,
+        slots_into_current_set: int = 1,
         stats_cache: dict | None = None,
         ext_cache: dict | None = None,
         bigram_cache: dict | None = None,
@@ -100,6 +104,7 @@ class LightGBMRuntimeScorer:
             candidate_song_ids=candidate_song_ids,
             prev_trans_mark=prev_trans_mark,
             prev_set_number=prev_set_number,
+            slots_into_current_set=slots_into_current_set,
             stats_cache=stats_cache,
             ext_cache=ext_cache,
             bigram_cache=bigram_cache,

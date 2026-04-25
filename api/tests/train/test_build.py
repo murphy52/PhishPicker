@@ -221,6 +221,52 @@ def test_build_is_first_in_set_true_at_encore_start(conn):
     assert rows[0].is_first_in_set == 1
 
 
+def test_build_slots_into_current_set_defaults_to_one(conn):
+    # No prior songs in the current set → first slot of the set.
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-12-31",
+        venue_id=1,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+    )
+    assert rows[0].slots_into_current_set == 1
+
+
+def test_build_slots_into_current_set_reflects_caller_value(conn):
+    # Slot 6 of set 2 — caller's responsibility to track and pass through.
+    # Used by the model to know we're approaching set-2-closer territory.
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-12-31",
+        venue_id=1,
+        played_songs=[1, 2, 3],
+        current_set="2",
+        candidate_song_ids=[1, 2, 3],
+        prev_set_number="2",
+        slots_into_current_set=6,
+    )
+    for r in rows:
+        assert r.slots_into_current_set == 6
+
+
+def test_build_slots_into_current_set_resets_on_new_set(conn):
+    # Slot 1 of set 2 (set just changed) — caller passes 1 even though
+    # several songs were played overall.
+    rows = build_feature_rows(
+        conn,
+        show_date="2024-12-31",
+        venue_id=1,
+        played_songs=[1, 2],
+        current_set="2",
+        candidate_song_ids=[3],
+        prev_set_number="1",
+        slots_into_current_set=1,
+    )
+    assert rows[0].slots_into_current_set == 1
+
+
 def test_build_bigram_feature_populated_when_prev_known(conn):
     # After Tweezer (1), Fluffhead (2) was played once in show 10. Bigram prob
     # for 1→2 (raw) should be positive.
