@@ -462,3 +462,80 @@ def test_preview_excludes_songs_played_earlier_in_run(seeded_client, live_show_i
             assert target_song_id not in ids, (
                 f"target song {target_song_id} leaked into top_k for slot {s['slot_idx']}"
             )
+
+
+def test_preview_entered_slot_hit_rank_null_when_song_in_run(seeded_client, live_show_id):
+    """When an entered song was played earlier in the run, the run-filter
+    excludes it from the candidate pool so its retroactive hit_rank is None
+    (em-dash in the UI)."""
+    from contextlib import closing
+    from phishpicker.config import Settings
+    from phishpicker.db.connection import open_db
+
+    settings = Settings()
+
+    # Look up the live show's date + venue from the live DB.
+    with closing(open_db(settings.live_db_path)) as live_conn:
+        live = live_conn.execute(
+            "SELECT show_date, venue_id FROM live_show WHERE show_id = ?",
+            (live_show_id,),
+        ).fetchone()
+    assert live, "expected live show in fixture"
+    if live["venue_id"] is None:
+        import pytest
+        pytest.skip("live fixture lacks venue_id; can't construct run")
+
+    # Seed canonical shows/tours so _played_in_run resolves a tour and finds
+    # the prior run-mate show.
+    from datetime import date, timedelta
+    prior_date = (date.fromisoformat(live["show_date"]) - timedelta(days=1)).isoformat()
+    tour_id = 9997  # different tour_id from the sibling test to keep isolation
+    with closing(open_db(settings.db_path)) as conn:
+        sid_row = conn.execute("SELECT song_id FROM songs LIMIT 1").fetchone()
+        assert sid_row
+        target_song_id = sid_row["song_id"]
+        conn.execute(
+            "INSERT OR IGNORE INTO tours (tour_id, name, start_date, end_date) "
+            "VALUES (?, 'Hit Rank Run Filter Test', '1900-01-01', '2999-12-31')",
+            (tour_id,),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO venues (venue_id, name) VALUES (?, 'Live Venue')",
+            (live["venue_id"],),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at, reconciled) "
+            "VALUES (90200, ?, ?, ?, '1900-01-01', 0)",
+            (live["show_date"], live["venue_id"], tour_id),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at, reconciled) "
+            "VALUES (90201, ?, ?, ?, '1900-01-01', 1)",
+            (prior_date, live["venue_id"], tour_id),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO setlist_songs "
+            "(show_id, set_number, position, song_id) "
+            "VALUES (90201, '1', 1, ?)",
+            (target_song_id,),
+        )
+        conn.commit()
+
+    # Enter the target song into the live show.
+    r = seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": target_song_id, "set_number": "1"},
+    )
+    assert r.status_code == 200
+
+    slots = seeded_client.get(f"/live/show/{live_show_id}/preview").json()["slots"]
+    entered = [s for s in slots if s["state"] == "entered"]
+    target = next(
+        (s for s in entered if s["entered_song"]["song_id"] == target_song_id), None
+    )
+    assert target is not None, "expected target song in entered slots"
+    assert target["hit_rank"] is None, (
+        f"expected hit_rank=None for run-filtered song, got {target['hit_rank']}"
+    )
