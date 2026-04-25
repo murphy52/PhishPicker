@@ -143,10 +143,14 @@ def compute_song_stats(
     """
     placeholders = ",".join("?" * len(song_ids))
 
+    # Play-count fields use COUNT(DISTINCT show_id) so Phish "sandwiches"
+    # (same song twice in one show, e.g. Fuego → Golden Age → Fuego) count
+    # as one performance, not two. Otherwise ~34% of historical shows
+    # double-count at least one song.
     total_plays = dict(
         conn.execute(
             f"""
-            SELECT ss.song_id, COUNT(*) AS n
+            SELECT ss.song_id, COUNT(DISTINCT ss.show_id) AS n
             FROM setlist_songs ss JOIN shows s USING (show_id)
             WHERE ss.song_id IN ({placeholders}) AND s.show_date < ?
             GROUP BY ss.song_id
@@ -158,7 +162,7 @@ def compute_song_stats(
     last_12mo_counts = dict(
         conn.execute(
             f"""
-            SELECT ss.song_id, COUNT(*) AS n
+            SELECT ss.song_id, COUNT(DISTINCT ss.show_id) AS n
             FROM setlist_songs ss JOIN shows s USING (show_id)
             WHERE ss.song_id IN ({placeholders})
               AND s.show_date < ?
@@ -210,13 +214,20 @@ def compute_song_stats(
         left = bisect.bisect_right(all_show_dates, from_date)
         return max(0, _show_idx - left)
 
+    # Role rates are show-rather-than-row counts so a sandwich-encore (rare
+    # but legal) doesn't inflate either the encore numerator or the total
+    # denominator. Opener can't naturally double-count (PK forbids two rows
+    # at set 1 position 1) but using COUNT(DISTINCT) here keeps the metric
+    # consistent.
     role_rows = conn.execute(
         f"""
         SELECT
             ss.song_id,
-            SUM(CASE WHEN ss.set_number='1' AND ss.position=1 THEN 1 ELSE 0 END) AS opener,
-            SUM(CASE WHEN ss.set_number='E' THEN 1 ELSE 0 END) AS encore,
-            COUNT(*) AS total
+            COUNT(DISTINCT CASE WHEN ss.set_number='1' AND ss.position=1
+                                THEN ss.show_id END) AS opener,
+            COUNT(DISTINCT CASE WHEN ss.set_number='E'
+                                THEN ss.show_id END) AS encore,
+            COUNT(DISTINCT ss.show_id) AS total
         FROM setlist_songs ss JOIN shows s USING (show_id)
         WHERE ss.song_id IN ({placeholders}) AND s.show_date < ?
         GROUP BY ss.song_id
@@ -240,8 +251,8 @@ def compute_song_stats(
                 r["song_id"]: r["n"]
                 for r in conn.execute(
                     """
-                    SELECT ss.song_id, COUNT(*) AS n FROM setlist_songs ss
-                    JOIN shows s USING (show_id)
+                    SELECT ss.song_id, COUNT(DISTINCT ss.show_id) AS n
+                    FROM setlist_songs ss JOIN shows s USING (show_id)
                     WHERE s.venue_id = ? AND s.show_date >= ? AND s.show_date < ?
                     GROUP BY ss.song_id
                     """,

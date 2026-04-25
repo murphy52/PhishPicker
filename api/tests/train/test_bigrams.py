@@ -68,3 +68,21 @@ def test_bigram_does_not_cross_show_boundaries(conn: sqlite3.Connection):
     # Show 10 ends with C, show 11 starts with A. No C→A bigram.
     probs = compute_bigram_probs(conn, cutoff_date="2024-12-31", alpha=0.0)
     assert (3, 1) not in probs
+
+
+def test_bigram_collapses_sandwich_repeats(conn: sqlite3.Connection):
+    # Phish sandwich: A → B → A within one set is one performance of A
+    # interrupted by B, not two A plays. The sandwich-return transition
+    # (B→A) is an artifact of the sandwich and must not register as a
+    # real bigram.
+    conn.execute(
+        "INSERT INTO setlist_songs (show_id, set_number, position, song_id) "
+        "VALUES (10, '2', 1, 1), (10, '2', 2, 2), (10, '2', 3, 1)"
+    )
+    conn.commit()
+    probs = compute_bigram_probs(conn, cutoff_date="2024-12-31", alpha=0.0)
+    # B→A would have been the sandwich return — must be absent.
+    assert (2, 1) not in probs
+    # Without the sandwich's spurious B→A diluting B's transitions, B→C
+    # (from show 10 set 1) is B's sole transition.
+    assert probs[(2, 3)] == pytest.approx(1.0)

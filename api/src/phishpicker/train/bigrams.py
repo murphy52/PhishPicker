@@ -21,12 +21,17 @@ def compute_bigram_probs(
     where V is the candidate song count (rough vocabulary size). alpha=0 gives
     the raw empirical conditional.
     """
+    # Collapse sandwich repeats (same song twice in one set, e.g. Fuego →
+    # Golden Age → Fuego) to a single occurrence at the first position.
+    # Otherwise the sandwich-return transition (B→A in A→B→A) registers as
+    # a spurious bigram and dilutes the song's true transition distribution.
     rows = conn.execute(
         """
-        SELECT ss.show_id, ss.set_number, ss.position, ss.song_id
+        SELECT ss.show_id, ss.set_number, MIN(ss.position) AS position, ss.song_id
         FROM setlist_songs ss JOIN shows s USING (show_id)
         WHERE s.show_date < ?
-        ORDER BY ss.show_id, ss.set_number, ss.position
+        GROUP BY ss.show_id, ss.set_number, ss.song_id
+        ORDER BY ss.show_id, ss.set_number, position
         """,
         (cutoff_date,),
     ).fetchall()

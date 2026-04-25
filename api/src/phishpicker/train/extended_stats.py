@@ -89,6 +89,12 @@ def compute_extended_stats(
     # NULL-safe: venue_id and tour_id may be None. SQLite's `=` on NULL
     # returns NULL (falsy under SUM CASE), which is exactly what we want —
     # no special-casing needed.
+    # Dedupe sandwich repeats (same song twice in one show) before counting
+    # plays / role rates / venue counts. Without this, ~34% of shows
+    # double-count at least one song, inflating denominators and skewing
+    # role rates downward. song_show collapses to one row per (show, song)
+    # while preserving the role flags via MAX(CASE...): if the song held
+    # that role in *any* of its slot occurrences for the show, the flag is 1.
     rows = conn.execute(
         f"""
         WITH set_maxes AS (
@@ -98,13 +104,27 @@ def compute_extended_stats(
         tour_maxes AS (
             SELECT tour_id, MAX(tour_position) AS max_pos
             FROM shows WHERE tour_id IS NOT NULL GROUP BY tour_id
+        ),
+        song_show AS (
+            SELECT
+                ss.show_id,
+                ss.song_id,
+                MIN(ss.position) AS first_position,
+                MAX(CASE WHEN ss.set_number='1' AND ss.position=1 THEN 1 ELSE 0 END) AS was_set1_opener,
+                MAX(CASE WHEN ss.set_number='2' AND ss.position=1 THEN 1 ELSE 0 END) AS was_set2_opener,
+                MAX(CASE WHEN ss.set_number='E' THEN 1 ELSE 0 END) AS was_encore,
+                MAX(CASE WHEN sm.max_pos = ss.position THEN 1 ELSE 0 END) AS was_closer,
+                MAX(CASE WHEN ss.position = sm.min_pos THEN 1 ELSE 0 END) AS was_any_opener_role
+            FROM setlist_songs ss
+            JOIN set_maxes sm ON sm.show_id = ss.show_id AND sm.set_number = ss.set_number
+            GROUP BY ss.show_id, ss.song_id
         )
-        SELECT ss.song_id,
+        SELECT sx.song_id,
             COUNT(*) AS total,
-            SUM(CASE WHEN ss.set_number='1' AND ss.position=1 THEN 1 ELSE 0 END) AS set1_openers,
-            SUM(CASE WHEN ss.set_number='2' AND ss.position=1 THEN 1 ELSE 0 END) AS set2_openers,
-            SUM(CASE WHEN ss.set_number='E' THEN 1 ELSE 0 END) AS encores,
-            SUM(CASE WHEN sm.max_pos = ss.position THEN 1 ELSE 0 END) AS closers,
+            SUM(sx.was_set1_opener) AS set1_openers,
+            SUM(sx.was_set2_opener) AS set2_openers,
+            SUM(sx.was_encore) AS encores,
+            SUM(sx.was_closer) AS closers,
             SUM(CASE WHEN s.tour_id IS NOT NULL AND s.tour_position = 1
                      THEN 1 ELSE 0 END) AS tour_openers,
             SUM(CASE WHEN tm.max_pos IS NOT NULL AND s.tour_position = tm.max_pos
@@ -114,19 +134,17 @@ def compute_extended_stats(
             MAX(s.show_date) AS last_date,
             MAX(CASE WHEN s.tour_id = ? THEN s.show_date END) AS last_in_tour_date,
             -- A: last time this song was the set-1 opener specifically.
-            MAX(CASE WHEN ss.set_number='1' AND ss.position=1
-                     THEN s.show_date END) AS last_set1_opener_date,
+            MAX(CASE WHEN sx.was_set1_opener=1 THEN s.show_date END) AS last_set1_opener_date,
             -- B: last time it held ANY opener role — first song of any set, or the encore.
-            MAX(CASE WHEN ss.position = sm.min_pos
-                     THEN s.show_date END) AS last_any_opener_date,
+            MAX(CASE WHEN sx.was_any_opener_role=1 THEN s.show_date END) AS last_any_opener_date,
             -- C: mean show-global position across all plays (warm-up vs jam-vehicle proxy).
-            AVG(ss.position) AS avg_position
-        FROM setlist_songs ss
-        JOIN shows s USING (show_id)
-        JOIN set_maxes sm ON sm.show_id = ss.show_id AND sm.set_number = ss.set_number
+            -- Uses first_position so a sandwich contributes the song's earliest slot.
+            AVG(sx.first_position) AS avg_position
+        FROM song_show sx
+        JOIN shows s ON s.show_id = sx.show_id
         LEFT JOIN tour_maxes tm ON tm.tour_id = s.tour_id
-        WHERE ss.song_id IN ({placeholders}) AND s.show_date < ?
-        GROUP BY ss.song_id
+        WHERE sx.song_id IN ({placeholders}) AND s.show_date < ?
+        GROUP BY sx.song_id
         """,
         [venue_id, tour_id, tour_id, *candidate_song_ids, show_date],
     ).fetchall()
@@ -219,10 +237,12 @@ def compute_extended_stats(
     # B2: plays_last_6mo + recent_play_acceleration. Momentum signal —
     # songs that got hot in the last six months. Picks up Evolve-style
     # album-release spikes without needing explicit album data.
+    # COUNT(DISTINCT show_id) so a sandwich (same song twice in one show)
+    # counts as one play, matching compute_song_stats.
     plays_6mo = dict(
         conn.execute(
             f"""
-            SELECT ss.song_id, COUNT(*) AS n
+            SELECT ss.song_id, COUNT(DISTINCT ss.show_id) AS n
             FROM setlist_songs ss JOIN shows s USING (show_id)
             WHERE ss.song_id IN ({placeholders})
               AND s.show_date < ?
@@ -235,7 +255,7 @@ def compute_extended_stats(
     plays_12mo = dict(
         conn.execute(
             f"""
-            SELECT ss.song_id, COUNT(*) AS n
+            SELECT ss.song_id, COUNT(DISTINCT ss.show_id) AS n
             FROM setlist_songs ss JOIN shows s USING (show_id)
             WHERE ss.song_id IN ({placeholders})
               AND s.show_date < ?

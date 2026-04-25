@@ -9,6 +9,7 @@ import pytest
 
 from phishpicker.db.connection import apply_schema, open_db
 from phishpicker.train.build import build_feature_rows
+from phishpicker.train.extended_stats import compute_extended_stats
 
 
 @pytest.fixture
@@ -644,3 +645,31 @@ def test_days_since_last_new_album_is_populated(conn):
         candidate_song_ids=[1],
     )
     assert 1500 <= rows[0].days_since_last_new_album <= 1600
+
+
+def test_extended_stats_collapses_sandwich_repeats(conn):
+    """A sandwich (same song twice in one show) is one play, not two.
+    Inflates plays_last_6mo / recent_play_acceleration / venue counts
+    otherwise. Tweezer played once at show 1001, once at 1002, once at
+    1004 — adding a sandwich row at 1004 shouldn't bump any count."""
+    # Add a Tweezer sandwich on show 1004 (Tweezer already at set 1 pos 5;
+    # add a second occurrence at set 1 pos 8).
+    conn.execute(
+        "INSERT INTO setlist_songs (show_id, set_number, position, song_id, trans_mark) "
+        "VALUES (1004, '1', 8, 2, ',')"
+    )
+    conn.commit()
+
+    stats = compute_extended_stats(
+        conn,
+        show_date="2024-07-01",
+        venue_id=100,
+        candidate_song_ids=[2],
+    )
+
+    # Tweezer at MSG: shows 1001, 1002, 1004 = 3 distinct shows.
+    # Sandwich on 1004 must NOT bump times_at_venue to 4.
+    assert stats[2].times_at_venue == 3
+    # plays_last_6mo: only show 1004 (2024-06-01) is within 6 months of
+    # 2024-07-01. One distinct show, sandwich notwithstanding.
+    assert stats[2].plays_last_6mo == 1

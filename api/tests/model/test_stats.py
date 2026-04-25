@@ -213,6 +213,52 @@ def test_run_stops_at_intermediate_show_at_different_venue(
     assert stats[100].played_already_this_run is False
 
 
+def test_total_plays_collapses_sandwich_repeats(conn: sqlite3.Connection) -> None:
+    """A sandwich (song A → song B → song A within one show) is one
+    performance interrupted by another song, not two separate plays.
+    total_plays_ever and times_played_last_12mo must dedupe by show."""
+    _seed_venue(conn, 500)
+    _seed_tour(conn, 77)
+    _seed_song(conn, 100)
+
+    _seed_show(conn, 1, "2024-07-19", 500, 77)
+    _seed_show(conn, 2, "2024-07-22", 500, 77)  # live target
+
+    # Song 100 sandwiched: pos 3 → pos 5 in set 2 (real Phish pattern).
+    _seed_setlist_song(conn, 1, 100, set_number="2", position=3)
+    _seed_setlist_song(conn, 1, 100, set_number="2", position=5)
+
+    conn.commit()
+
+    stats = compute_song_stats(conn, "2024-07-22", 500, [100], tour_id=77)
+
+    assert stats[100].total_plays_ever == 1
+    assert stats[100].times_played_last_12mo == 1
+
+
+def test_plays_this_run_count_collapses_sandwich_repeats(
+    conn: sqlite3.Connection,
+) -> None:
+    """A sandwich on a single night of a residency is one play, not two.
+    Otherwise residency suppression sees the song as already played twice
+    within the run after just one night."""
+    _seed_venue(conn, 500)
+    _seed_tour(conn, 77)
+    _seed_song(conn, 100)
+
+    _seed_show(conn, 1, "2024-07-19", 500, 77)
+    _seed_show(conn, 2, "2024-07-20", 500, 77)  # live target — same run
+
+    _seed_setlist_song(conn, 1, 100, set_number="2", position=3)
+    _seed_setlist_song(conn, 1, 100, set_number="2", position=5)
+
+    conn.commit()
+
+    stats = compute_song_stats(conn, "2024-07-20", 500, [100], tour_id=77)
+
+    assert stats[100].plays_this_run_count == 1
+
+
 def test_compute_song_stats_never_played(conn: sqlite3.Connection) -> None:
     """Song with no play history returns None for shows_since_last and 0 total plays."""
     _seed_venue(conn, 500)
