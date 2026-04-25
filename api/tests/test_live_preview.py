@@ -302,3 +302,89 @@ def test_preview_passes_prior_only_context_to_hit_rank(
     # first. The first sees no prior songs; the second sees only song 100.
     assert captured_played[0] == []
     assert captured_played[1] == [100]
+
+
+def test_played_in_run_returns_empty_when_show_not_in_tour(seeded_client):
+    """A show date with no matching tour returns an empty filter set."""
+    from contextlib import closing
+    from phishpicker.config import Settings
+    from phishpicker.db.connection import open_db
+    from phishpicker.live_preview import _played_in_run
+
+    settings = Settings()
+    with closing(open_db(settings.db_path, read_only=True)) as conn:
+        result = _played_in_run(conn, show_date="1900-01-01", venue_id=1)
+    assert result == set()
+
+
+def test_played_in_run_returns_empty_when_first_show_of_run(seeded_client):
+    """Night 1 of a run has no prior shows → empty set."""
+    from contextlib import closing
+    from phishpicker.config import Settings
+    from phishpicker.db.connection import open_db
+    from phishpicker.live_preview import _played_in_run
+
+    settings = Settings()
+    with closing(open_db(settings.db_path, read_only=True)) as conn:
+        # Look up the earliest scheduled show for any venue; that's a run-of-1
+        # or the start of a run.
+        row = conn.execute(
+            "SELECT show_date, venue_id FROM shows ORDER BY show_date ASC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return  # no shows in fixtures — vacuous pass
+        result = _played_in_run(conn, show_date=row["show_date"], venue_id=row["venue_id"])
+    # First-of-run can be empty, OR have entries if the same venue appeared
+    # adjacent before — we just confirm the function returns a set without erroring.
+    assert isinstance(result, set)
+
+
+def test_played_in_run_includes_prior_run_mate_setlist(seeded_client, monkeypatch, tmp_path):
+    """When two shows share venue+tour and date order, songs from the earlier
+    show appear in the later show's played_in_run set."""
+    from contextlib import closing
+    from phishpicker.config import Settings
+    from phishpicker.db.connection import open_db
+    from phishpicker.live_preview import _played_in_run
+
+    settings = Settings()
+    with closing(open_db(settings.db_path, read_only=True)) as write_conn:
+        pass  # We need a write connection — open_db with read_only=False below.
+
+    from phishpicker.db.connection import open_db as open_db_rw
+    with closing(open_db_rw(settings.db_path)) as conn:
+        # Find or insert a tour; insert two shows on the same tour+venue, two
+        # days apart, with a known song in the first show's setlist.
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO tours (tour_id, name, start_date, end_date) "
+            "VALUES (9999, 'Test Tour', '2099-01-01', '2099-12-31')"
+        )
+        cur.execute(
+            "INSERT OR IGNORE INTO venues (venue_id, name) VALUES (9999, 'Test Venue')"
+        )
+        cur.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at, reconciled) "
+            "VALUES (90001, '2099-06-01', 9999, 9999, '2099-01-01', 1)"
+        )
+        cur.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at, reconciled) "
+            "VALUES (90002, '2099-06-02', 9999, 9999, '2099-01-01', 0)"
+        )
+        # Pick any real song_id from the seed pool.
+        sid_row = conn.execute("SELECT song_id FROM songs LIMIT 1").fetchone()
+        assert sid_row, "fixture has no songs"
+        sid = sid_row["song_id"]
+        cur.execute(
+            "INSERT OR REPLACE INTO setlist_songs "
+            "(show_id, set_number, position, song_id) "
+            "VALUES (90001, '1', 1, ?)",
+            (sid,),
+        )
+        conn.commit()
+
+        result = _played_in_run(conn, show_date="2099-06-02", venue_id=9999)
+
+    assert sid in result

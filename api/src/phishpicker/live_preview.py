@@ -5,10 +5,55 @@ import sqlite3
 from fastapi import HTTPException
 
 from phishpicker.model.scorer import Scorer
-from phishpicker.model.stats import compute_song_stats
+from phishpicker.model.stats import _find_run_start, compute_song_stats
 from phishpicker.predict import predict_next_stateless
 from phishpicker.train.bigrams import compute_bigram_probs
 from phishpicker.train.extended_stats import compute_extended_stats
+
+
+def _played_in_run(
+    read_conn: sqlite3.Connection,
+    show_date: str,
+    venue_id: int | None,
+) -> set[int]:
+    """Songs played in run-mate shows that happened before show_date.
+
+    Returns an empty set when the live show isn't in any run (no tour
+    found, no same-venue adjacent shows, or it's the first show of its run).
+    """
+    if venue_id is None:
+        return set()
+
+    # Resolve tour_id: prefer the canonical shows row if the live date is
+    # already pre-scheduled; fall back to the tours table by date range.
+    tour_row = read_conn.execute(
+        "SELECT tour_id FROM shows WHERE show_date = ? AND venue_id = ? LIMIT 1",
+        (show_date, venue_id),
+    ).fetchone()
+    if tour_row and tour_row["tour_id"] is not None:
+        tour_id = tour_row["tour_id"]
+    else:
+        fallback = read_conn.execute(
+            "SELECT tour_id FROM tours WHERE start_date <= ? AND end_date >= ? LIMIT 1",
+            (show_date, show_date),
+        ).fetchone()
+        if not fallback or fallback["tour_id"] is None:
+            return set()
+        tour_id = fallback["tour_id"]
+
+    run_start = _find_run_start(read_conn, venue_id, show_date, tour_id=tour_id)
+    if run_start == show_date:
+        return set()  # first night of the run, or singleton
+
+    rows = read_conn.execute(
+        "SELECT DISTINCT ss.song_id "
+        "FROM setlist_songs ss "
+        "JOIN shows s ON s.show_id = ss.show_id "
+        "WHERE s.venue_id = ? AND s.tour_id = ? "
+        "  AND s.show_date >= ? AND s.show_date < ?",
+        (venue_id, tour_id, run_start, show_date),
+    ).fetchall()
+    return {r["song_id"] for r in rows}
 
 
 def _compute_hit_rank(
