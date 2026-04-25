@@ -102,7 +102,8 @@ def test_upcoming_returns_full_payload_with_la_timezone(
 ) -> None:
     # Locks in the venue→tz mapping (NV → America/Los_Angeles) and the
     # 19:00 hardcoded local start time. Frozen at a moment where 4/25 is
-    # the active show.
+    # the active show. The seed DB has no canonical row for showid=2, so
+    # run_position/run_length come back null (residency unknown).
     _freeze_now(monkeypatch, datetime(2026, 4, 25, 18, 0, tzinfo=UTC))
     httpx_mock.add_response(url=PHISHNET_URL, json={"data": SPHERE_SHOWS})
 
@@ -116,6 +117,8 @@ def test_upcoming_returns_full_payload_with_la_timezone(
         "state": "NV",
         "timezone": "America/Los_Angeles",
         "start_time_local": "19:00",
+        "run_position": None,
+        "run_length": None,
     }
 
 
@@ -125,3 +128,105 @@ def test_upcoming_404s_when_no_future_shows(
     httpx_mock.add_response(url=PHISHNET_URL, json={"data": []})
     r = seeded_client.get("/upcoming")
     assert r.status_code == 404
+
+
+def test_upcoming_returns_residency_position_when_canonical_row_known(
+    monkeypatch: pytest.MonkeyPatch,
+    httpx_mock: HTTPXMock,
+    seeded_client,
+    tmp_path,
+) -> None:
+    """When the upcoming show is in the canonical shows table and shares
+    venue + tour with other shows, /upcoming surfaces the residency-wide
+    position (e.g. 'night 6 of 9') so the UI can render a 'Run N|M' badge.
+    Built on the fly from canonical rows — no schema change."""
+    # Seed a 9-show residency at venue 1597 / tour 216 around tonight.
+    from phishpicker.db.connection import open_db
+
+    with open_db(tmp_path / "phishpicker.db") as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO venues (venue_id, name) VALUES (1597, 'Sphere')"
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO tours (tour_id, name) VALUES (216, '2026 Sphere Residency')"
+        )
+        for sid, sdate in [
+            (101, "2026-04-16"),
+            (102, "2026-04-17"),
+            (103, "2026-04-18"),
+            (104, "2026-04-23"),
+            (105, "2026-04-24"),
+            (106, "2026-04-25"),  # the upcoming target
+            (107, "2026-04-26"),
+            (108, "2026-04-30"),
+            (109, "2026-05-01"),
+        ]:
+            conn.execute(
+                "INSERT OR REPLACE INTO shows "
+                "(show_id, show_date, venue_id, tour_id, fetched_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (sid, sdate, 1597, 216, "2026-04-25T00:00:00Z"),
+            )
+        conn.commit()
+
+    _freeze_now(monkeypatch, datetime(2026, 4, 25, 18, 0, tzinfo=UTC))
+    sphere_show = {
+        "showid": 106,  # matches the canonical row above
+        "showdate": "2026-04-25",
+        "artist_name": "Phish",
+        "venue": "Sphere",
+        "city": "Las Vegas",
+        "state": "NV",
+    }
+    httpx_mock.add_response(url=PHISHNET_URL, json={"data": [sphere_show]})
+
+    r = seeded_client.get("/upcoming")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["run_position"] == 6
+    assert body["run_length"] == 9
+
+
+def test_upcoming_suppresses_residency_for_singleton_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    httpx_mock: HTTPXMock,
+    seeded_client,
+    tmp_path,
+) -> None:
+    """A one-off show isn't worth a 'Run 1|1' badge — return null/null."""
+    from phishpicker.db.connection import open_db
+
+    with open_db(tmp_path / "phishpicker.db") as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO venues (venue_id, name) VALUES (777, 'One-off')"
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO tours (tour_id, name) VALUES (888, 'Solo gig')"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at) "
+            "VALUES (200, '2026-06-01', 777, 888, '2026-04-25T00:00:00Z')"
+        )
+        conn.commit()
+
+    _freeze_now(monkeypatch, datetime(2026, 6, 1, 18, 0, tzinfo=UTC))
+    httpx_mock.add_response(
+        url=PHISHNET_URL,
+        json={
+            "data": [
+                {
+                    "showid": 200,
+                    "showdate": "2026-06-01",
+                    "artist_name": "Phish",
+                    "venue": "One-off",
+                    "city": "Somewhere",
+                    "state": "CA",
+                }
+            ]
+        },
+    )
+
+    body = seeded_client.get("/upcoming").json()
+    assert body["run_position"] is None
+    assert body["run_length"] is None

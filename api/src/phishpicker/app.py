@@ -57,6 +57,35 @@ def _read_write_conn_dep(settings: Settings) -> Iterator[sqlite3.Connection]:
     return _dep
 
 
+def _residency_position(
+    conn: sqlite3.Connection, show_id: int
+) -> tuple[int | None, int | None]:
+    """Return (position, length) for the given show within its residency,
+    where "residency" = all shows with the same venue_id + tour_id.
+
+    Returns (None, None) when the show isn't in the canonical DB, lacks a
+    venue_id or tour_id, or is the only show in its residency (length=1).
+    """
+    canonical = conn.execute(
+        "SELECT venue_id, tour_id, show_date FROM shows WHERE show_id = ?",
+        (show_id,),
+    ).fetchone()
+    if not canonical or canonical["venue_id"] is None or canonical["tour_id"] is None:
+        return None, None
+    length = conn.execute(
+        "SELECT COUNT(*) FROM shows WHERE venue_id = ? AND tour_id = ?",
+        (canonical["venue_id"], canonical["tour_id"]),
+    ).fetchone()[0]
+    if length < 2:
+        return None, None
+    position = conn.execute(
+        "SELECT COUNT(*) FROM shows "
+        "WHERE venue_id = ? AND tour_id = ? AND show_date <= ?",
+        (canonical["venue_id"], canonical["tour_id"], canonical["show_date"]),
+    ).fetchone()[0]
+    return position, length
+
+
 def create_app() -> FastAPI:
     settings = Settings()  # type: ignore[call-arg]
 
@@ -164,7 +193,10 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/upcoming")
-    def upcoming(request: Request):
+    def upcoming(
+        request: Request,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+    ):
         # Compute "today" with a 15-hour lag so the rollover from one show
         # to the next happens the morning AFTER a show, not during it.
         # Plain UTC midnight = 5pm Pacific / 8pm Eastern, which is before
@@ -178,14 +210,23 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="no upcoming Phish shows")
         first = shows[0]
         state = first.get("state", "")
+        show_id = int(first["showid"])
+        # Residency-wide position: count all same-venue + same-tour shows
+        # ("the 9-show 2026 Sphere residency"). NOT the same as the schema's
+        # run_position/run_length, which scope to consecutive-day micro-runs
+        # (a 9-show residency split by off-days has three 3-night sub-runs).
+        # Suppressed for one-show "residencies" — no badge worth showing.
+        run_position, run_length = _residency_position(read, show_id)
         return {
-            "show_id": int(first["showid"]),
+            "show_id": show_id,
             "show_date": first["showdate"],
             "venue": first.get("venue", ""),
             "city": first.get("city", ""),
             "state": state,
             "timezone": tz_for_state(state),
             "start_time_local": "19:00",
+            "run_position": run_position,
+            "run_length": run_length,
         }
 
     @app.post("/live/show")

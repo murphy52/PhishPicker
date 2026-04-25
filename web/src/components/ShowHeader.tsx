@@ -13,6 +13,10 @@ export interface UpcomingShow {
   state: string;
   timezone: string;
   start_time_local: string;
+  // Position / length within the residency (same venue + tour). Null when
+  // the show isn't in the canonical DB or it's a one-off — no badge then.
+  run_position?: number | null;
+  run_length?: number | null;
 }
 
 interface Props {
@@ -55,8 +59,16 @@ export function ShowHeader({ show, liveShowId, now }: Props) {
       className="px-4 pt-4 pb-2 border-b border-neutral-900"
     >
       <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 items-center">
-        <div className="text-sm font-semibold text-neutral-100 truncate">
-          {show.venue}
+        <div className="text-sm font-semibold text-neutral-100 flex items-baseline gap-2 min-w-0">
+          <span className="truncate">{show.venue}</span>
+          {show.run_position && show.run_length && (
+            <span
+              data-testid="run-badge"
+              className="text-xs font-normal text-neutral-500 tabular-nums shrink-0"
+            >
+              Run: {show.run_position}|{show.run_length}
+            </span>
+          )}
         </div>
         <div
           className="text-xs font-medium text-indigo-300 tabular-nums shrink-0 justify-self-end"

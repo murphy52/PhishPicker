@@ -38,4 +38,25 @@ describe("ShowHeader", () => {
     render(<ShowHeader show={show} now={now} />);
     expect(screen.queryByText(/,\s*NV/)).not.toBeInTheDocument();
   });
+
+  it("renders Run: N|M when run position/length are present", () => {
+    const show: UpcomingShow = { ...sphere, run_position: 6, run_length: 9 };
+    const now = new Date("2026-04-25T20:00:00.000Z");
+    render(<ShowHeader show={show} now={now} />);
+    const badge = screen.getByTestId("run-badge");
+    expect(badge).toHaveTextContent("Run: 6|9");
+  });
+
+  it("omits the run badge when residency info is missing", () => {
+    const now = new Date("2026-04-23T20:00:00.000Z");
+    render(<ShowHeader show={sphere} now={now} />);
+    expect(screen.queryByTestId("run-badge")).not.toBeInTheDocument();
+  });
+
+  it("omits the run badge when only one of position/length is set", () => {
+    const show: UpcomingShow = { ...sphere, run_position: 1 }; // length missing
+    const now = new Date("2026-04-23T20:00:00.000Z");
+    render(<ShowHeader show={show} now={now} />);
+    expect(screen.queryByTestId("run-badge")).not.toBeInTheDocument();
+  });
 });
