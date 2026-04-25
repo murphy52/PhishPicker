@@ -22,6 +22,9 @@ export interface PreviewSlot {
   state: "entered" | "predicted";
   entered_song?: EnteredSong;
   top_k?: PreviewCandidate[];
+  // 1..10 when the entered song was in the retroactive top-10 prediction;
+  // null when it was outside that list. Absent on predicted slots.
+  hit_rank?: number | null;
   // Client-only optimistic flag — set while an add or undo is in flight so
   // the slot can render a pending style. Never populated by the server.
   pending?: "adding" | "removing";
