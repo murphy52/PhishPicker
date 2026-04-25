@@ -149,9 +149,9 @@ def test_preview_respects_live_show_meta_sizes(seeded_client, live_show_id):
     assert len(slots) == 21
 
 
-def test_compute_hit_rank_returns_rank_when_song_in_top_n(seeded_client, live_show_id):
-    """Unit-level smoke test — entered song shows up at rank 1 when it's the top
-    candidate given an empty prior context."""
+def test_compute_hit_rank_smoke(seeded_client, live_show_id):
+    """Smoke test — helper returns either a 1..10 int or None for a real fixture
+    call; verifies the helper doesn't crash when wired to the real scorer."""
     from contextlib import closing
 
     from phishpicker.config import Settings
@@ -162,8 +162,6 @@ def test_compute_hit_rank_returns_rank_when_song_in_top_n(seeded_client, live_sh
     # Seed-provided song ids are small — pick a known one from fixtures.
     settings = Settings()
     with closing(open_db(settings.db_path, read_only=True)) as read_conn:
-        # With no prior context, every seed song scores equally; the returned
-        # rank must be 1..10 or None, never a non-int.
         rank = _compute_hit_rank(
             read_conn=read_conn,
             played_songs=[],
@@ -181,6 +179,42 @@ def test_compute_hit_rank_returns_rank_when_song_in_top_n(seeded_client, live_sh
             bigram_cache=None,
         )
     assert rank is None or (1 <= rank <= 10)
+
+
+def test_compute_hit_rank_returns_rank_when_song_in_top_n(monkeypatch):
+    """Deterministic test — stub predict_next_stateless to return a known list,
+    then verify the helper finds the target at the correct 1-based position."""
+    from phishpicker import live_preview
+    from phishpicker.live_preview import _compute_hit_rank
+
+    fake_cands = [
+        {"song_id": 1, "name": "First"},
+        {"song_id": 42, "name": "Target"},
+        {"song_id": 100, "name": "Third"},
+    ]
+
+    def fake_predict(**_kwargs):
+        return fake_cands
+
+    monkeypatch.setattr(live_preview, "predict_next_stateless", fake_predict)
+
+    rank = _compute_hit_rank(
+        read_conn=None,
+        played_songs=[],
+        target_song_id=42,
+        current_set="1",
+        show_date="2026-04-23",
+        venue_id=1,
+        prev_trans_mark=",",
+        prev_set_number=None,
+        scorer=None,
+        song_ids_cache=None,
+        song_names_cache=None,
+        stats_cache=None,
+        ext_cache=None,
+        bigram_cache=None,
+    )
+    assert rank == 2
 
 
 def test_compute_hit_rank_returns_none_for_unknown_song(seeded_client, live_show_id):

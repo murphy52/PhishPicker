@@ -4,6 +4,7 @@ import sqlite3
 
 from fastapi import HTTPException
 
+from phishpicker.model.scorer import Scorer
 from phishpicker.model.stats import compute_song_stats
 from phishpicker.predict import predict_next_stateless
 from phishpicker.train.bigrams import compute_bigram_probs
@@ -12,7 +13,7 @@ from phishpicker.train.extended_stats import compute_extended_stats
 
 def _compute_hit_rank(
     *,
-    read_conn,
+    read_conn: sqlite3.Connection,
     played_songs: list[int],
     target_song_id: int,
     current_set: str,
@@ -20,13 +21,14 @@ def _compute_hit_rank(
     venue_id: int | None,
     prev_trans_mark: str,
     prev_set_number: str | None,
-    scorer,
+    scorer: Scorer,
     song_ids_cache,
     song_names_cache,
     stats_cache,
     ext_cache,
     bigram_cache,
 ) -> int | None:
+    """Return 1-based rank of `target_song_id` in the top-10 predictions, or None if absent."""
     cands = predict_next_stateless(
         read_conn=read_conn,
         played_songs=played_songs,
