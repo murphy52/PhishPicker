@@ -35,7 +35,12 @@ export function AddSongSheet({ songs, onAdd }: Props) {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-neutral-900 rounded-t-2xl px-4 pt-3 pb-4 h-dvh flex flex-col"
+            // viewportFit=cover lets the sheet extend under iOS safe areas, so
+            // we need to pad the X button below the status bar/notch and lift
+            // the input above the home indicator. env() is 0 in browsers that
+            // don't expose safe areas, so the calc() falls back to the prior
+            // pt-3 / pb-4.
+            className="bg-neutral-900 rounded-t-2xl px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)] h-dvh flex flex-col"
           >
             <div className="flex items-center justify-between mb-2 shrink-0">
               <span className="text-sm font-medium text-neutral-300">Add song</span>
