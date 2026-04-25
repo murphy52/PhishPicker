@@ -85,7 +85,7 @@ function SetHeader({
       aria-pressed={active}
       data-testid="set-header"
       data-active={active ? "true" : "false"}
-      className={`flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-widest transition-colors ${
+      className={`flex items-center gap-2 w-full px-2 -mx-2 py-2 mb-1 min-h-[40px] rounded text-left text-xs font-semibold uppercase tracking-widest transition-colors active:bg-neutral-800/60 ${
         active
           ? "text-neutral-100"
           : "text-neutral-600 hover:text-neutral-400"
