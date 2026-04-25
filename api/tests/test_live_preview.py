@@ -312,8 +312,10 @@ def test_played_in_run_returns_empty_when_show_not_in_tour(seeded_client):
     from phishpicker.live_preview import _played_in_run
 
     settings = Settings()
-    with closing(open_db(settings.db_path, read_only=True)) as conn:
-        result = _played_in_run(conn, show_date="1900-01-01", venue_id=1)
+    with closing(open_db(settings.db_path, read_only=True)) as conn, closing(
+        open_db(settings.live_db_path, read_only=True)
+    ) as live_conn:
+        result = _played_in_run(conn, live_conn, show_date="1900-01-01", venue_id=1)
     assert result == set()
 
 
@@ -325,7 +327,9 @@ def test_played_in_run_returns_empty_when_first_show_of_run(seeded_client):
     from phishpicker.live_preview import _played_in_run
 
     settings = Settings()
-    with closing(open_db(settings.db_path, read_only=True)) as conn:
+    with closing(open_db(settings.db_path, read_only=True)) as conn, closing(
+        open_db(settings.live_db_path, read_only=True)
+    ) as live_conn:
         # Look up the earliest scheduled show for any venue; that's a run-of-1
         # or the start of a run.
         row = conn.execute(
@@ -333,7 +337,9 @@ def test_played_in_run_returns_empty_when_first_show_of_run(seeded_client):
         ).fetchone()
         if row is None:
             return  # no shows in fixtures — vacuous pass
-        result = _played_in_run(conn, show_date=row["show_date"], venue_id=row["venue_id"])
+        result = _played_in_run(
+            conn, live_conn, show_date=row["show_date"], venue_id=row["venue_id"]
+        )
     # First-of-run can be empty, OR have entries if the same venue appeared
     # adjacent before — we just confirm the function returns a set without erroring.
     assert isinstance(result, set)
@@ -352,7 +358,9 @@ def test_played_in_run_includes_prior_run_mate_setlist(seeded_client, monkeypatc
         pass  # We need a write connection — open_db with read_only=False below.
 
     from phishpicker.db.connection import open_db as open_db_rw
-    with closing(open_db_rw(settings.db_path)) as conn:
+    with closing(open_db_rw(settings.db_path)) as conn, closing(
+        open_db_rw(settings.live_db_path)
+    ) as live_conn:
         # Find or insert a tour; insert two shows on the same tour+venue, two
         # days apart, with a known song in the first show's setlist.
         cur = conn.cursor()
@@ -385,7 +393,9 @@ def test_played_in_run_includes_prior_run_mate_setlist(seeded_client, monkeypatc
         )
         conn.commit()
 
-        result = _played_in_run(conn, show_date="2099-06-02", venue_id=9999)
+        result = _played_in_run(
+            conn, live_conn, show_date="2099-06-02", venue_id=9999
+        )
 
     assert sid in result
 
@@ -539,3 +549,149 @@ def test_preview_entered_slot_hit_rank_null_when_song_in_run(seeded_client, live
     assert target["hit_rank"] is None, (
         f"expected hit_rank=None for run-filtered song, got {target['hit_rank']}"
     )
+
+
+def test_played_in_run_reads_from_live_songs(seeded_client):
+    """Regression: when a prior run-mate's setlist exists only in live_songs
+    (canonical post-show ingest hasn't backfilled it yet), the run filter
+    must still pick up its songs. This was the 4/23 → 4/24 Sphere bug."""
+    from contextlib import closing
+    from phishpicker.config import Settings
+    from phishpicker.db.connection import open_db
+    from phishpicker.live_preview import _played_in_run
+
+    settings = Settings()
+    with closing(open_db(settings.db_path)) as conn, closing(
+        open_db(settings.live_db_path)
+    ) as live_conn:
+        # Canonical scaffold: tour + venue + tonight's show (no setlist).
+        # The prior-night canonical row deliberately has NO entries in
+        # setlist_songs — exercising the live_songs-only path.
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO tours (tour_id, name, start_date, end_date) "
+            "VALUES (8888, 'Live-Songs Test Tour', '2099-01-01', '2099-12-31')"
+        )
+        cur.execute(
+            "INSERT OR IGNORE INTO venues (venue_id, name) VALUES (8888, 'Live-Songs Test Venue')"
+        )
+        cur.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at, reconciled) "
+            "VALUES (80001, '2099-07-01', 8888, 8888, '2099-01-01', 0)"
+        )
+        cur.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at, reconciled) "
+            "VALUES (80002, '2099-07-02', 8888, 8888, '2099-01-01', 0)"
+        )
+        sid_row = conn.execute("SELECT song_id FROM songs LIMIT 1").fetchone()
+        assert sid_row, "fixture has no songs"
+        sid = sid_row["song_id"]
+        conn.commit()
+
+        # Seed a live-only setlist for the prior night at the same venue.
+        live_cur = live_conn.cursor()
+        live_cur.execute(
+            "INSERT OR REPLACE INTO live_show "
+            "(show_id, show_date, venue_id, started_at, current_set) "
+            "VALUES ('live-prior-80001', '2099-07-01', 8888, '2099-07-01T00:00:00', 'E')"
+        )
+        live_cur.execute(
+            "INSERT OR REPLACE INTO live_songs "
+            "(show_id, entered_order, song_id, set_number, entered_at) "
+            "VALUES ('live-prior-80001', 1, ?, '1', '2099-07-01T20:00:00')",
+            (sid,),
+        )
+        live_conn.commit()
+
+        result = _played_in_run(
+            conn, live_conn, show_date="2099-07-02", venue_id=8888
+        )
+
+    assert sid in result, (
+        "expected the live-only prior-night song to appear in played_in_run"
+    )
+
+
+def test_build_preview_backfills_venue_id_when_live_show_has_null(seeded_client):
+    """Regression: when /live/show is created without venue_id (frontend bug
+    on tonight's show), build_preview should resolve venue_id from canonical
+    by show_date so the run-filter still excludes prior run-mates' songs."""
+    from contextlib import closing
+    from phishpicker.config import Settings
+    from phishpicker.db.connection import open_db
+
+    settings = Settings()
+
+    # Pick a show_date and venue_id that will form a 2-night run in canonical.
+    # Use a different tour/venue than the live-songs test for isolation.
+    show_date = "2099-08-02"
+    prior_date = "2099-08-01"
+    tour_id = 7777
+    venue_id = 7777
+
+    with closing(open_db(settings.db_path)) as conn:
+        sid_row = conn.execute("SELECT song_id FROM songs LIMIT 1").fetchone()
+        assert sid_row
+        target_song_id = sid_row["song_id"]
+        conn.execute(
+            "INSERT OR IGNORE INTO tours (tour_id, name, start_date, end_date) "
+            "VALUES (?, 'Backfill Venue Test', '1900-01-01', '2999-12-31')",
+            (tour_id,),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO venues (venue_id, name) VALUES (?, 'Backfill Test Venue')",
+            (venue_id,),
+        )
+        # Tonight's canonical row has venue_id set; live_show won't.
+        conn.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at, reconciled) "
+            "VALUES (70001, ?, ?, ?, '1900-01-01', 0)",
+            (show_date, venue_id, tour_id),
+        )
+        # Prior night with target song in setlist_songs.
+        conn.execute(
+            "INSERT OR REPLACE INTO shows "
+            "(show_id, show_date, venue_id, tour_id, fetched_at, reconciled) "
+            "VALUES (70002, ?, ?, ?, '1900-01-01', 1)",
+            (prior_date, venue_id, tour_id),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO setlist_songs "
+            "(show_id, set_number, position, song_id) "
+            "VALUES (70002, '1', 1, ?)",
+            (target_song_id,),
+        )
+        conn.commit()
+
+    # Create a live show via the API with venue_id=None — this is the
+    # production bug scenario.
+    r = seeded_client.post(
+        "/live/show", json={"show_date": show_date, "venue_id": None}
+    )
+    assert r.status_code == 200
+    null_venue_show_id = r.json()["show_id"]
+
+    # Sanity-check that the live row really has venue_id=NULL.
+    with closing(open_db(settings.live_db_path)) as live_conn:
+        row = live_conn.execute(
+            "SELECT venue_id FROM live_show WHERE show_id = ?",
+            (null_venue_show_id,),
+        ).fetchone()
+        assert row["venue_id"] is None, "test setup: live_show.venue_id should be NULL"
+
+    # Preview must (a) not crash and (b) exclude target_song_id from any
+    # predicted slot's top_k. Pre-fix, venue_id=None short-circuited the
+    # filter and the song leaked.
+    resp = seeded_client.get(f"/live/show/{null_venue_show_id}/preview")
+    assert resp.status_code == 200, resp.text
+    slots = resp.json()["slots"]
+    for s in slots:
+        if s["state"] == "predicted":
+            ids = [c["song_id"] for c in s.get("top_k", [])]
+            assert target_song_id not in ids, (
+                f"target song {target_song_id} leaked into top_k for slot "
+                f"{s['slot_idx']} — venue_id backfill failed"
+            )

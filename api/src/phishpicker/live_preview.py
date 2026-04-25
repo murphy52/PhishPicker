@@ -13,6 +13,7 @@ from phishpicker.train.extended_stats import compute_extended_stats
 
 def _played_in_run(
     read_conn: sqlite3.Connection,
+    live_conn: sqlite3.Connection,
     show_date: str,
     venue_id: int | None,
 ) -> set[int]:
@@ -20,6 +21,13 @@ def _played_in_run(
 
     Returns an empty set when the live show isn't in any run (no tour
     found, no same-venue adjacent shows, or it's the first show of its run).
+
+    Reads from both `setlist_songs` (canonical) and `live_songs` (live DB) —
+    a recently-played live show may not yet be backfilled to canonical, but
+    its setlist still constrains the no-repeat filter for tonight's preview.
+    Live shows don't track tour_id, but the run bounds (run_start, show_date)
+    are tour-derived from canonical, so any live show on a same-venue date
+    within those bounds is by construction part of the same run.
     """
     if venue_id is None:
         return set()
@@ -45,7 +53,7 @@ def _played_in_run(
     if run_start == show_date:
         return set()  # first night of the run, or singleton
 
-    rows = read_conn.execute(
+    canonical_rows = read_conn.execute(
         "SELECT DISTINCT ss.song_id "
         "FROM setlist_songs ss "
         "JOIN shows s ON s.show_id = ss.show_id "
@@ -53,7 +61,17 @@ def _played_in_run(
         "  AND s.show_date >= ? AND s.show_date < ?",
         (venue_id, tour_id, run_start, show_date),
     ).fetchall()
-    return {r["song_id"] for r in rows}
+
+    live_rows = live_conn.execute(
+        "SELECT DISTINCT ls.song_id "
+        "FROM live_songs ls "
+        "JOIN live_show lsh ON lsh.show_id = ls.show_id "
+        "WHERE lsh.venue_id = ? "
+        "  AND lsh.show_date >= ? AND lsh.show_date < ?",
+        (venue_id, run_start, show_date),
+    ).fetchall()
+
+    return {r["song_id"] for r in canonical_rows} | {r["song_id"] for r in live_rows}
 
 
 def _compute_hit_rank(
@@ -113,6 +131,20 @@ def build_preview(
     if not show:
         raise HTTPException(404, "show not found")
     current_set = show["current_set"]
+    show_date = show["show_date"]
+    venue_id = show["venue_id"]
+    # Backfill venue_id from canonical when the live row is missing it.
+    # The frontend creates `/live/show` without venue_id in some flows, which
+    # short-circuits the run-filter and any per-venue stats. Resolving here
+    # benefits the entire prediction pipeline (compute_song_stats,
+    # compute_extended_stats, the stats cache), not just the run filter.
+    if venue_id is None:
+        row = read_conn.execute(
+            "SELECT venue_id FROM shows WHERE show_date = ? LIMIT 1",
+            (show_date,),
+        ).fetchone()
+        if row and row["venue_id"] is not None:
+            venue_id = row["venue_id"]
     meta = live_conn.execute(
         "SELECT set1_size, set2_size, encore_size FROM live_show_meta WHERE show_id = ?",
         (show_id,),
@@ -134,8 +166,6 @@ def build_preview(
 
     # Per-show caches. These depend only on (show_date, venue_id, song set),
     # which are fixed across all 18 slots — so compute once, reuse.
-    show_date = show["show_date"]
-    venue_id = show["venue_id"]
     stats_cache = (
         compute_song_stats(read_conn, show_date, venue_id, song_ids)
         if scorer.name in ("lightgbm", "heuristic")
@@ -153,7 +183,7 @@ def build_preview(
     )
     # Songs played earlier in this run (prior same-venue same-tour shows).
     # Computed once per /preview call and reused across all slots.
-    played_in_run = _played_in_run(read_conn, show_date, venue_id)
+    played_in_run = _played_in_run(read_conn, live_conn, show_date, venue_id)
 
     entered_by_pos: dict[tuple[str, int], dict] = {}
     per_set_seen: dict[str, int] = {}
