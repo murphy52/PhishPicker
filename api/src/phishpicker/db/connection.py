@@ -1,3 +1,4 @@
+import contextlib
 import sqlite3
 from pathlib import Path
 
@@ -42,10 +43,8 @@ def _enable_wal(conn: sqlite3.Connection) -> None:
     # WAL is a persistent file-level property; set once at init. Tolerate
     # the rare case where the DB is already busy by leaving the prior mode
     # in place — apply_schema callers run at startup, before traffic.
-    try:
+    with contextlib.suppress(sqlite3.OperationalError):
         conn.execute("PRAGMA journal_mode = WAL")
-    except sqlite3.OperationalError:
-        pass
 
 
 def apply_schema(conn: sqlite3.Connection) -> None:

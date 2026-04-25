@@ -307,6 +307,7 @@ def test_preview_passes_prior_only_context_to_hit_rank(
 def test_played_in_run_returns_empty_when_show_not_in_tour(seeded_client):
     """A show date with no matching tour returns an empty filter set."""
     from contextlib import closing
+
     from phishpicker.config import Settings
     from phishpicker.db.connection import open_db
     from phishpicker.live_preview import _played_in_run
@@ -322,6 +323,7 @@ def test_played_in_run_returns_empty_when_show_not_in_tour(seeded_client):
 def test_played_in_run_returns_empty_when_first_show_of_run(seeded_client):
     """Night 1 of a run has no prior shows → empty set."""
     from contextlib import closing
+
     from phishpicker.config import Settings
     from phishpicker.db.connection import open_db
     from phishpicker.live_preview import _played_in_run
@@ -349,17 +351,14 @@ def test_played_in_run_includes_prior_run_mate_setlist(seeded_client, monkeypatc
     """When two shows share venue+tour and date order, songs from the earlier
     show appear in the later show's played_in_run set."""
     from contextlib import closing
+
     from phishpicker.config import Settings
     from phishpicker.db.connection import open_db
     from phishpicker.live_preview import _played_in_run
 
     settings = Settings()
-    with closing(open_db(settings.db_path, read_only=True)) as write_conn:
-        pass  # We need a write connection — open_db with read_only=False below.
-
-    from phishpicker.db.connection import open_db as open_db_rw
-    with closing(open_db_rw(settings.db_path)) as conn, closing(
-        open_db_rw(settings.live_db_path)
+    with closing(open_db(settings.db_path)) as conn, closing(
+        open_db(settings.live_db_path)
     ) as live_conn:
         # Find or insert a tour; insert two shows on the same tour+venue, two
         # days apart, with a known song in the first show's setlist.
@@ -404,6 +403,7 @@ def test_preview_excludes_songs_played_earlier_in_run(seeded_client, live_show_i
     """A song from a prior run-mate show must not appear in any predicted
     slot's top_k of /preview."""
     from contextlib import closing
+
     from phishpicker.config import Settings
     from phishpicker.db.connection import open_db
 
@@ -479,6 +479,7 @@ def test_preview_entered_slot_hit_rank_null_when_song_in_run(seeded_client, live
     excludes it from the candidate pool so its retroactive hit_rank is None
     (em-dash in the UI)."""
     from contextlib import closing
+
     from phishpicker.config import Settings
     from phishpicker.db.connection import open_db
 
@@ -556,6 +557,7 @@ def test_played_in_run_reads_from_live_songs(seeded_client):
     (canonical post-show ingest hasn't backfilled it yet), the run filter
     must still pick up its songs. This was the 4/23 → 4/24 Sphere bug."""
     from contextlib import closing
+
     from phishpicker.config import Settings
     from phishpicker.db.connection import open_db
     from phishpicker.live_preview import _played_in_run
@@ -619,6 +621,7 @@ def test_build_preview_backfills_venue_id_when_live_show_has_null(seeded_client)
     on tonight's show), build_preview should resolve venue_id from canonical
     by show_date so the run-filter still excludes prior run-mates' songs."""
     from contextlib import closing
+
     from phishpicker.config import Settings
     from phishpicker.db.connection import open_db
 
