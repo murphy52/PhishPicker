@@ -115,6 +115,10 @@ def build_preview(
             "trans_mark": r["trans_mark"],
         }
 
+    # Rebuilt set-by-set in the loop below. Correct iff entered songs are
+    # entered in slot-iteration order — the project's UI invariant. If that
+    # ever breaks, sort played_rows by (set_order, pos_within_set) before
+    # building entered_by_pos.
     virtual_played: list[int] = []
     prev_trans_mark = ","
     prev_set_number: str | None = None
@@ -150,6 +154,8 @@ def build_preview(
             slot_idx += 1
             entered = entered_by_pos.get((set_number, pos))
             if entered:
+                # Adds one top-10 prediction per entered slot. Cheap given per-show
+                # caches; revisit if the hot-path latency becomes visible.
                 hit_rank = _compute_hit_rank(
                     read_conn=read_conn,
                     played_songs=virtual_played,

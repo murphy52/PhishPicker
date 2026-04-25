@@ -269,3 +269,36 @@ def test_preview_predicted_slots_have_no_hit_rank(seeded_client, live_show_id):
     for s in predicted:
         # Absent key is fine; explicit null is fine; a number is not.
         assert s.get("hit_rank") is None
+
+
+def test_preview_passes_prior_only_context_to_hit_rank(
+    seeded_client, live_show_id, monkeypatch
+):
+    """Each entered slot's hit_rank must be computed from the songs entered
+    *before* it — not including the slot's own song. The first entered slot
+    should see [], the second should see only the first song's id."""
+    from phishpicker import live_preview
+
+    seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": 100, "set_number": "1"},
+    )
+    seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": 101, "set_number": "1"},
+    )
+
+    real_predict = live_preview.predict_next_stateless
+    captured_played: list[list[int]] = []
+
+    def spy_predict(*, played_songs, **kwargs):
+        captured_played.append(list(played_songs))
+        return real_predict(played_songs=played_songs, **kwargs)
+
+    monkeypatch.setattr(live_preview, "predict_next_stateless", spy_predict)
+    seeded_client.get(f"/live/show/{live_show_id}/preview")
+
+    # Iteration order is Set 1 pos 1, Set 1 pos 2, ...; both entered slots come
+    # first. The first sees no prior songs; the second sees only song 100.
+    assert captured_played[0] == []
+    assert captured_played[1] == [100]
