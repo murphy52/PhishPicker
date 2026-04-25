@@ -41,6 +41,12 @@ class FeatureRow:
     run_length_total: int = 1
     frac_run_remaining: float = 0.0
     venue_debut_affinity: float = 0.0
+    # (12mo_play_rate × prior_nights_in_run) − plays_this_run_count.
+    # Lets long residencies suppress already-played songs more strongly than
+    # short ones — at run_position=13 with plays_this_run_count=1, a 12mo
+    # favorite has high positive saturation (expected ≫ actual), which the
+    # tree learns to associate with stronger residency suppression.
+    run_saturation_pressure: float = 0.0
 
     # 4. Tour
     tour_position: int = 1

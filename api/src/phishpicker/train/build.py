@@ -109,6 +109,13 @@ def build_feature_rows(
     frac_run_remaining_value = (
         (run_length_value - run_position_value) / run_length_value if run_length_value else 0.0
     )
+    # Total Phish shows in the past 12 months — denominator for the
+    # saturation-pressure 12mo play-rate. Same value for every candidate
+    # so compute once per show.
+    shows_last_12mo_value = conn.execute(
+        "SELECT COUNT(*) FROM shows WHERE show_date < ? AND show_date >= date(?, '-1 year')",
+        (show_date, show_date),
+    ).fetchone()[0]
 
     # Album-era context — same for every candidate on the same show.
     latest_album = latest_album_as_of(show_date)
@@ -138,6 +145,13 @@ def build_feature_rows(
             else MISSING_INT
         )
         row.plays_this_run_count = s.plays_this_run_count
+        if shows_last_12mo_value > 0:
+            rate = s.times_played_last_12mo / shows_last_12mo_value
+            row.run_saturation_pressure = (
+                rate * (run_position_value - 1) - s.plays_this_run_count
+            )
+        else:
+            row.run_saturation_pressure = 0.0
         # opener_score / encore_score (from SongStats) are intentionally not
         # written to the FeatureRow — v8 dropped them from the LightGBM
         # schema as redundant with set1_opener_rate / encore_rate (extended
