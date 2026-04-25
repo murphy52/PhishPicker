@@ -244,3 +244,28 @@ def test_compute_hit_rank_returns_none_for_unknown_song(seeded_client, live_show
             bigram_cache=None,
         )
     assert rank is None
+
+
+def test_preview_includes_hit_rank_on_entered_slots(seeded_client, live_show_id):
+    # Enter a song so we have an entered slot whose hit_rank can be computed.
+    r = seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": 100, "set_number": "1"},
+    )
+    assert r.status_code == 200
+
+    slots = seeded_client.get(f"/live/show/{live_show_id}/preview").json()["slots"]
+    entered = [s for s in slots if s["state"] == "entered"]
+    assert entered, "expected one entered slot"
+    s = entered[0]
+    assert "hit_rank" in s
+    # hit_rank is either a 1..10 int or None — both are valid outcomes.
+    assert s["hit_rank"] is None or (1 <= s["hit_rank"] <= 10)
+
+
+def test_preview_predicted_slots_have_no_hit_rank(seeded_client, live_show_id):
+    slots = seeded_client.get(f"/live/show/{live_show_id}/preview").json()["slots"]
+    predicted = [s for s in slots if s["state"] == "predicted"]
+    for s in predicted:
+        # Absent key is fine; explicit null is fine; a number is not.
+        assert s.get("hit_rank") is None

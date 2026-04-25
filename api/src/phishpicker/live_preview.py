@@ -112,13 +112,12 @@ def build_preview(
         entered_by_pos[(r["set_number"], per_set_seen[r["set_number"]])] = {
             "song_id": r["song_id"],
             "name": song_names.get(r["song_id"], f"#{r['song_id']}"),
+            "trans_mark": r["trans_mark"],
         }
 
-    virtual_played: list[int] = [r["song_id"] for r in played_rows]
-    prev_trans_mark = played_rows[-1]["trans_mark"] if played_rows else ","
-    prev_set_number: str | None = (
-        played_rows[-1]["set_number"] if played_rows else None
-    )
+    virtual_played: list[int] = []
+    prev_trans_mark = ","
+    prev_set_number: str | None = None
 
     # Per-set slot count depends on whether the set is active, past, or future
     # relative to current_set:
@@ -151,15 +150,38 @@ def build_preview(
             slot_idx += 1
             entered = entered_by_pos.get((set_number, pos))
             if entered:
+                hit_rank = _compute_hit_rank(
+                    read_conn=read_conn,
+                    played_songs=virtual_played,
+                    target_song_id=entered["song_id"],
+                    current_set=set_number,
+                    show_date=show_date,
+                    venue_id=venue_id,
+                    prev_trans_mark=prev_trans_mark,
+                    prev_set_number=prev_set_number,
+                    scorer=scorer,
+                    song_ids_cache=song_ids,
+                    song_names_cache=song_names,
+                    stats_cache=stats_cache,
+                    ext_cache=ext_cache,
+                    bigram_cache=bigram_cache,
+                )
                 slots.append(
                     {
                         "slot_idx": slot_idx,
                         "set_number": set_number,
                         "position": pos,
                         "state": "entered",
-                        "entered_song": entered,
+                        "entered_song": {
+                            "song_id": entered["song_id"],
+                            "name": entered["name"],
+                        },
+                        "hit_rank": hit_rank,
                     }
                 )
+                virtual_played = virtual_played + [entered["song_id"]]
+                prev_trans_mark = entered["trans_mark"]
+                prev_set_number = set_number
                 continue
             cands = predict_next_stateless(
                 read_conn=read_conn,
