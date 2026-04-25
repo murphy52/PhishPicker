@@ -517,7 +517,7 @@
     <h1 class="title">Picking <em>Phish</em></h1>
     <p class="dek">A plain-language walk through the computer model we're teaching to guess what song Phish will play next — how it thinks, where it shines, and where it trips over its own feet.</p>
     <div class="status-row">
-      <span class="pill"><span class="dot"></span> v7 · shipped on NAS</span>
+      <span class="pill"><span class="dot"></span> v10 · shipped on NAS</span>
       <span class="pill"><span class="dot" style="background:var(--muted)"></span> 2,250 shows studied · 983 songs</span>
     </div>
   </div>
@@ -545,7 +545,7 @@
   <div class="wrap">
     <div class="section-num">§ 02 · why it's hard</div>
     <h2>Phish is a <em>terrible</em> band to predict.</h2>
-    <p class="lead">Most bands have a setlist. Phish has a <em>repertoire</em>, a set of unwritten rules, and a pathological aversion to playing the same song twice in a single three-night stand.</p>
+    <p class="lead">Most bands have a setlist. Phish has a <em>repertoire</em>, a set of unwritten rules, and a pathological aversion to playing the same song twice across a multi-night residency.</p>
 
     <div class="stats-row">
       <div class="stat"><span class="num">983</span><span class="lbl">songs in rotation</span></div>
@@ -556,7 +556,7 @@
 
     <h3>The constraints that matter</h3>
     <p>Every show is a slot-by-slot decision. Set 1 opens with something energetic. Set 2 tends to get weirder, longer, more jam-oriented. Encores are short and loaded with meaning. Each of those slots behaves differently — a song that's a great set-1 opener is a strange choice for an encore.</p>
-    <p><strong>The once-per-run norm.</strong> Over a multi-night stand, the band almost never repeats a song. So if they played <span class="song">Tweezer</span> last night, you can essentially write it off tonight.</p>
+    <p><strong>The once-per-run norm.</strong> Over a multi-night stand the band almost never repeats a song — and "stand" can mean nine nights at the Sphere with off-blocks in the middle, not just a tidy three-night weekend. The model treats this two ways: it tracks how many times each song has been played in this run as a learned feature, <em>and</em>, as of late April 2026, it hard-filters any song already played earlier in the run out of the candidate pool entirely. If they played <span class="song">Tweezer</span> on Night 2, it cannot be picked on Night 3, full stop.</p>
     <p><strong>The segue vocabulary.</strong> Some song pairs are nearly sacred. <span class="song">Mike's Song</span> → <span class="song">I Am Hydrogen</span> → <span class="song">Weekapaug Groove</span> is practically one piece of music. <span class="song">Colonel Forbin's Ascent</span> almost always leads to <span class="song">Fly Famous Mockingbird</span>. These "bigrams" — two-song sequences — are the model's most reliable signal.</p>
     <p><strong>Bustouts.</strong> Every show might contain a song the band hasn't played in 200+ shows, pulled out to delight a specific audience or mark an occasion. These are essentially unpredictable, and the band knows it.</p>
   </div>
@@ -566,8 +566,8 @@
 <section>
   <div class="wrap">
     <div class="section-num">§ 03 · how it thinks</div>
-    <h2>Forty-seven things the model <em>looks at</em>.</h2>
-    <p class="lead">At every slot, for every one of 983 candidate songs, the model computes a set of numbers — "features" — that describe the situation. It then scores each candidate by blending those numbers in a way it learned from thirty years of setlists. Here's the guided tour.</p>
+    <h2>Forty-two things the model <em>looks at</em>.</h2>
+    <p class="lead">At every slot, for every one of 983 candidate songs, the model computes a set of numbers — "features" — that describe the situation. It then scores each candidate by blending those numbers in a way it learned from thirty years of setlists. Here's the guided tour. (Earlier versions of the model had 47 features; v8 dropped five that were doing nothing.)</p>
   </div>
 
   <div class="wide">
@@ -666,7 +666,7 @@
   <div class="wide">
     <div class="section-num">§ 04 · a real night</div>
     <h2 style="margin-left: 28px">Inside <em>4/18/2026,</em> the Sphere.</h2>
-    <p class="lead" style="margin-left: 28px; max-width:820px">Here's every slot of a specific recent show. For each one: what the band actually played, what the model's top pick was, and where the real answer landed on its ranked list. This is the model getting it right and getting it wrong, in public.</p>
+    <p class="lead" style="margin-left: 28px; max-width:820px">Here's every slot of a specific recent show. For each one: what the band actually played, what the model's top pick was, and where the real answer landed on its ranked list. This is the model getting it right and getting it wrong, in public. (Ranks below are the v7-era walk-forward evaluation; v10's residency-aware retraining shifts a few slots — Buried Alive moves from #14 to #1, Tweezer Reprise from #7 to #12 — but the overall shape of hits and misses is unchanged.)</p>
 
     <div style="margin: 0 28px">
       <div class="walkthrough">
@@ -867,17 +867,22 @@
           <td>experiment: drop a redundant feature — <em>hurt, reverted</em></td>
           <td>3.6%</td><td>13.1%</td><td>0.099</td>
         </tr>
+        <tr>
+          <td class="version">v7</td>
+          <td>+ explicit "what slot are we in" flags · big jump</td>
+          <td>6.8%</td><td>21.2%</td><td>0.146</td>
+        </tr>
         <tr style="background: rgba(196,72,14,0.06);">
-          <td class="version">v7 <span class="live">● live</span></td>
-          <td>+ explicit "what slot are we in" flags · currently shipped</td>
-          <td><strong style="color:var(--ember)">6.8%</strong></td>
-          <td><strong style="color:var(--ember)">21.2%</strong></td>
-          <td><strong style="color:var(--ember)">0.146</strong></td>
+          <td class="version">v10 <span class="live">● live</span></td>
+          <td>fix latent bugs, drop 5 dead features, + <code>plays_this_run_count</code>, run-detection now spans full residencies · currently shipped</td>
+          <td><strong style="color:var(--ember)">5.4%</strong></td>
+          <td><strong style="color:var(--ember)">21.8%</strong></td>
+          <td><strong style="color:var(--ember)">0.140</strong></td>
         </tr>
       </tbody>
     </table>
 
-    <p style="margin-top: 12px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted)">358 held-out slots · 95% confidence interval on Top-1 ≈ ±2 points</p>
+    <p style="margin-top: 12px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted)">354 held-out slots · 95% confidence interval on Top-1 ≈ ±2 points · v10 aggregate is statistically indistinguishable from v7; the win is residency-specific behavior the aggregate doesn't capture (zero prior-night repeats in residency replays)</p>
 
   </div>
 </section>
@@ -895,7 +900,7 @@
         <div class="invest-tag hot">Verdict in</div>
         <h4>Slot-type flags · big win</h4>
         <p>Two simple yes/no signals — <em>"are we in set 2?"</em> and <em>"is this the first song of a new set?"</em> — nearly doubled Top-1 (3.6% → 6.8%) and added 6.7 points to Top-5 (14.5% → 21.2%) versus v5. <strong>Tweezer Reprise</strong>, the diagnostic encore miss that was at #109 under v6, climbed to <strong>#7</strong>. The slot-type flag <code>is_first_in_set</code> jumped to the second-most-influential feature in the model, just below the bigram.</p>
-        <div class="evidence">delta vs v5: +3.2pp Top-1 · +6.7pp Top-5 · +43% MRR<br>artifact: v7 · ready to ship to NAS</div>
+        <div class="evidence">delta vs v5: +3.2pp Top-1 · +6.7pp Top-5 · +43% MRR<br>shipped: v7, carried forward in v10</div>
       </div>
 
       <div class="invest-card">
@@ -905,11 +910,25 @@
         <div class="evidence">target: encore &amp; late-show prediction<br>status: design phase</div>
       </div>
 
-      <div class="invest-card">
-        <div class="invest-tag">Proposed</div>
-        <h4>Cleanup: dead features</h4>
-        <p>Six features are currently contributing nothing — the model never consults them. Probably some plumbing bugs (role scores stuck at zero) and some genuinely weak signals. Cleaning these out shouldn't change performance but makes the model easier to understand.</p>
-        <div class="evidence">targets: opener_score, encore_score,<br>middle_of_set_2_score, segue_mark_in,<br>set2_opener_rate, historical_gap_mean</div>
+      <div class="invest-card" style="border-color: var(--ember); background: linear-gradient(135deg, var(--cream) 0%, rgba(196,72,14,0.10) 100%);">
+        <div class="invest-tag hot">Verdict in</div>
+        <h4>Cleanup: dead features · done</h4>
+        <p>Six features were contributing nothing — the model never consulted them. Two were latent bugs (<code>segue_mark_in</code> mis-parsed spaced DB values; <code>is_cover</code> tagged Trey-solo and TAB shows as covers). Five were genuinely dead. v8 fixed the bugs and dropped the dead ones; the cleanups landed in the v10 trained model. 47 features → 42, no performance hit.</p>
+        <div class="evidence">dropped: opener_score, encore_score,<br>middle_of_set_2_score, set2_opener_rate, historical_gap_mean<br>shipped: bundled into v10</div>
+      </div>
+
+      <div class="invest-card" style="border-color: var(--ember); background: linear-gradient(135deg, var(--cream) 0%, rgba(196,72,14,0.10) 100%);">
+        <div class="invest-tag hot">Verdict in</div>
+        <h4>Run-aware play count · v10</h4>
+        <p>v7 picked <em>Also Sprach Zarathustra</em> for Sphere Night 4 even though it was played on Night 1 — the run detector gapped out at 2 days while the residency itself has multi-day off-blocks. v10 replaces the binary "played already this run" feature with <code>plays_this_run_count</code>, and rewrites run detection to walk same-venue shows until the venue actually changes (any-length gap tolerated). In residency replays, <strong>zero</strong> prior-night songs appeared in the top-3 for any subsequent night.</p>
+        <div class="evidence">aggregate Top-5: 21.2% → 21.8% (within CI)<br>residency behavior: 0/19 + 0/16 prior-night repeats<br>shipped: 2026-04-21</div>
+      </div>
+
+      <div class="invest-card" style="border-color: var(--ember); background: linear-gradient(135deg, var(--cream) 0%, rgba(196,72,14,0.10) 100%);">
+        <div class="invest-tag hot">Verdict in</div>
+        <h4>No-repeats-in-run hard filter</h4>
+        <p>v10's soft feature wasn't strong enough on its own — the model still surfaced <span class="song">Stash</span> as the #2 prediction for Sphere Night 5, twenty-four hours after they played it on Night 4. The fix is a hard rule layered on top of the model: any song played in any earlier show of the current run is removed from the candidate pool entirely, before scoring even runs. The model still ranks the survivors using <code>plays_this_run_count</code> as one signal among forty-two; the filter is the safety net.</p>
+        <div class="evidence">scope: live preview · same-venue + same-tour run<br>also covers shows whose canonical setlist hasn't been ingested yet (reads from live data too)<br>shipped: 2026-04-25</div>
       </div>
 
       <div class="invest-card">
@@ -922,15 +941,15 @@
       <div class="invest-card">
         <div class="invest-tag">Investigation</div>
         <h4>Slot-conditional importance</h4>
-        <p>Rather than asking "which features matter most overall?", ask "which features matter for set-1 openers versus set-2 middles versus encores?" We already ran this; it revealed the blind spots above. Worth rerunning once v7 ships to see if the slot-type flags fix the gaps.</p>
+        <p>Rather than asking "which features matter most overall?", ask "which features matter for set-1 openers versus set-2 middles versus encores?" We already ran this once; it revealed the blind spots that produced the slot-type flags. Worth rerunning against v10 to see if those flags actually fixed the gaps.</p>
         <div class="evidence">evidence-generating tool<br>not a model change itself</div>
       </div>
 
-      <div class="invest-card">
-        <div class="invest-tag">Deferred</div>
-        <h4>Nightly smoke test</h4>
-        <p>Every morning, automatically take last night's actual setlist, ask the model what it would have predicted at each slot, and log the ranks. Builds up an honest, live track record of the deployed model's real-world accuracy — independent of the offline evaluation metrics.</p>
-        <div class="evidence">ops infrastructure<br>valuable but not urgent</div>
+      <div class="invest-card" style="border-color: var(--ember); background: linear-gradient(135deg, var(--cream) 0%, rgba(196,72,14,0.10) 100%);">
+        <div class="invest-tag hot">Verdict in</div>
+        <h4>Nightly smoke test · live</h4>
+        <p>Every morning, the NAS automatically takes last night's actual setlist, asks the deployed model what it would have predicted at each slot, and logs the ranks. Live track record of real-world accuracy, independent of offline metrics — the only evaluation that asks the right question, which is "how does the shipped artifact actually behave?"</p>
+        <div class="evidence">cron on NAS · runs once per morning<br>shipped: 2026-04-21</div>
       </div>
 
     </div>
@@ -946,7 +965,7 @@
 
     <dl class="glossary">
       <dt>Feature</dt>
-      <dd>A single number that describes some aspect of the situation — <em>"how many shows ago was this song last played,"</em> for example. The model works with 47 of them.</dd>
+      <dd>A single number that describes some aspect of the situation — <em>"how many shows ago was this song last played,"</em> for example. The model works with 42 of them.</dd>
 
       <dt>Bigram</dt>
       <dd>A pair of songs played back-to-back. The most important single signal in the model.</dd>
@@ -964,7 +983,7 @@
       <dd>One position in a setlist. Slot 1 is the opener, slot 9 is (often) the set-2 opener, slot 15 or 16 is (usually) the encore.</dd>
 
       <dt>Once-per-run</dt>
-      <dd>Phish's informal rule: across a multi-night stand at one venue, they try not to repeat a song. Heavily encoded in the model's recency features.</dd>
+      <dd>Phish's informal rule: across a multi-night stand at one venue, they try not to repeat a song. Encoded two ways in the model — as a learned feature (<code>plays_this_run_count</code>, v10) and as a hard exclusion filter (added 2026-04-25). The filter wins when the feature is too soft.</dd>
     </dl>
   </div>
 </section>
