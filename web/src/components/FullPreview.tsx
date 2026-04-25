@@ -55,6 +55,7 @@ function HitRankIndicator({ hitRank }: { hitRank: number | null | undefined }) {
     return (
       <svg
         data-testid="hit-rank-bullseye"
+        role="img"
         aria-label="Top prediction"
         viewBox="0 0 16 16"
         className="w-3.5 h-3.5 text-emerald-400 shrink-0"
@@ -72,6 +73,7 @@ function HitRankIndicator({ hitRank }: { hitRank: number | null | undefined }) {
     return (
       <span
         data-testid="hit-rank-miss"
+        aria-label="Not in top ten"
         className="text-xs text-neutral-700 tabular-nums shrink-0"
       >
         —
@@ -79,7 +81,10 @@ function HitRankIndicator({ hitRank }: { hitRank: number | null | undefined }) {
     );
   }
   return (
-    <span className="text-xs text-neutral-500 tabular-nums shrink-0">
+    <span
+      aria-label={`Predicted at rank ${hitRank}`}
+      className="text-xs text-neutral-500 tabular-nums shrink-0"
+    >
       #{hitRank}
     </span>
   );

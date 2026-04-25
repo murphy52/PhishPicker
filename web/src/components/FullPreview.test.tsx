@@ -130,3 +130,18 @@ test("entered slot in 'adding' pending state suppresses the hit-rank indicator",
   expect(screen.queryByTestId("hit-rank-bullseye")).not.toBeInTheDocument();
   expect(screen.queryByTestId("hit-rank-miss")).not.toBeInTheDocument();
 });
+
+test("entered slot with hit_rank=1 exposes the bullseye aria-label", () => {
+  render(<FullPreview slots={[enteredSlot({ hit_rank: 1 })]} onSlotClick={() => {}} />);
+  expect(screen.getByLabelText("Top prediction")).toBeInTheDocument();
+});
+
+test("entered slot with hit_rank=3 in 'adding' state suppresses the #N chip", () => {
+  render(
+    <FullPreview
+      slots={[enteredSlot({ hit_rank: 3, pending: "adding" })]}
+      onSlotClick={() => {}}
+    />,
+  );
+  expect(screen.queryByText("#3")).not.toBeInTheDocument();
+});
