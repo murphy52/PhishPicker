@@ -189,55 +189,102 @@ ssh Murphy52@storage.local "cd '/home/Murphy52/docker/apps/phishpicker' && \
 
 ## What's next
 
-### Night 4 — first real-world v10 test
+### Sphere residency progress (mid-run, 2026-04-25)
 
-| Date | Event |
-|---|---|
-| Thu 2026-04-23 | Night 4 — first real-world v10 test |
-| Fri 2026-04-24 | Night 5 |
-| Sat 2026-04-25 | Night 6 |
-| Thu 2026-04-30 | Night 7 |
-| Fri 2026-05-01 | Night 8 |
-| Sat 2026-05-02 | Night 9 |
+| Date | Night | Status |
+|---|---|---|
+| Thu 2026-04-23 | Night 4 | played; smoke logged |
+| Fri 2026-04-24 | Night 5 | played; smoke logged |
+| Sat 2026-04-25 | Night 6 | tonight |
+| Thu 2026-04-30 | Night 7 | upcoming |
+| Fri 2026-05-01 | Night 8 | upcoming |
+| Sat 2026-05-02 | Night 9 | upcoming |
 
-The nightly-smoke cron (see above) auto-captures each show. Key
-questions to answer from the accumulating JSONL:
+Real-world v10 results so far (from `~/phishpicker/api/data/nightly-predictions.jsonl`):
 
-1. Does v10's front-loaded A-list pacing match reality, or does Phish
-   save favorites for later? (Simulation front-loaded Moma Dance/Stash
-   into N4; if real N4 plays them, pacing call was right.)
-2. By Night 9, do we see top-10 leak growth matching the Baker's Dozen
-   diagnosis (23% leak at 12 priors extrapolates to some-nonzero leak
-   at 8 priors)? This validates the v11 motivation empirically.
-3. Do the per-case winners generalize (Buried-Alive-#1-style wins) to
-   Night 4+ predictions, or was Night 3's spot-check lucky?
+| Night | Slots | Median rank | Top-1 | Top-5 |
+|---|---|---|---|---|
+| N4 (4/23) | 18 | 20 | 1/18 | 5/18 |
+| N5 (4/24) | 18 | **65** | 1/18 | 1/18 |
 
-### v11 plan — post-Sphere, bundle `run_saturation_pressure` + v9 queue
+N5's median rank 65 is exactly the long-run signal-weight collapse the
+Baker's Dozen leak test predicted — early empirical support for v11's
+`run_saturation_pressure`.
 
-The Baker's Dozen test upgraded `run_saturation_pressure` from
-"speculative" to **mechanically motivated** (see Post-deploy
-exploration above). v11 candidate feature list:
+### Pacing-experiment scoring (2026-04-25)
+
+Scored the seven cached forward-sim variants from `api/data/previews/`
+(generated 2026-04-23) against N4 + N5 actuals. **Paced-0.6 wins** by
+a clear margin on bag-of-songs coverage:
+
+| Variant | N4 hits | N5 hits | Combined |
+|---|---|---|---|
+| **paced-0.6** | **6/17 (35%)** | **5/18 (28%)** | **11/35 (31%)** |
+| greedy (baseline) | 3/17 | 5/18 | 8/35 (23%) |
+| paced-0.8 / paced-1.0 | 3/17 | 2/18 | 5/35 (14%) |
+| assign (LAP/MILP) | 4/17 | 1/18 | 5/35 (14%) |
+| paced-0.4 / paced-0.5 | 2/17 / 0/17 | 0/18 / 2/18 | 2/35 (6%) |
+
+(N4 had 17 unique songs in 18 slots — Fuego sandwiched at slots 10/12.)
+
+Slot-exact matching is ~0 across all variants — order accuracy is a
+different problem from setlist accuracy. Scorer is currently at
+`/tmp/score_pacing.py`; should be moved to `scripts/` and wired to
+nightly-smoke so each new night auto-scores. Open work item.
+
+### Sandwich repeats fix (2026-04-25, commit `63b3ac6`)
+
+Discovered that **~34% of historical shows contain at least one Phish
+sandwich** (same song twice in a show, e.g. Fuego→Golden Age→Fuego on
+N4 set 2). v10's feature pipeline was double-counting all of them.
+
+Fixed in three files (TDD'd, full suite 319 passing):
+- `bigrams.py`: dedupe `(show, set, song)` with MIN(position) before
+  extracting transitions. Drops the spurious sandwich-return bigram
+  (B→A from A→B→A) that was diluting B's true successor distribution.
+  Affects model's #1 feature (`bigram_prev_to_this`, gain 401K).
+- `model/stats.py`: `total_plays_ever`, `times_played_last_12mo`,
+  `plays_this_run_count`, opener/encore role counts → `COUNT(DISTINCT
+  show_id)`. The `plays_this_run_count` fix directly tightens v10's
+  residency-suppression mechanism.
+- `train/extended_stats.py`: new `song_show` CTE collapses `(show,
+  song)` while preserving role flags via MAX(CASE...). Affects
+  `plays_last_6mo`, `recent_play_acceleration`, `times_at_venue`,
+  set/encore/closer role rates, `avg_set_position_when_played`.
+
+Code-only — takes effect at next retrain (v11). Bundled into the v11
+candidate list below.
+
+### v11 plan — post-Sphere, bundle three feature/correctness changes
+
+The Baker's Dozen test + N5 result upgraded `run_saturation_pressure`
+from "speculative" to **mechanically motivated**. v11 candidate list:
 
 1. **`run_saturation_pressure`** — `(plays_last_12mo / shows_last_12mo)
    × (run_position − 1) − plays_this_run_count`. Addresses long-run
-   signal-weight degradation diagnosed today. Cost: one SQL query per
-   show.
+   signal-weight degradation. N5 result strengthens the case.
 2. **`slots_into_current_set`** — 1-indexed position within current set
    (not global slot number). Addresses v7-residual-analysis set-2
-   closer misses (Antelope tied for #1 set-2 closer but v7 ranked it
-   #92). See `docs/plans/v7-residual-analysis.md`.
+   closer misses (Antelope tied for #1 historical set-2 closer but v7
+   ranked it #92). See `docs/plans/v7-residual-analysis.md`.
+3. **Sandwich-repeat dedupe** (commit `63b3ac6`, code-only — already
+   on main). Counts and bigrams now treat sandwiches as one play.
 
-Both are cheap TDD + walk-forward cycles. Target retrain after Sphere
-residency concludes (post 2026-05-02), using Night 4-9 outcomes as the
-validation signal.
+All three are cheap TDD + walk-forward cycles. Target retrain after
+Sphere residency concludes (post 2026-05-02), using Night 4-9 outcomes
+as the validation signal.
 
 ### Phish DB show_ids (for replay)
 
 - Night 1: 1764702178 (4/16)
 - Night 2: 1764702334 (4/17)
 - Night 3: 1764702381 (4/18)
-- Night 4: 1764702416 (4/23) — not yet ingested with setlist
-- Night 5 and beyond: not yet in DB
+- Night 4: 1764702416 (4/23) — setlist ingested
+- Night 5: 1764702441 (4/24) — setlist ingested
+- Night 6: 1764702466 (4/25) — tonight
+- Night 7: 1764702491 (4/30)
+- Night 8: 1764702513 (5/1)
+- Night 9: 1764702539 (5/2)
 
 ## Prior context (v7 baseline)
 
