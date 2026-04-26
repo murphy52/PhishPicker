@@ -54,6 +54,10 @@ services:
     environment:
       PHISHPICKER_DATA_DIR: /data
       PHISHNET_API_KEY: ${PHISHNET_API_KEY:?PHISHNET_API_KEY must be set in .env}
+      # Settings validates ADMIN_TOKEN as required even though the ingest
+      # CLI doesn't use it. Pass it through so the sidecar can construct
+      # Settings without erroring.
+      PHISHPICKER_ADMIN_TOKEN: ${PHISHPICKER_ADMIN_TOKEN:?PHISHPICKER_ADMIN_TOKEN must be set in .env}
       INGEST_CRON_TZ: ${INGEST_CRON_TZ:-America/New_York}
       INGEST_CRON_HOUR: ${INGEST_CRON_HOUR:-11}
     networks: [internal]
