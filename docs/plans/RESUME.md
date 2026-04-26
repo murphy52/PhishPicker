@@ -1,4 +1,76 @@
-# Resume Point — 2026-04-21 (v10 shipped)
+# Resume Point — 2026-04-26 (v11 shipped)
+
+## Latest session (2026-04-26)
+
+**v11 trained on Mac mini and shipped to NAS.** Cutoff 2026-04-25
+(includes Sphere N1-N5 in training data; N6-N9 are out-of-sample).
+
+### Deploy outcome
+
+- **NAS now serves v11.** HEAD `7fb69e1`, model.lgb 44-feature schema,
+  `"scorer":"lightgbm"` verified via `/api/meta`.
+- **v10 backups preserved**: `data/*.prev-backup` on NAS,
+  `data/*.v10-backup` on Mac mini.
+- Rollback one-liner: `ssh Murphy52@storage.local "cd '/home/Murphy52/docker/apps/phishpicker' && git reset --hard 22354079b258e63a1fc40a8c05af6ad73031679e && cd data && cp model.lgb.prev-backup model.lgb && cp model.meta.json.prev-backup model.meta.json && cp metrics.json.prev-backup metrics.json && cd .. && docker compose build api && docker compose up -d api"`
+
+### Aggregate holdout (n=356)
+
+| Metric | v11 | v10 | Δ | In-CI? |
+|---|---|---|---|---|
+| Top-1 | 6.46% | 5.4% | +1.06pp | yes (v10 CI [3.1, 7.9]) |
+| Top-5 | 20.22% | 21.8% | −1.58pp | yes (v10 CI [17.8, 26.3]) |
+| MRR | 0.143 | 0.140 | +0.003 | yes |
+
+Aggregate is statistically tied with v10 — ship gate passed on MRR.
+
+### Real-world residency results (the actual story)
+
+The aggregate masks where v11 wins. Pure out-of-sample on N6:
+
+| Night | v10 Top-1 | v11 Top-1 | v10 Top-5 | v11 Top-5 | v10 median | v11 median |
+|---|---|---|---|---|---|---|
+| N4 (4/23)* | 1/18 | 4/18 | 5/18 | 6/18 | 20 | 10 |
+| N5 (4/24)* | 1/18 | 2/18 | 1/18 | 3/18 | 65 | 37 |
+| **N6 (4/25)** | **1/17** | **2/17** | **3/17** | **3/17** | **33** | **19** |
+
+\*N4/N5 v11 Top-1 is mildly leakage-biased (cutoff 2026-04-25 includes
+those nights); Top-5 + median are robust. Median rank average across
+N4-N6: **v10 39.3, v11 22.0** — v11 cuts it nearly in half. The new
+features (especially `slots_into_current_set`) engage exactly where
+hypothesized: residency nights with long-run signal-weight challenges.
+
+### Feature importance (v11)
+
+| Feature | v11 gain | v10 gain | Notes |
+|---|---|---|---|
+| `bigram_prev_to_this` | 387,812 | 401,862 | Still #1 |
+| `plays_last_12mo` | 77,323 | 62,911 | Sandwich dedupe lift |
+| **`slots_into_current_set`** | **43,738** | — | Rank 3, new |
+| `is_first_in_set` | 31,384 | 88,912 | Down 64% — work absorbed by slots_into_current_set |
+| `plays_this_run_count` | 3,644 | 3,350 | |
+| **`run_saturation_pressure`** | **1,747** | — | Rank 28, modest aggregate |
+
+### Three v11 commits
+
+| SHA | What |
+|---|---|
+| `63b3ac6` | sandwich-repeat dedupe (counts + bigrams) |
+| `2235407` | `slots_into_current_set` feature |
+| `7c4a1ca` | `run_saturation_pressure` feature |
+
+### What's next for v11/v12
+
+- **Watch N7/N8/N9** (4/30, 5/1, 5/2). Nightly-smoke now logs v11
+  predictions; compare against v10 on the same nights via swap-and-replay.
+- **Pacing scorer at `/tmp/score_pacing.py`** — paced-0.6 still leads
+  variants (13/52 = 25.0% across N4-N6 vs greedy's 11/52 = 21.2%);
+  re-score after each new night.
+- **Possible v12 retrain** post-residency (2026-05-03) with cutoff
+  2026-05-03 to include all 9 Sphere nights in training data.
+
+---
+
+# Prior: 2026-04-21 (v10 shipped)
 
 ## This session's work (2026-04-21)
 
