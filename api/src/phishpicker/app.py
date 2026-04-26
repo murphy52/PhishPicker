@@ -133,10 +133,19 @@ def create_app() -> FastAPI:
         shows = conn.execute("SELECT COUNT(*) FROM shows").fetchone()[0]
         songs = conn.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
         latest = conn.execute("SELECT MAX(show_date) FROM shows").fetchone()[0]
+        # MAX(show_date) only over shows that actually have setlist rows —
+        # exposes ingest freshness so a stale-DB regression is visible from
+        # one curl. Different from latest_show_date, which can be far in the
+        # future via placeholder rows for upcoming shows.
+        last_setlist = conn.execute(
+            "SELECT MAX(s.show_date) FROM shows s "
+            "WHERE EXISTS (SELECT 1 FROM setlist_songs ss WHERE ss.show_id = s.show_id)"
+        ).fetchone()[0]
         return {
             "shows_count": shows,
             "songs_count": songs,
             "latest_show_date": latest,
+            "last_setlist_date": last_setlist,
             "data_snapshot_at": datetime.now(UTC).isoformat(),
             "version": "0.1.0-skeleton",
             "scorer": request.app.state.scorer.name,

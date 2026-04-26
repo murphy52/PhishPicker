@@ -43,6 +43,23 @@ services:
     networks: [internal]
     restart: unless-stopped
 
+  ingest-cron:
+    # Daily phish.net ingest. Runs once at container start, then every day
+    # at 11am EDT. Lives here (not host crontab) because Murphy52 doesn't
+    # have host cron perms on the NAS. Reuses the api image — the deps and
+    # phishpicker module are already installed there.
+    build: ./api
+    volumes:
+      - ${PHISHPICKER_DATA_HOST:?PHISHPICKER_DATA_HOST must be set in .env}:/data
+    environment:
+      PHISHPICKER_DATA_DIR: /data
+      PHISHNET_API_KEY: ${PHISHNET_API_KEY:?PHISHNET_API_KEY must be set in .env}
+      INGEST_CRON_TZ: ${INGEST_CRON_TZ:-America/New_York}
+      INGEST_CRON_HOUR: ${INGEST_CRON_HOUR:-11}
+    networks: [internal]
+    restart: unless-stopped
+    command: ["python", "-m", "phishpicker.ingest_cron"]
+
 networks:
   internal:
     driver: bridge
