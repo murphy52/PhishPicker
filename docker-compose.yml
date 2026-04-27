@@ -27,7 +27,12 @@ services:
       retries: 3
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        # Set GIT_SHA in the deploy step so the footer shows which build is
+        # live. Defaults to "dev" if unset (local docker compose builds).
+        GIT_SHA: ${GIT_SHA:-dev}
     environment:
       API_INTERNAL_URL: http://api:8000
     # Bind on all host interfaces so the cloudflared container (host net,

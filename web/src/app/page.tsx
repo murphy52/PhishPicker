@@ -305,7 +305,9 @@ export default function Home() {
       <footer className="px-4 py-3 text-xs text-neutral-600 border-t border-neutral-900 flex justify-between items-center">
         <span>
           {meta
-            ? `${meta.shows_count} shows · ${meta.songs_count} songs · v${meta.version}`
+            ? `${meta.shows_count} shows · ${meta.songs_count} songs · v${meta.version} · web ${
+                (process.env.NEXT_PUBLIC_GIT_SHA ?? "dev").slice(0, 7)
+              }`
             : "Loading…"}
         </span>
         <a href="/about" className="text-neutral-500 hover:text-indigo-400">

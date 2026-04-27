@@ -88,8 +88,17 @@ ssh "$NAS_HOST" "
   git log -1 --oneline
 "
 
-step "3" "Build API image with new code (this is the slow step)"
-ssh "$NAS_HOST" "cd '$NAS_APP' && docker compose build api 2>&1 | tail -20"
+step "3" "Build API + web images with new code (this is the slow step)"
+# Pass GIT_SHA into the web build so the footer shows which build is live —
+# makes "did the user pick up my new bundle?" answerable at a glance.
+# --no-cache on web because the git-reset checkout sometimes hashes
+# identically to a stale BuildKit layer and Next ends up serving old chunks.
+ssh "$NAS_HOST" "
+  set -e
+  cd '$NAS_APP'
+  docker compose build api 2>&1 | tail -10
+  GIT_SHA=\$(git rev-parse HEAD) docker compose build --no-cache web 2>&1 | tail -10
+"
 
 step "4" "Upload new model artifacts as *.new"
 scp -O "$MODEL_DIR/model.lgb"        "$NAS_HOST:$NAS_APP/data/model.lgb.new"
@@ -105,8 +114,8 @@ ssh "$NAS_HOST" "
   mv metrics.json.new     metrics.json
 "
 
-step "6" "Recreate API container with new image"
-ssh "$NAS_HOST" "cd '$NAS_APP' && docker compose up -d api 2>&1 | tail -10"
+step "6" "Recreate API + web containers with new images"
+ssh "$NAS_HOST" "cd '$NAS_APP' && docker compose up -d api web 2>&1 | tail -10"
 
 step "7" "Wait for healthcheck and verify scorer=lightgbm"
 for i in $(seq 1 18); do

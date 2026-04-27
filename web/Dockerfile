@@ -5,6 +5,10 @@ RUN npm ci
 
 FROM node:22-slim AS builder
 WORKDIR /app
+# Bake the git SHA into the client bundle so the footer can render it.
+# Default "dev" for local docker builds; deploy passes the real SHA.
+ARG GIT_SHA=dev
+ENV NEXT_PUBLIC_GIT_SHA=$GIT_SHA
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
