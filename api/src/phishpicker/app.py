@@ -239,6 +239,33 @@ def create_app() -> FastAPI:
             "run_length": run_length,
         }
 
+    @app.get("/last-show")
+    def last_show(read: sqlite3.Connection = Depends(get_read)):  # noqa: B008
+        from phishpicker.last_show import resolve_last_show_id
+
+        show_id = resolve_last_show_id(read)
+        if show_id is None:
+            raise HTTPException(404, "no completed shows")
+        row = read.execute(
+            """
+            SELECT s.show_id, s.show_date, s.venue_id, v.name AS venue,
+                   v.city, v.state
+            FROM shows s LEFT JOIN venues v USING (venue_id)
+            WHERE s.show_id = ?
+            """,
+            (show_id,),
+        ).fetchone()
+        run_position, run_length = _residency_position(read, show_id)
+        return {
+            "show_id": int(row["show_id"]),
+            "show_date": row["show_date"],
+            "venue": row["venue"] or "",
+            "city": row["city"] or "",
+            "state": row["state"] or "",
+            "run_position": run_position,
+            "run_length": run_length,
+        }
+
     @app.post("/live/show")
     def create_show(body: LiveShowCreate, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
         show_id = create_live_show(conn, body.show_date, body.venue_id)
