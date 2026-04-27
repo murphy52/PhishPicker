@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import useSWR from "swr";
 import { RankPill } from "@/components/RankPill";
 
@@ -40,7 +41,7 @@ export default function LastShowPage() {
   if (error) {
     return (
       <main className="min-h-dvh bg-neutral-950 text-neutral-100 px-4 py-6">
-        <a href="/" className="text-xs text-neutral-500 hover:text-indigo-400">← back</a>
+        <Link href="/" className="text-xs text-neutral-500 hover:text-indigo-400">← back</Link>
         <p className="mt-6 text-neutral-400">No completed show to review yet.</p>
       </main>
     );
@@ -48,7 +49,7 @@ export default function LastShowPage() {
   if (isLoading || !data) {
     return (
       <main className="min-h-dvh bg-neutral-950 text-neutral-100 px-4 py-6">
-        <a href="/" className="text-xs text-neutral-500 hover:text-indigo-400">← back</a>
+        <Link href="/" className="text-xs text-neutral-500 hover:text-indigo-400">← back</Link>
         <p className="mt-6 text-neutral-500">Loading…</p>
       </main>
     );
@@ -63,7 +64,7 @@ export default function LastShowPage() {
 
   return (
     <main className="min-h-dvh bg-neutral-950 text-neutral-100 px-4 py-6">
-      <a href="/" className="text-xs text-neutral-500 hover:text-indigo-400">← back</a>
+      <Link href="/" className="text-xs text-neutral-500 hover:text-indigo-400">← back</Link>
       <header className="mt-4 mb-6">
         <h1 className="text-lg font-semibold">{data.show.venue}</h1>
         <p className="text-sm text-neutral-400">

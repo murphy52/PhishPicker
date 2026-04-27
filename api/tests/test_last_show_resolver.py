@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -49,8 +49,8 @@ def test_skips_shows_without_setlist_rows(conn):
 
 def test_rollover_today_is_15_hours_lagged():
     # 2026-04-26T16:00Z minus 15h = 2026-04-26T01:00Z → date 2026-04-26.
-    now = datetime(2026, 4, 26, 16, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 26, 16, 0, tzinfo=UTC)
     assert rollover_today(now) == "2026-04-26"
     # 2026-04-26T10:00Z minus 15h = 2026-04-25T19:00Z → date 2026-04-25.
-    now = datetime(2026, 4, 26, 10, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 26, 10, 0, tzinfo=UTC)
     assert rollover_today(now) == "2026-04-25"
