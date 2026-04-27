@@ -22,7 +22,6 @@ interface Meta {
   songs_count: number;
   latest_show_date: string;
   data_snapshot_at: string;
-  version: string;
 }
 
 export default function Home() {
@@ -312,10 +311,10 @@ export default function Home() {
         />
       )}
 
-      <footer className="px-4 py-3 text-xs text-neutral-600 border-t border-neutral-900 flex flex-col gap-1 items-end">
+      <footer className="px-4 py-3 pr-24 text-xs text-neutral-600 border-t border-neutral-900 flex flex-col gap-1 items-end">
         <span>
           {meta
-            ? `${meta.shows_count} shows · ${meta.songs_count} songs · v${meta.version} · web ${
+            ? `${meta.shows_count} shows · ${meta.songs_count} songs · web ${
                 (process.env.NEXT_PUBLIC_GIT_SHA ?? "dev").slice(0, 7)
               }`
             : "Loading…"}

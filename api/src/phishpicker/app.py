@@ -147,7 +147,6 @@ def create_app() -> FastAPI:
             "latest_show_date": latest,
             "last_setlist_date": last_setlist,
             "data_snapshot_at": datetime.now(UTC).isoformat(),
-            "version": "0.1.0-skeleton",
             "scorer": request.app.state.scorer.name,
             "model_sha": request.app.state.scorer.sha,
         }
