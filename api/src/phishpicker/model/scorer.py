@@ -6,6 +6,7 @@ feature-column schema matches FEATURE_COLUMNS; otherwise it falls back to
 the heuristic — the walking-skeleton code path.
 """
 
+import hashlib
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,7 @@ from phishpicker.train.features import FEATURE_COLUMNS
 
 class Scorer(Protocol):
     name: str
+    sha: str
 
     def score_candidates(
         self,
@@ -44,6 +46,7 @@ class Scorer(Protocol):
 @dataclass
 class HeuristicScorer:
     name: str = "heuristic"
+    sha: str = "heuristic-v1"
 
     def score_candidates(
         self,
@@ -77,6 +80,7 @@ class HeuristicScorer:
 class LightGBMRuntimeScorer:
     scorer: LightGBMScorer
     name: str = "lightgbm"
+    sha: str = ""  # set by load_runtime_scorer; unset means heuristic fallback
 
     def score_candidates(
         self,
@@ -126,6 +130,7 @@ def load_runtime_scorer(model_path: Path) -> Scorer:
             return HeuristicScorer()
         loaded = LightGBMScorer.load(model_path)
         loaded.assert_compatible_with(FEATURE_COLUMNS)
-        return LightGBMRuntimeScorer(scorer=loaded)
+        sha = hashlib.sha256(Path(model_path).read_bytes()).hexdigest()[:16]
+        return LightGBMRuntimeScorer(scorer=loaded, sha=sha)
     except Exception:
         return HeuristicScorer()
