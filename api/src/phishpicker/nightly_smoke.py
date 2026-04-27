@@ -142,6 +142,11 @@ def run_nightly_smoke(
     venue_id: int | None = int(venue_id_raw) if venue_id_raw is not None else None
 
     # 5. Per-slot replay.
+    # TODO(slot-ranks-dedup): this walk duplicates compute_slot_ranks in
+    # phishpicker.slot_ranks. Keep them in sync — both implement set ordering
+    # via _slot_sort_key/_SET_ORDER and identical scorer kwargs. Consolidate
+    # when nightly-smoke no longer needs top-K enrichment, or when the helper
+    # grows a top_k=True option. See docs/plans/2026-04-27-post-show-review-design.md.
     played_songs: list[int] = []
     prev_trans_mark = ","
     prev_set_number: str | None = None
