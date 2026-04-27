@@ -149,6 +149,7 @@ def create_app() -> FastAPI:
             "data_snapshot_at": datetime.now(UTC).isoformat(),
             "version": "0.1.0-skeleton",
             "scorer": request.app.state.scorer.name,
+            "model_sha": request.app.state.scorer.sha,
         }
 
     @app.get("/about")
@@ -236,6 +237,147 @@ def create_app() -> FastAPI:
             "start_time_local": "19:00",
             "run_position": run_position,
             "run_length": run_length,
+        }
+
+    @app.get("/last-show")
+    def last_show(read: sqlite3.Connection = Depends(get_read)):  # noqa: B008
+        from phishpicker.last_show import resolve_last_show_id
+
+        show_id = resolve_last_show_id(read)
+        if show_id is None:
+            raise HTTPException(404, "no completed shows")
+        row = read.execute(
+            """
+            SELECT s.show_id, s.show_date, s.venue_id, v.name AS venue,
+                   v.city, v.state
+            FROM shows s LEFT JOIN venues v USING (venue_id)
+            WHERE s.show_id = ?
+            """,
+            (show_id,),
+        ).fetchone()
+        run_position, run_length = _residency_position(read, show_id)
+        return {
+            "show_id": int(row["show_id"]),
+            "show_date": row["show_date"],
+            "venue": row["venue"] or "",
+            "city": row["city"] or "",
+            "state": row["state"] or "",
+            "run_position": run_position,
+            "run_length": run_length,
+        }
+
+    @app.get("/last-show/review")
+    def last_show_review(
+        request: Request,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+    ):
+        from contextlib import closing
+
+        from phishpicker.db.connection import open_db
+        from phishpicker.last_show import resolve_last_show_id
+        from phishpicker.slot_ranks import _SET_ORDER, compute_slot_ranks
+
+        show_id = resolve_last_show_id(read)
+        if show_id is None:
+            raise HTTPException(404, "no completed shows")
+
+        scorer = request.app.state.scorer
+        model_sha = scorer.sha
+
+        # Cache check: count must match setlist length AND map by slot_idx.
+        cached = {
+            r["slot_idx"]: (int(r["actual_song_id"]), r["actual_rank"])
+            for r in read.execute(
+                "SELECT slot_idx, actual_song_id, actual_rank "
+                "FROM slot_predictions_cache WHERE show_id = ? AND model_sha = ?",
+                (show_id, model_sha),
+            ).fetchall()
+        }
+        setlist_count = read.execute(
+            "SELECT COUNT(*) FROM setlist_songs WHERE show_id = ?",
+            (show_id,),
+        ).fetchone()[0]
+
+        if len(cached) == setlist_count:
+            # Cache hit. Reconstruct slot_idx → (set_number, position, song name)
+            # by walking setlist_songs in the same canonical order the helper uses.
+            raw = read.execute(
+                "SELECT set_number, position, song_id FROM setlist_songs WHERE show_id = ?",
+                (show_id,),
+            ).fetchall()
+            setlist = sorted(
+                raw,
+                key=lambda r: (
+                    _SET_ORDER.get(str(r["set_number"]).upper(), 99),
+                    int(r["position"]),
+                ),
+            )
+            song_names = {
+                r["song_id"]: r["name"]
+                for r in read.execute("SELECT song_id, name FROM songs")
+            }
+            slots_out = []
+            for idx, s in enumerate(setlist, start=1):
+                rank_entry = cached.get(idx)
+                actual_rank = rank_entry[1] if rank_entry else None
+                slots_out.append({
+                    "slot_idx": idx,
+                    "set_number": s["set_number"],
+                    "position": int(s["position"]),
+                    "actual_song_id": int(s["song_id"]),
+                    "actual_song": song_names.get(s["song_id"], f"#{s['song_id']}"),
+                    "actual_rank": actual_rank,
+                })
+        else:
+            # Cache miss — compute, write, and use in-memory results directly.
+            ranks = compute_slot_ranks(read, show_id=show_id, scorer=scorer)
+            now = datetime.now(UTC).isoformat()
+            db_path = request.app.state.settings.db_path
+            with closing(open_db(db_path, read_only=False)) as write:
+                write.executemany(
+                    "INSERT OR REPLACE INTO slot_predictions_cache "
+                    "(show_id, model_sha, slot_idx, actual_song_id, actual_rank, computed_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    [
+                        (show_id, model_sha, r.slot_idx, r.actual_song_id, r.actual_rank, now)
+                        for r in ranks
+                    ],
+                )
+                write.commit()
+            song_names = {
+                r["song_id"]: r["name"]
+                for r in read.execute("SELECT song_id, name FROM songs")
+            }
+            slots_out = [
+                {
+                    "slot_idx": r.slot_idx,
+                    "set_number": r.set_number,
+                    "position": r.position,
+                    "actual_song_id": r.actual_song_id,
+                    "actual_song": song_names.get(r.actual_song_id, f"#{r.actual_song_id}"),
+                    "actual_rank": r.actual_rank,
+                }
+                for r in ranks
+            ]
+
+        show_meta_row = read.execute(
+            "SELECT s.show_id, s.show_date, s.venue_id, v.name AS venue, v.city, v.state "
+            "FROM shows s LEFT JOIN venues v USING (venue_id) WHERE s.show_id = ?",
+            (show_id,),
+        ).fetchone()
+        run_position, run_length = _residency_position(read, show_id)
+
+        return {
+            "show": {
+                "show_id": int(show_meta_row["show_id"]),
+                "show_date": show_meta_row["show_date"],
+                "venue": show_meta_row["venue"] or "",
+                "city": show_meta_row["city"] or "",
+                "state": show_meta_row["state"] or "",
+                "run_position": run_position,
+                "run_length": run_length,
+            },
+            "slots": slots_out,
         }
 
     @app.post("/live/show")

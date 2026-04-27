@@ -60,3 +60,15 @@ CREATE TABLE IF NOT EXISTS setlist_songs (
 );
 CREATE INDEX IF NOT EXISTS idx_setlist_song ON setlist_songs(song_id);
 CREATE INDEX IF NOT EXISTS idx_setlist_show ON setlist_songs(show_id);
+
+CREATE TABLE IF NOT EXISTS slot_predictions_cache (
+    show_id INTEGER NOT NULL REFERENCES shows(show_id),
+    model_sha TEXT NOT NULL,
+    slot_idx INTEGER NOT NULL,
+    actual_song_id INTEGER NOT NULL REFERENCES songs(song_id),
+    actual_rank INTEGER,
+    computed_at TEXT NOT NULL,
+    PRIMARY KEY (show_id, model_sha, slot_idx)
+);
+CREATE INDEX IF NOT EXISTS idx_slot_cache_show_model
+    ON slot_predictions_cache(show_id, model_sha);

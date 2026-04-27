@@ -79,3 +79,28 @@ def test_meta_last_setlist_date_null_when_no_setlists(tmp_path, monkeypatch):
         r = client.get("/meta")
     body = r.json()
     assert body["last_setlist_date"] is None
+
+
+def test_meta_reports_model_sha(tmp_path, monkeypatch):
+    """`model_sha` is a non-empty string identifying the loaded scorer.
+    Used as a cache key for slot_predictions_cache. Heuristic fallback
+    uses a sentinel so cache rows remain well-formed."""
+    monkeypatch.setenv("PHISHNET_API_KEY", "test")
+    monkeypatch.setenv("PHISHPICKER_ADMIN_TOKEN", "test-admin-token")
+    monkeypatch.setenv("PHISHPICKER_DATA_DIR", str(tmp_path))
+
+    from phishpicker.db.connection import apply_live_schema, apply_schema, open_db
+
+    apply_schema(open_db(tmp_path / "phishpicker.db"))
+    apply_live_schema(open_db(tmp_path / "live.db"))
+
+    from phishpicker.app import create_app
+
+    with TestClient(create_app()) as client:
+        r = client.get("/meta")
+    body = r.json()
+    assert "model_sha" in body
+    assert isinstance(body["model_sha"], str)
+    assert len(body["model_sha"]) > 0
+    # Heuristic fallback (no model.lgb) → sentinel.
+    assert body["model_sha"] == "heuristic-v1"
