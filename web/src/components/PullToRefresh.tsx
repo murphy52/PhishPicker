@@ -4,6 +4,12 @@ import { useCallback, useRef, useState, type ReactNode } from "react";
 
 const THRESHOLD_PX = 80;
 const MAX_PULL_PX = 140;
+// First N pixels of finger movement map 1:1 to the indicator. After this,
+// the indicator slows by DAMP_FACTOR per pixel of finger movement, creating
+// the "resistance increases as you approach the trigger" feel.
+const FREE_ZONE_PX = 60;
+const DAMP_FACTOR = 0.5;
+const HAPTIC_DURATION_MS = 12;
 
 interface Props {
   /** Called when the user pulls past the threshold and releases. Awaited. */
@@ -16,10 +22,17 @@ interface Props {
  * to the top; below-the-fold pulls are ignored so this doesn't fight the
  * browser's normal scroll inertia. Re-pulls during an in-flight refresh are
  * a no-op so the user can't double-trigger.
+ *
+ * Resistance + haptics: the indicator follows the finger 1:1 for the first
+ * 60px, then damps by 0.5×, so the user feels increasing resistance as
+ * they approach the trigger threshold (80px). At threshold-crossing we
+ * fire navigator.vibrate(12) — a brief click on Android Chrome (and any
+ * browser that ever ships the Vibration API; iOS Safari is a no-op today).
  */
 export function PullToRefresh({ onRefresh, children }: Props) {
   const startYRef = useRef<number | null>(null);
   const armedRef = useRef(false);
+  const wasPastThresholdRef = useRef(false);
   const [pullPx, setPullPx] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -30,6 +43,7 @@ export function PullToRefresh({ onRefresh, children }: Props) {
     if (!t) return;
     startYRef.current = t.clientY;
     armedRef.current = true;
+    wasPastThresholdRef.current = false;
   }, [refreshing]);
 
   const onTouchMove = useCallback((e: React.TouchEvent) => {
@@ -38,12 +52,31 @@ export function PullToRefresh({ onRefresh, children }: Props) {
     if (!t) return;
     const delta = t.clientY - startYRef.current;
     if (delta < 0) {
-      // Upward pull is just normal scrolling — back out.
       armedRef.current = false;
       setPullPx(0);
       return;
     }
-    setPullPx(Math.min(delta, MAX_PULL_PX));
+    const damped =
+      delta <= FREE_ZONE_PX
+        ? delta
+        : FREE_ZONE_PX + (delta - FREE_ZONE_PX) * DAMP_FACTOR;
+    const next = Math.min(damped, MAX_PULL_PX);
+    setPullPx(next);
+    // Single haptic click each time we cross the threshold from below.
+    // Retreating below resets the latch so a second pull also clicks.
+    if (next >= THRESHOLD_PX && !wasPastThresholdRef.current) {
+      wasPastThresholdRef.current = true;
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        try {
+          navigator.vibrate(HAPTIC_DURATION_MS);
+        } catch {
+          // Some browsers throw on vibrate without a user gesture context;
+          // it's a nice-to-have, never block the pull on it.
+        }
+      }
+    } else if (next < THRESHOLD_PX) {
+      wasPastThresholdRef.current = false;
+    }
   }, []);
 
   const onTouchEnd = useCallback(async () => {
@@ -54,6 +87,7 @@ export function PullToRefresh({ onRefresh, children }: Props) {
     const past = pullPx >= THRESHOLD_PX;
     armedRef.current = false;
     startYRef.current = null;
+    wasPastThresholdRef.current = false;
     if (!past) {
       setPullPx(0);
       return;
