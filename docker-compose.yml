@@ -63,6 +63,11 @@ services:
     networks: [internal]
     restart: unless-stopped
     command: ["python", "-m", "phishpicker.ingest_cron"]
+    # Sidecar reuses the api image but has no HTTP server, so opt out of
+    # the inherited GET-/meta healthcheck — otherwise `docker compose ps`
+    # reports it as unhealthy even when the schedule loop is running fine.
+    healthcheck:
+      disable: true
 
 networks:
   internal:
