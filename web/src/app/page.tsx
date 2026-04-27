@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { PlayedStrip } from "@/components/PlayedStrip";
 import { AddSongSheet } from "@/components/AddSongSheet";
 import { ShowHeader, type UpcomingShow } from "@/components/ShowHeader";
 import { FullPreview } from "@/components/FullPreview";
+import { PullToRefresh } from "@/components/PullToRefresh";
 import { SlotAltsModal } from "@/components/SlotAltsModal";
 import { useLiveShow, isStaleLiveShow } from "@/lib/liveShow";
 import {
@@ -50,7 +51,7 @@ export default function Home() {
     playedSongs.length,
   );
 
-  const { data: upcoming } = useSWR<UpcomingShow | null>(
+  const { data: upcoming, mutate: mutateUpcoming } = useSWR<UpcomingShow | null>(
     "/api/upcoming",
     async (url: string) => {
       const r = await fetch(url);
@@ -59,6 +60,28 @@ export default function Home() {
     },
     { revalidateOnFocus: false, dedupingInterval: 60_000 },
   );
+
+  // Force-refresh on user pull. Mirrors the visibilitychange handler but
+  // also revalidates /api/upcoming so a date-rollover (e.g. midnight on a
+  // residency-night gap) shows up immediately.
+  const handlePullRefresh = useCallback(async () => {
+    if (!showId) {
+      await mutateUpcoming();
+      return;
+    }
+    if (upcoming) {
+      try {
+        await fetch(`/api/live/show/${showId}/sync/now`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ show_date: upcoming.show_date }),
+        });
+      } catch {
+        // Best-effort — fall through to local refresh either way.
+      }
+    }
+    await Promise.all([refresh(songs), mutatePreview(), mutateUpcoming()]);
+  }, [showId, upcoming, songs, refresh, mutatePreview, mutateUpcoming]);
 
   useEffect(() => {
     if (initialized.current) return;
@@ -218,6 +241,7 @@ export default function Home() {
   const slots = applyPendingMutation(preview?.slots ?? [], pending);
 
   return (
+    <PullToRefresh onRefresh={handlePullRefresh}>
     <div className="min-h-dvh bg-neutral-950 text-neutral-100 flex flex-col">
       {upcoming ? (
         <ShowHeader show={upcoming} liveShowId={showId} />
@@ -289,5 +313,6 @@ export default function Home() {
         </a>
       </footer>
     </div>
+    </PullToRefresh>
   );
 }
