@@ -61,6 +61,16 @@ export default function Home() {
     { revalidateOnFocus: false, dedupingInterval: 60_000 },
   );
 
+  const { data: lastShow } = useSWR<{ show_id: number } | null>(
+    "/api/last-show",
+    async (url: string) => {
+      const r = await fetch(url);
+      if (r.status === 404) return null;
+      return r.json();
+    },
+    { revalidateOnFocus: false, dedupingInterval: 60_000 },
+  );
+
   // Force-refresh on user pull. Mirrors the visibilitychange handler but
   // also revalidates /api/upcoming so a date-rollover (e.g. midnight on a
   // residency-night gap) shows up immediately.
@@ -302,7 +312,7 @@ export default function Home() {
         />
       )}
 
-      <footer className="px-4 py-3 text-xs text-neutral-600 border-t border-neutral-900 flex justify-between items-center">
+      <footer className="px-4 py-3 text-xs text-neutral-600 border-t border-neutral-900 flex flex-col gap-1 items-end">
         <span>
           {meta
             ? `${meta.shows_count} shows · ${meta.songs_count} songs · v${meta.version} · web ${
@@ -310,9 +320,19 @@ export default function Home() {
               }`
             : "Loading…"}
         </span>
-        <a href="/about" className="text-neutral-500 hover:text-indigo-400">
-          about
-        </a>
+        <span className="flex gap-2">
+          {lastShow ? (
+            <>
+              <a href="/last-show" className="text-neutral-500 hover:text-indigo-400">
+                last show
+              </a>
+              <span className="text-neutral-700">·</span>
+            </>
+          ) : null}
+          <a href="/about" className="text-neutral-500 hover:text-indigo-400">
+            about
+          </a>
+        </span>
       </footer>
     </div>
     </PullToRefresh>
