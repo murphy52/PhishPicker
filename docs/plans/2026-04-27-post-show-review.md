@@ -10,6 +10,23 @@
 
 **Design doc:** `docs/plans/2026-04-27-post-show-review-design.md`
 
+**Known-out-of-scope:** Setlist corrections after the cache is populated (e.g. phish.net publishes a typo fix or transition-mark correction for a past show) will not invalidate cache rows — `(show_id, model_sha)` is the key, and `model_sha` doesn't change. If a correction lands and matters, flush manually: `DELETE FROM slot_predictions_cache WHERE show_id = ?`. A `setlist_hash` column or `shows.fetched_at > computed_at` check could close this later.
+
+**Task dependencies:**
+- Task 1: none.
+- Task 2: depends on Task 1 (references the helper).
+- Task 3: none.
+- Task 4: none.
+- Task 5: none (uses only schema).
+- Task 6: depends on Task 5 (resolver).
+- Task 7: depends on Tasks 1, 3, 4, 5.
+- Task 8: none.
+- Task 9: depends on Task 8 (RankPill component).
+- Task 10: depends on Task 6 (the `/last-show` endpoint).
+- Task 11/12: depend on everything.
+
+Execute linearly unless you're explicitly parallelizing — and if you do, respect the graph.
+
 ---
 
 ## Task 1: Extract `compute_slot_ranks` helper
@@ -87,6 +104,36 @@ def test_compute_slot_ranks_returns_one_row_per_slot(conn):
     assert [r.set_number for r in rows] == ["1", "1", "2", "E"]
     assert [r.actual_song_id for r in rows] == [2, 1, 3, 4]
     assert all(isinstance(r, SlotRank) for r in rows)
+
+
+def test_compute_slot_ranks_orders_encore_after_numbered_sets(tmp_path):
+    """Encores ('E', 'E2') must sort after numbered sets ('1', '2', '3'),
+    matching nightly_smoke._slot_sort_key. Lex order would mostly work
+    ('1' < 'E') but 'E2' would lex-sort before any numbered set.
+    """
+    c = open_db(tmp_path / "ord.db")
+    apply_schema(c)
+    c.executescript(
+        """
+        INSERT INTO songs (song_id, name, first_seen_at) VALUES
+            (1, 'A', '2020-01-01'), (2, 'B', '2020-01-01'),
+            (3, 'C', '2020-01-01'), (4, 'D', '2020-01-01'),
+            (5, 'E', '2020-01-01');
+        INSERT INTO venues (venue_id, name) VALUES (10, 'V');
+        INSERT INTO shows (show_id, show_date, venue_id, fetched_at)
+        VALUES (200, '2026-04-25', 10, '2026-04-26');
+        INSERT INTO setlist_songs (show_id, set_number, position, song_id) VALUES
+            (200, '1', 1, 1),
+            (200, '3', 1, 3),
+            (200, 'E', 1, 4),
+            (200, 'E2', 1, 5);
+        """
+    )
+    c.commit()
+    scorer = FakeScorer(name="t", top_order=[1, 3, 4, 5])
+    rows = compute_slot_ranks(c, show_id=200, scorer=scorer)
+    c.close()
+    assert [r.set_number for r in rows] == ["1", "3", "E", "E2"]
 
 
 def test_compute_slot_ranks_finds_actual_rank_in_scored_order(conn):
@@ -170,6 +217,11 @@ class SlotRank:
     actual_rank: int | None  # None if the actual song isn't in the candidate pool
 
 
+# Mirrors nightly_smoke._slot_sort_key. Module-level so other callers
+# (e.g. /last-show/review's cache-hit path) can re-derive slot ordering.
+_SET_ORDER = {"1": 1, "2": 2, "3": 3, "4": 4, "E": 5, "E2": 6, "E3": 7}
+
+
 def compute_slot_ranks(
     conn: sqlite3.Connection,
     *,
@@ -184,13 +236,20 @@ def compute_slot_ranks(
     if show is None:
         return []
 
-    setlist = conn.execute(
+    raw = conn.execute(
         "SELECT set_number, position, song_id, trans_mark "
-        "FROM setlist_songs WHERE show_id = ? ORDER BY set_number, position",
+        "FROM setlist_songs WHERE show_id = ?",
         (show_id,),
     ).fetchall()
-    if not setlist:
+    if not raw:
         return []
+
+    # Match nightly_smoke._slot_sort_key: encores ('E', 'E2', 'E3') sort
+    # after numbered sets. Pure lex order ('1' < 'E') is wrong for 'E2'.
+    setlist = sorted(
+        raw,
+        key=lambda r: (_SET_ORDER.get(str(r["set_number"]).upper(), 99), int(r["position"])),
+    )
 
     candidate_ids = [r["song_id"] for r in conn.execute("SELECT song_id FROM songs")]
 
@@ -261,46 +320,26 @@ git commit -m "feat(api): compute_slot_ranks helper for past-show rank scoring
 
 ---
 
-## Task 2: Refactor nightly_smoke to use the helper
+## Task 2: Cross-link nightly_smoke to the helper
 
-Replace the inline slot-walking in `nightly_smoke.py` with a call to `compute_slot_ranks`. Verifies the helper actually works in production code without behavior drift.
+**Decision:** do not refactor `nightly_smoke.py` to use `compute_slot_ranks`. The helper covers walk-and-rank; nightly-smoke also needs per-slot top-K enrichment, which the cache and review endpoint don't need. Forcing the helper to grow a `top_k=True` option in v1 would inflate scope. Instead, leave both in place and cross-link them so future-us doesn't accidentally let them drift.
 
 **Files:**
 - Modify: `api/src/phishpicker/nightly_smoke.py`
 
-**Step 1: Read the current logic**
+**Step 1: Add the TODO comment**
 
-```bash
-grep -n "played_songs\|prev_trans_mark\|prev_set_number\|slots_into_current_set" /Users/David/phishpicker/api/src/phishpicker/nightly_smoke.py
-```
-
-The per-slot loop lives around lines 145-200 (verify exact line numbers when you run this). The helper covers the *core walk* — but nightly-smoke also needs `top_k_entries` (top-K candidate names + ranks), which the helper doesn't return. Plan: have nightly-smoke compute `compute_slot_ranks` for the rank, then run a separate top-K computation per slot.
-
-Actually simpler and DRY-er: extend `compute_slot_ranks` to optionally return `top_k`. **But** the cache table doesn't store top-K, and the review endpoint doesn't need it for v1. **Decision:** keep `compute_slot_ranks` minimal; nightly-smoke continues to do its own top-K walk inline (it's cheap once you've already scored). The shared part is the *walk + rank* logic.
-
-So this task: have nightly-smoke call `compute_slot_ranks(conn, show_id=..., scorer=...)` to get the per-slot ranks, then run a separate enrichment pass that builds top-K from a fresh score per slot. Or: have nightly-smoke walk the setlist and call scorer twice per slot — once to get the full rank, once to capture top-K. The duplication is small and contained to one file.
-
-**Pragmatic step**: do NOT refactor nightly-smoke in this task. The helper is now available; nightly-smoke can adopt it later if needed. Mark it as a TODO and move on.
-
-Replace the body of this task with: **add a TODO comment to nightly_smoke.py pointing to the shared helper.**
-
-```python
-# TODO: this slot-walking logic duplicates phishpicker.slot_ranks.compute_slot_ranks.
-# Refactor when nightly-smoke needs no top-K enrichment, or when the helper
-# grows a top_k=True option. See docs/plans/2026-04-27-post-show-review-design.md.
-```
-
-**Step 2: Add the TODO**
-
-Edit `api/src/phishpicker/nightly_smoke.py` near the start of the per-slot loop (around line 145):
+Open `api/src/phishpicker/nightly_smoke.py`, find the per-slot loop (search for `slots_into_current_set` — currently around lines 145-200), and add immediately before the loop:
 
 ```python
 # TODO(slot-ranks-dedup): this walk duplicates compute_slot_ranks in
-# phishpicker.slot_ranks. Keep them in sync if you change either. See
-# docs/plans/2026-04-27-post-show-review-design.md.
+# phishpicker.slot_ranks. Keep them in sync — both implement set ordering
+# via _slot_sort_key/_SET_ORDER and identical scorer kwargs. Consolidate
+# when nightly-smoke no longer needs top-K enrichment, or when the helper
+# grows a top_k=True option. See docs/plans/2026-04-27-post-show-review-design.md.
 ```
 
-**Step 3: Verify nightly_smoke tests still pass**
+**Step 2: Verify nightly_smoke tests still pass**
 
 ```bash
 cd /Users/David/phishpicker/api
@@ -309,7 +348,7 @@ uv run pytest tests/test_nightly_smoke.py -xvs
 
 Expected: all pass (no behavior change).
 
-**Step 4: Commit**
+**Step 3: Commit**
 
 ```bash
 git add api/src/phishpicker/nightly_smoke.py
@@ -322,23 +361,21 @@ git commit -m "docs(api): cross-link nightly_smoke walk to shared slot_ranks hel
 
 ## Task 3: Add `slot_predictions_cache` table to schema
 
+`apply_schema` reads the canonical schema from `db/schema.sql` and `executescript`s it. Add the new table there, not as a Python-injected `executescript` block.
+
 **Files:**
-- Modify: `api/src/phishpicker/db/connection.py` (in `apply_schema`)
+- Modify: `api/src/phishpicker/db/schema.sql`
 - Test: `api/tests/db/test_schema_slot_cache.py`
 
-**Step 1: Find the schema location**
-
-```bash
-grep -n "CREATE TABLE\|apply_schema" /Users/David/phishpicker/api/src/phishpicker/db/connection.py | head -20
-```
-
-Note the line number where existing CREATE TABLE statements live in `apply_schema`.
-
-**Step 2: Write the failing test**
+**Step 1: Write the failing test**
 
 Create `api/tests/db/test_schema_slot_cache.py`:
 
 ```python
+import sqlite3
+
+import pytest
+
 from phishpicker.db.connection import apply_schema, open_db
 
 
@@ -357,18 +394,16 @@ def test_slot_predictions_cache_table_exists(tmp_path):
     }
 
 
-def test_slot_predictions_cache_primary_key_is_show_model_slot(tmp_path):
+def test_slot_predictions_cache_unique_per_show_model_slot(tmp_path):
+    """Two inserts with the same (show_id, model_sha, slot_idx) must collide."""
     c = open_db(tmp_path / "pk.db")
     apply_schema(c)
-    # Insert two rows with same (show_id, model_sha, slot_idx) — second
-    # must replace OR error. Test the constraint exists at all.
     c.execute(
         "INSERT INTO slot_predictions_cache "
         "(show_id, model_sha, slot_idx, actual_song_id, actual_rank, computed_at) "
         "VALUES (1, 'sha', 1, 100, 7, '2026-04-26T00:00:00')"
     )
-    import sqlite3 as sq
-    with __import__("pytest").raises(sq.IntegrityError):
+    with pytest.raises(sqlite3.IntegrityError):
         c.execute(
             "INSERT INTO slot_predictions_cache "
             "(show_id, model_sha, slot_idx, actual_song_id, actual_rank, computed_at) "
@@ -376,7 +411,7 @@ def test_slot_predictions_cache_primary_key_is_show_model_slot(tmp_path):
         )
 ```
 
-**Step 3: Run test to verify RED**
+**Step 2: Run test to verify RED**
 
 ```bash
 cd /Users/David/phishpicker/api
@@ -385,25 +420,25 @@ uv run pytest tests/db/test_schema_slot_cache.py -xvs
 
 Expected: errors complaining the table doesn't exist.
 
-**Step 4: Add the table to apply_schema**
+**Step 3: Add the table to schema.sql**
 
-In `api/src/phishpicker/db/connection.py`, inside `apply_schema`, add:
+Append to `api/src/phishpicker/db/schema.sql`:
 
-```python
-conn.executescript("""
+```sql
 CREATE TABLE IF NOT EXISTS slot_predictions_cache (
-    show_id INTEGER NOT NULL,
+    show_id INTEGER NOT NULL REFERENCES shows(show_id),
     model_sha TEXT NOT NULL,
     slot_idx INTEGER NOT NULL,
-    actual_song_id INTEGER NOT NULL,
+    actual_song_id INTEGER NOT NULL REFERENCES songs(song_id),
     actual_rank INTEGER,
     computed_at TEXT NOT NULL,
     PRIMARY KEY (show_id, model_sha, slot_idx)
 );
-""")
+CREATE INDEX IF NOT EXISTS idx_slot_cache_show_model
+    ON slot_predictions_cache(show_id, model_sha);
 ```
 
-**Step 5: Run test to verify GREEN**
+**Step 4: Run test to verify GREEN**
 
 ```bash
 uv run pytest tests/db/test_schema_slot_cache.py -xvs
@@ -411,10 +446,10 @@ uv run pytest tests/db/test_schema_slot_cache.py -xvs
 
 Expected: 2 passed.
 
-**Step 6: Commit**
+**Step 5: Commit**
 
 ```bash
-git add api/src/phishpicker/db/connection.py api/tests/db/test_schema_slot_cache.py
+git add api/src/phishpicker/db/schema.sql api/tests/db/test_schema_slot_cache.py
 git commit -m "feat(db): slot_predictions_cache table for past-show review
 
 🤖 assist"
@@ -845,16 +880,27 @@ def test_review_returns_setlist_with_ranks(client):
     assert "actual_rank" in s
 
 
-def test_review_cache_hit_skips_recompute(client, monkeypatch):
-    """Two calls in a row — second one must not call the scorer."""
-    # First call populates cache.
-    client.get("/last-show/review")
-    # Patch scorer.score_candidates to assert it isn't called again.
-    from phishpicker.app import create_app  # not used; we patch via app.state
-    # Easier: inspect the cache row count before and after the second call.
-    import sqlite3
-    db = sqlite3.connect(monkeypatch.getenv("PHISHPICKER_DATA_DIR") or "/tmp/x")
-    # … skip — simpler test below
+def test_review_cache_hit_serves_stored_rank(client, tmp_path):
+    """First call populates the cache. Mutate the cache row directly,
+    then call again — if the response reflects the mutation, the cache
+    was served (no recompute). If it reflects the model's true rank,
+    the cache was bypassed."""
+    from phishpicker.db.connection import open_db
+
+    # Prime the cache.
+    r1 = client.get("/last-show/review")
+    assert r1.status_code == 200
+    assert len(r1.json()["slots"]) >= 1
+
+    # Tamper: set every cached actual_rank to a sentinel.
+    with open_db(tmp_path / "phishpicker.db") as db:
+        db.execute("UPDATE slot_predictions_cache SET actual_rank = 999")
+        db.commit()
+
+    # Second call must return the tampered value — proves cache served.
+    r2 = client.get("/last-show/review")
+    assert r2.status_code == 200
+    assert all(s["actual_rank"] == 999 for s in r2.json()["slots"])
 
 
 def test_review_404_when_no_completed_show(tmp_path, monkeypatch):
@@ -870,9 +916,11 @@ def test_review_404_when_no_completed_show(tmp_path, monkeypatch):
     assert r.status_code == 404
 ```
 
-Replace `test_review_cache_hit_skips_recompute` with a simpler test once you see the implementation; for now keep the structural tests.
+Note: `open_db` may return a read-only connection by default — check the signature in `db/connection.py`. If so, use `open_db(path, read_only=False)` for the tamper UPDATE, or open via raw `sqlite3.connect` for the test only.
 
 **Step 2: Add the endpoint**
+
+Two paths share the response shape (`slot_idx`, `actual_rank`) — on cache miss we use the just-computed `ranks` directly, on cache hit we use the loaded rows. No re-read across connections, no window-function gymnastics.
 
 In `api/src/phishpicker/app.py`:
 
@@ -882,7 +930,9 @@ def last_show_review(
     request: Request,
     read: sqlite3.Connection = Depends(get_read),  # noqa: B008
 ):
+    from contextlib import closing
     from datetime import UTC, datetime
+    from phishpicker.db.connection import open_db
     from phishpicker.last_show import resolve_last_show_id
     from phishpicker.slot_ranks import compute_slot_ranks
 
@@ -893,24 +943,56 @@ def last_show_review(
     scorer = request.app.state.scorer
     model_sha = scorer.sha
 
-    # Cache check.
-    cached = read.execute(
-        "SELECT slot_idx, actual_song_id, actual_rank FROM slot_predictions_cache "
-        "WHERE show_id = ? AND model_sha = ? ORDER BY slot_idx",
-        (show_id, model_sha),
-    ).fetchall()
+    # Cache check: count must match setlist length AND map by slot_idx.
+    cached = {
+        r["slot_idx"]: (int(r["actual_song_id"]), r["actual_rank"])
+        for r in read.execute(
+            "SELECT slot_idx, actual_song_id, actual_rank "
+            "FROM slot_predictions_cache WHERE show_id = ? AND model_sha = ?",
+            (show_id, model_sha),
+        ).fetchall()
+    }
     setlist_count = read.execute(
         "SELECT COUNT(*) FROM setlist_songs WHERE show_id = ?",
         (show_id,),
     ).fetchone()[0]
 
-    if len(cached) != setlist_count:
-        # Cache miss — compute and write.
+    if len(cached) == setlist_count:
+        # Cache hit. Reconstruct slot_idx → (set_number, position, song name)
+        # by walking setlist_songs in the same canonical order the helper uses.
+        from phishpicker.slot_ranks import _SET_ORDER  # promoted to module scope in Task 1
+        raw = read.execute(
+            "SELECT set_number, position, song_id FROM setlist_songs WHERE show_id = ?",
+            (show_id,),
+        ).fetchall()
+        setlist = sorted(
+            raw,
+            key=lambda r: (
+                _SET_ORDER.get(str(r["set_number"]).upper(), 99),
+                int(r["position"]),
+            ),
+        )
+        song_names = {
+            r["song_id"]: r["name"]
+            for r in read.execute("SELECT song_id, name FROM songs")
+        }
+        slots_out = []
+        for idx, s in enumerate(setlist, start=1):
+            rank_entry = cached.get(idx)
+            actual_rank = rank_entry[1] if rank_entry else None
+            slots_out.append({
+                "slot_idx": idx,
+                "set_number": s["set_number"],
+                "position": int(s["position"]),
+                "actual_song_id": int(s["song_id"]),
+                "actual_song": song_names.get(s["song_id"], f"#{s['song_id']}"),
+                "actual_rank": actual_rank,
+            })
+    else:
+        # Cache miss — compute, write, and use in-memory results directly.
         ranks = compute_slot_ranks(read, show_id=show_id, scorer=scorer)
         now = datetime.now(UTC).isoformat()
-        # Use a separate write connection because read may be read-only.
-        write = sqlite3.connect(request.app.state.settings.db_path)
-        try:
+        with closing(open_db(request.app.state.settings.db_path, read_only=False)) as write:
             write.executemany(
                 "INSERT OR REPLACE INTO slot_predictions_cache "
                 "(show_id, model_sha, slot_idx, actual_song_id, actual_rank, computed_at) "
@@ -921,27 +1003,21 @@ def last_show_review(
                 ],
             )
             write.commit()
-        finally:
-            write.close()
-
-    # Re-read to assemble response with set_number/position from setlist_songs
-    # and song names from songs.
-    rows = read.execute(
-        """
-        SELECT ss.set_number, ss.position, ss.song_id, songs.name,
-               c.actual_rank, ROW_NUMBER() OVER (ORDER BY ss.set_number, ss.position) AS slot_idx
-        FROM setlist_songs ss
-        JOIN songs USING (song_id)
-        LEFT JOIN slot_predictions_cache c
-          ON c.show_id = ss.show_id AND c.model_sha = ?
-         AND c.slot_idx = ROW_NUMBER() OVER (ORDER BY ss.set_number, ss.position)
-        WHERE ss.show_id = ?
-        ORDER BY ss.set_number, ss.position
-        """,
-        (model_sha, show_id),
-    ).fetchall()
-    # (Note: SQLite may not support window functions in JOIN ON — if not,
-    # fall back to: query setlist + cache separately, zip in Python.)
+        song_names = {
+            r["song_id"]: r["name"]
+            for r in read.execute("SELECT song_id, name FROM songs")
+        }
+        slots_out = [
+            {
+                "slot_idx": r.slot_idx,
+                "set_number": r.set_number,
+                "position": r.position,
+                "actual_song_id": r.actual_song_id,
+                "actual_song": song_names.get(r.actual_song_id, f"#{r.actual_song_id}"),
+                "actual_rank": r.actual_rank,
+            }
+            for r in ranks
+        ]
 
     show_meta_row = read.execute(
         "SELECT s.show_id, s.show_date, s.venue_id, v.name AS venue, v.city, v.state "
@@ -960,49 +1036,13 @@ def last_show_review(
             "run_position": run_position,
             "run_length": run_length,
         },
-        "slots": [
-            {
-                "slot_idx": r["slot_idx"],
-                "set_number": r["set_number"],
-                "position": r["position"],
-                "actual_song_id": r["song_id"],
-                "actual_song": r["name"],
-                "actual_rank": r["actual_rank"],
-            }
-            for r in rows
-        ],
+        "slots": slots_out,
     }
 ```
 
-**If the SQLite ROW_NUMBER trick fails**, replace the response query with two simple queries:
+**Helper export needed:** the cache-hit path imports `_SET_ORDER` from `phishpicker.slot_ranks` to rebuild slot ordering. When you write Task 1's helper, define `_SET_ORDER` at module scope (not as a local inside `compute_slot_ranks`) so this import works.
 
-```python
-setlist = read.execute(
-    "SELECT set_number, position, song_id FROM setlist_songs "
-    "WHERE show_id = ? ORDER BY set_number, position",
-    (show_id,),
-).fetchall()
-cache = {
-    r["slot_idx"]: r["actual_rank"]
-    for r in read.execute(
-        "SELECT slot_idx, actual_rank FROM slot_predictions_cache "
-        "WHERE show_id = ? AND model_sha = ?",
-        (show_id, model_sha),
-    ).fetchall()
-}
-song_names = {r["song_id"]: r["name"] for r in read.execute("SELECT song_id, name FROM songs")}
-slots = [
-    {
-        "slot_idx": idx,
-        "set_number": s["set_number"],
-        "position": int(s["position"]),
-        "actual_song_id": int(s["song_id"]),
-        "actual_song": song_names.get(s["song_id"], f"#{s['song_id']}"),
-        "actual_rank": cache.get(idx),
-    }
-    for idx, s in enumerate(setlist, start=1)
-]
-```
+`open_db(path, read_only=False)` is the actual signature in `db/connection.py` — it returns a thread-safe connection with `busy_timeout=5000`, `foreign_keys=ON`, and `row_factory=sqlite3.Row` set.
 
 **Step 3: Run tests to verify GREEN**
 
@@ -1150,9 +1190,20 @@ Create `web/src/app/last-show/page.test.tsx`:
 ```tsx
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
+import { SWRConfig } from "swr";
 import LastShowPage from "./page";
 
 afterEach(() => vi.restoreAllMocks());
+
+// SWR caches by key globally — without a fresh provider per render, test 2
+// gets test 1's response from cache and never calls the new mocked fetch.
+function renderIsolated() {
+  return render(
+    <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+      <LastShowPage />
+    </SWRConfig>,
+  );
+}
 
 function mockReview(slots: unknown[]) {
   global.fetch = vi.fn(async () => ({
@@ -1179,7 +1230,7 @@ test("renders setlist grouped by set", async () => {
     { slot_idx: 2, set_number: "1", position: 2, actual_song_id: 2, actual_song: "Moma Dance", actual_rank: 1 },
     { slot_idx: 3, set_number: "E", position: 1, actual_song_id: 3, actual_song: "Bug", actual_rank: 19 },
   ]);
-  render(<LastShowPage />);
+  renderIsolated();
   await waitFor(() => expect(screen.getByText("Timber")).toBeInTheDocument());
   expect(screen.getByText("Moma Dance")).toBeInTheDocument();
   expect(screen.getByText("Bug")).toBeInTheDocument();
@@ -1191,8 +1242,20 @@ test("renders rank pills for each slot", async () => {
   mockReview([
     { slot_idx: 1, set_number: "1", position: 1, actual_song_id: 1, actual_song: "X", actual_rank: 1 },
   ]);
-  render(<LastShowPage />);
+  renderIsolated();
   await waitFor(() => expect(screen.getByTestId("rank-pill")).toHaveTextContent("#1"));
+});
+
+test("shows empty state when API returns 404", async () => {
+  global.fetch = vi.fn(async () => ({
+    ok: false,
+    status: 404,
+    json: async () => null,
+  })) as unknown as typeof fetch;
+  renderIsolated();
+  await waitFor(() =>
+    expect(screen.getByText(/no completed show/i)).toBeInTheDocument(),
+  );
 });
 ```
 
