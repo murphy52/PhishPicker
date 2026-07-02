@@ -37,17 +37,62 @@ export interface ScoreTotals {
   hit_counts: Record<string, number>;
 }
 
+export interface PickOutcome {
+  pick: { set_number: string; position: number; song_id: number };
+  reason: string;
+  base: number;
+  actual_index: number | null;
+  name: string;
+}
+
 export interface ScoreResponse {
   attributions: Attribution[];
   totals: ScoreTotals;
-  pick_outcomes: {
-    pick: { set_number: string; position: number; song_id: number };
-    reason: string;
-    base: number;
-    actual_index: number | null;
-  }[];
+  pick_outcomes: PickOutcome[];
   model_sha: string | null;
   frozen: boolean;
+}
+
+const SET_LABEL_ORDER = ["1", "2", "3", "4", "E", "E2", "E3"];
+
+function setLabel(setNumber: string): string {
+  if (setNumber === "E") return "Encore";
+  if (setNumber.startsWith("E")) return `Encore ${setNumber.slice(1)}`;
+  return `Set ${setNumber}`;
+}
+
+export interface BracketPick extends PickOutcome {
+  /** Predicted song actually played and banked Foresight points. */
+  hit: boolean;
+}
+
+export interface BracketGroup {
+  setNumber: string;
+  label: string;
+  picks: BracketPick[];
+}
+
+/**
+ * The frozen pre-show bracket, grouped into sets for the predicted-setlist
+ * view. Ordered by set then within-set position; each pick tagged with
+ * whether the app connected (anything other than "absent").
+ */
+export function groupBracketBySet(outcomes: PickOutcome[]): BracketGroup[] {
+  const bySet = new Map<string, BracketPick[]>();
+  for (const o of outcomes) {
+    const list = bySet.get(o.pick.set_number) ?? [];
+    list.push({ ...o, hit: o.reason !== "absent" });
+    bySet.set(o.pick.set_number, list);
+  }
+  return [...bySet.keys()]
+    .sort((a, b) => SET_LABEL_ORDER.indexOf(a) - SET_LABEL_ORDER.indexOf(b))
+    .map((setNumber) => ({
+      setNumber,
+      label: setLabel(setNumber),
+      picks: (bySet.get(setNumber) ?? []).sort(
+        (a, b) => a.pick.position - b.pick.position,
+      ),
+    }));
 }
 
 const REASON_LABELS: Record<string, string> = {

@@ -113,3 +113,38 @@ def test_score_endpoint_smoke(seeded_client, live_show_id):
 
 def test_score_endpoint_404(seeded_client):
     assert seeded_client.get("/live/show/nope/score").status_code == 404
+
+
+def test_pick_outcomes_carry_names_including_absent(seeded_read_db, live_conn):
+    """The predicted-setlist view renders the frozen bracket, so every pick —
+    including 'absent' ones that never played — needs a song name. Names must
+    be resolved for the whole bracket, not just the actual setlist."""
+    show_id = create_live_show(live_conn, "2026-04-23", venue_id=1597)
+    append_song(live_conn, show_id, song_id=100, set_number="1")  # Chalk Dust plays
+    upsert_score_state(
+        live_conn,
+        show_id,
+        model_sha="test-sha",
+        frozen_bracket=[
+            {"set_number": "1", "position": 1, "song_id": 100},  # exact opener
+            {"set_number": "1", "position": 2, "song_id": 101},  # predicted, never played
+        ],
+    )
+    result = score_live_show(seeded_read_db, live_conn, show_id)
+    by_song = {o["pick"]["song_id"]: o for o in result["pick_outcomes"]}
+    assert by_song[100]["name"] == "Chalk Dust Torture"
+    assert by_song[100]["reason"] == "opener"
+    # The absent pick still carries its name for the predicted-setlist page.
+    assert by_song[101]["name"] == "Tweezer"
+    assert by_song[101]["reason"] == "absent"
+
+
+def test_score_endpoint_exposes_named_bracket(seeded_client, live_show_id):
+    seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": 100, "set_number": "1"},
+    )
+    body = seeded_client.get(f"/live/show/{live_show_id}/score").json()
+    assert body["frozen"] is True
+    assert body["pick_outcomes"], "a started show has a frozen bracket"
+    assert all("name" in o for o in body["pick_outcomes"])

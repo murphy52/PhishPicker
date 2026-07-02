@@ -70,7 +70,10 @@ def score_live_show(
     bracket = state.get("frozen_bracket") or []
     snapshots = state.get("snapshots") or []
 
-    song_ids = {r["song_id"] for r in actual}
+    # Resolve names for the actual setlist AND the frozen bracket — the
+    # predicted-setlist view renders every pick, including 'absent' ones that
+    # never played and so aren't in the actual setlist.
+    song_ids = {r["song_id"] for r in actual} | {p["song_id"] for p in bracket}
     bustout_song_ids = set()
     names: dict[int, str] = {}
     if song_ids:
@@ -84,6 +87,9 @@ def score_live_show(
             if r["is_bustout_placeholder"]:
                 bustout_song_ids.add(r["song_id"])
 
+    def _name(sid: int) -> str:
+        return names.get(sid, f"#{sid}")
+
     result = score_show(
         bracket,
         actual,
@@ -92,7 +98,9 @@ def score_live_show(
         bustout_song_ids=bustout_song_ids,
     )
     for att in result["attributions"]:
-        att["name"] = names.get(att["song_id"], f"#{att['song_id']}")
+        att["name"] = _name(att["song_id"])
+    for outcome in result["pick_outcomes"]:
+        outcome["name"] = _name(outcome["pick"]["song_id"])
     result["model_sha"] = state.get("model_sha")
     result["frozen"] = bool(bracket)
     return result
