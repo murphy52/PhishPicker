@@ -177,12 +177,12 @@ function SlotRow({
   onSlotClick: (slotIdx: number) => void;
 }) {
   if (slot.state === "entered" && slot.entered_song) {
+    // An undo reverts the slot to a predicted placeholder (handled below), so
+    // the only pending state an entered slot carries is an in-flight add.
     const pendingStyle =
       slot.pending === "adding"
         ? "bg-indigo-950/70 text-neutral-300 animate-pulse ring-1 ring-indigo-600/40"
-        : slot.pending === "removing"
-          ? "bg-neutral-800/60 text-neutral-500 line-through animate-pulse"
-          : "bg-neutral-800 text-neutral-100";
+        : "bg-neutral-800 text-neutral-100";
     return (
       <li
         data-testid="slot"
@@ -206,18 +206,26 @@ function SlotRow({
   }
 
   const top = slot.top_k?.[0];
+  // A just-undone slot: song already gone, prediction not back yet. Show a
+  // muted pulsing placeholder and don't let it be clicked mid-recompute.
+  const removing = slot.pending === "removing";
   return (
     <li
       data-testid="slot"
       data-state="predicted"
-      onClick={() => onSlotClick(slot.slot_idx)}
-      className="flex items-center gap-3 px-3 py-2 min-h-[44px] rounded border border-dashed border-neutral-800 text-neutral-500 cursor-pointer hover:border-indigo-700 hover:text-neutral-300"
+      data-pending={slot.pending ?? undefined}
+      onClick={removing ? undefined : () => onSlotClick(slot.slot_idx)}
+      className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded border border-dashed ${
+        removing
+          ? "border-neutral-800/60 text-neutral-700 animate-pulse"
+          : "border-neutral-800 text-neutral-500 cursor-pointer hover:border-indigo-700 hover:text-neutral-300"
+      }`}
     >
       <span className="w-6 tabular-nums text-right text-xs">{slot.position}</span>
       <span className="flex-1 text-base truncate">
-        {top ? top.name : "—"}
+        {removing ? "…" : top ? top.name : "—"}
       </span>
-      {top && (
+      {!removing && top && (
         <span className="text-xs text-neutral-600 tabular-nums shrink-0">
           {Math.round(top.probability * 100)}%
         </span>

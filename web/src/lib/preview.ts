@@ -49,7 +49,11 @@ export type PendingMutation =
  *
  * - add: replace the first predicted slot in the target set with the
  *   picked song, marked pending="adding".
- * - undo: mark the last entered slot carrying songId as pending="removing".
+ * - undo: revert the last entered slot carrying songId to a predicted
+ *   placeholder so the song vanishes immediately — the real next-song
+ *   prediction fills in when the background /preview recompute lands. (The
+ *   preview recompute can take several seconds on the server; blocking the
+ *   undo on it made the removed song linger, which read as a slow undo.)
  */
 export function applyPendingMutation(
   slots: PreviewSlot[],
@@ -71,11 +75,18 @@ export function applyPendingMutation(
     }
     return out;
   }
-  // undo: find the last matching entered slot
+  // undo: find the last matching entered slot and clear it optimistically
   for (let i = out.length - 1; i >= 0; i--) {
     const s = out[i];
     if (s.state === "entered" && s.entered_song?.song_id === pending.songId) {
-      out[i] = { ...s, pending: "removing" };
+      out[i] = {
+        ...s,
+        state: "predicted",
+        entered_song: undefined,
+        top_k: undefined,
+        hit_rank: undefined,
+        pending: "removing",
+      };
       break;
     }
   }
