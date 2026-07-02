@@ -7,7 +7,15 @@ from collections.abc import Iterator
 from contextlib import asynccontextmanager, closing
 from datetime import UTC, datetime, timedelta
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+)
 from pydantic import BaseModel
 
 from phishpicker.config import Settings
@@ -392,8 +400,22 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/live/show")
-    def create_show(body: LiveShowCreate, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
+    def create_show(
+        body: LiveShowCreate,
+        request: Request,
+        conn: sqlite3.Connection = Depends(get_live),  # noqa: B008
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+    ):
         show_id = create_live_show(conn, body.show_date, body.venue_id)
+        # Freeze the pre-show bracket here, where the show is guaranteed to
+        # have zero entered songs — this keeps the full build_preview off the
+        # hot add-song path (idempotent, so re-create is a no-op).
+        from phishpicker.scoring_store import ensure_frozen
+
+        try:
+            ensure_frozen(read, conn, show_id, scorer=request.app.state.scorer)
+        except Exception:
+            log.warning("bracket freeze failed for %s", show_id, exc_info=True)
         return {"show_id": show_id}
 
     @app.get("/live/show/{show_id}")
@@ -409,22 +431,30 @@ def create_app() -> FastAPI:
     def add_song(
         body: LiveSongAppend,
         request: Request,
+        background: BackgroundTasks,
         conn: sqlite3.Connection = Depends(get_live),  # noqa: B008
         read: sqlite3.Connection = Depends(get_read),  # noqa: B008
     ):
-        from phishpicker.scoring_store import capture_snapshot, ensure_frozen
+        from phishpicker.scoring_store import capture_snapshot_bg, ensure_frozen
 
-        # Freeze the pre-show bracket BEFORE the insert — build_preview reads
-        # entered songs, so freezing after would lose the opener pick.
+        # Normally a no-op (the bracket froze at show-create). Only a show
+        # created before that behaviour existed pays a full build_preview here,
+        # and it must run before the insert to keep the opener pick.
         try:
             ensure_frozen(read, conn, body.show_id, scorer=request.app.state.scorer)
         except Exception:
             log.warning("bracket freeze failed for %s", body.show_id, exc_info=True)
         order = append_song(conn, body.show_id, body.song_id, body.set_number, body.trans_mark)
-        try:
-            capture_snapshot(read, conn, body.show_id, scorer=request.app.state.scorer)
-        except Exception:
-            log.warning("snapshot capture failed for %s", body.show_id, exc_info=True)
+        # Capture the next-song snapshot off the response path — the click
+        # returns immediately; the (cheap) prediction runs in the background.
+        s = request.app.state.settings
+        background.add_task(
+            capture_snapshot_bg,
+            s.db_path,
+            s.live_db_path,
+            body.show_id,
+            request.app.state.scorer,
+        )
         return {"entered_order": order}
 
     @app.delete("/live/song/last")
@@ -436,19 +466,24 @@ def create_app() -> FastAPI:
     def set_boundary(
         body: SetBoundary,
         request: Request,
+        background: BackgroundTasks,
         conn: sqlite3.Connection = Depends(get_live),  # noqa: B008
-        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
     ):
         ok = advance_set(conn, body.show_id, body.set_number)
         if ok:
             # A set advance moves the next-song call to the new set's opener —
-            # capture it so scoring sees the call that was actually on screen.
-            from phishpicker.scoring_store import capture_snapshot
+            # capture it (off the response path) so scoring sees the call that
+            # was actually on screen.
+            from phishpicker.scoring_store import capture_snapshot_bg
 
-            try:
-                capture_snapshot(read, conn, body.show_id, scorer=request.app.state.scorer)
-            except Exception:
-                log.warning("snapshot capture failed for %s", body.show_id, exc_info=True)
+            s = request.app.state.settings
+            background.add_task(
+                capture_snapshot_bg,
+                s.db_path,
+                s.live_db_path,
+                body.show_id,
+                request.app.state.scorer,
+            )
         return {"updated": ok}
 
     @app.post("/internal/reload")
