@@ -80,6 +80,52 @@ def upsert_score_state(
     live_conn.commit()
 
 
+def _remaining_prediction(read_conn, live_conn, show_id: str, scorer) -> list[dict]:
+    """build_preview(top_k=1) reduced to the predicted slots — the model's
+    one-song-per-slot forecast of everything not yet played."""
+    from phishpicker.live_preview import build_preview
+
+    preview = build_preview(
+        read_conn=read_conn, live_conn=live_conn, show_id=show_id, top_k=1, scorer=scorer
+    )
+    return [
+        {
+            "set_number": s["set_number"],
+            "position": s["position"],
+            "song_id": s["top_k"][0]["song_id"],
+        }
+        for s in preview["slots"]
+        if s["state"] == "predicted" and s.get("top_k")
+    ]
+
+
+def ensure_frozen(
+    read_conn: sqlite3.Connection,
+    live_conn: sqlite3.Connection,
+    show_id: str,
+    *,
+    scorer,
+) -> bool:
+    """Freeze the pre-show bracket if not already frozen. Returns True when a
+    freeze happened.
+
+    MUST run BEFORE the first live_songs insert for the show: build_preview
+    reads entered songs from the DB, so a post-insert freeze would return the
+    opener as an 'entered' slot and silently drop the 60-pt opener pick.
+    """
+    state = get_score_state(live_conn, show_id)
+    if state is not None and state["frozen_bracket"]:
+        return False
+    bracket = _remaining_prediction(read_conn, live_conn, show_id, scorer)
+    if not bracket:
+        log.warning("freeze for %s produced an empty bracket; not storing", show_id)
+        return False
+    upsert_score_state(
+        live_conn, show_id, model_sha=getattr(scorer, "sha", None), frozen_bracket=bracket
+    )
+    return True
+
+
 def append_snapshot(
     live_conn: sqlite3.Connection, show_id: str, snapshot: dict
 ) -> None:

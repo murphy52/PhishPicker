@@ -394,7 +394,20 @@ def create_app() -> FastAPI:
         return show
 
     @app.post("/live/song")
-    def add_song(body: LiveSongAppend, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
+    def add_song(
+        body: LiveSongAppend,
+        request: Request,
+        conn: sqlite3.Connection = Depends(get_live),  # noqa: B008
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+    ):
+        from phishpicker.scoring_store import ensure_frozen
+
+        # Freeze the pre-show bracket BEFORE the insert — build_preview reads
+        # entered songs, so freezing after would lose the opener pick.
+        try:
+            ensure_frozen(read, conn, body.show_id, scorer=request.app.state.scorer)
+        except Exception:
+            log.warning("bracket freeze failed for %s", body.show_id, exc_info=True)
         order = append_song(conn, body.show_id, body.song_id, body.set_number, body.trans_mark)
         return {"entered_order": order}
 
