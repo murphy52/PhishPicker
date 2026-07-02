@@ -83,6 +83,56 @@ def score_foresight(
     return claims, outcomes
 
 
+def score_live(actual: list[dict], next_call_by_index: dict) -> dict[int, dict]:
+    """Live ledger base claims: actual index i (i>=1) whose song matches the
+    captured next-song call that was live when it revealed. Index 0 (the
+    opener) is never a live event — live calling starts after the opener."""
+    claims: dict[int, dict] = {}
+    for i in range(1, len(actual)):
+        if next_call_by_index.get(i) == actual[i]["song_id"]:
+            claims[i] = {"base": PTS_NEXT_SONG}
+    return claims
+
+
+def resolve_claims(
+    foresight: dict[int, dict], live: dict[int, dict], actual: list[dict]
+) -> list[dict]:
+    """Best-claim-wins: each actual song banks the larger BASE of its two
+    ledger claims, once. Ties go to Foresight (the premium tier). The losing
+    claim is recorded so the UI can show what was beaten."""
+    attributions: list[dict] = []
+    for i, row in enumerate(actual):
+        f, lv = foresight.get(i), live.get(i)
+        att = {
+            "index": i,
+            "song_id": row["song_id"],
+            "set_number": row["set_number"],
+            "position": row["position"],
+            "ledger": None,
+            "base": 0,
+            "reason": None,
+            "beaten_claim": None,
+        }
+        if f is not None and (lv is None or f["base"] >= lv["base"]):
+            att.update(ledger="foresight", base=f["base"], reason=f["reason"])
+            if lv is not None:
+                att["beaten_claim"] = {
+                    "ledger": "live",
+                    "reason": "next_song",
+                    "base": lv["base"],
+                }
+        elif lv is not None:
+            att.update(ledger="live", base=lv["base"], reason="next_song")
+            if f is not None:
+                att["beaten_claim"] = {
+                    "ledger": "foresight",
+                    "reason": f["reason"],
+                    "base": f["base"],
+                }
+        attributions.append(att)
+    return attributions
+
+
 def normalize_setlist(rows: list[dict]) -> list[dict]:
     """Raw live_songs/setlist rows -> the scored setlist: soundcheck dropped,
     ordered by set then position-within-set."""
