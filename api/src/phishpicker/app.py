@@ -512,6 +512,18 @@ def create_app() -> FastAPI:
             scorer=request.app.state.scorer,
         )
 
+    @app.get("/live/show/{show_id}/score")
+    def score_endpoint(
+        show_id: str,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.scoring_service import score_live_show
+
+        if get_live_show(live, show_id) is None:
+            raise HTTPException(status_code=404, detail="show not found")
+        return score_live_show(read, live, show_id)
+
     class SyncStart(BaseModel):
         show_date: str
 

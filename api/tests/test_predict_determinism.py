@@ -45,14 +45,14 @@ def test_tied_scores_rank_lower_song_id_first(tmp_path):
 
 def test_repeat_calls_identical(tmp_path):
     conn = _tie_db(tmp_path)
-    kwargs = dict(
-        read_conn=conn,
-        played_songs=[],
-        current_set="1",
-        show_date="2026-07-07",
-        venue_id=None,
-        scorer=TieScorer(),
-    )
+    kwargs = {
+        "read_conn": conn,
+        "played_songs": [],
+        "current_set": "1",
+        "show_date": "2026-07-07",
+        "venue_id": None,
+        "scorer": TieScorer(),
+    }
     first = [c["song_id"] for c in predict_next_stateless(**kwargs)]
     second = [c["song_id"] for c in predict_next_stateless(**kwargs)]
     assert first == second == sorted(first)
