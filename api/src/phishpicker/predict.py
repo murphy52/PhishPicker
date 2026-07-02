@@ -35,7 +35,10 @@ def predict_next_stateless(
         song_ids = song_ids_cache
     else:
         song_ids = [
-            r["song_id"] for r in read_conn.execute("SELECT song_id FROM songs").fetchall()
+            r["song_id"]
+            for r in read_conn.execute(
+                "SELECT song_id FROM songs ORDER BY song_id"
+            ).fetchall()
         ]
     if not song_ids:
         return []
@@ -58,7 +61,9 @@ def predict_next_stateless(
         scored, played_tonight=set(played_songs), played_in_run=played_in_run
     )
     scored = [(sid, s) for sid, s in scored if s > 0.0]
-    scored.sort(key=lambda x: x[1], reverse=True)
+    # Deterministic tiebreak: score desc, then song_id asc — the live
+    # next-song call must not flip between identical recomputes.
+    scored.sort(key=lambda x: (-x[1], x[0]))
 
     top = scored[:top_n]
     total = sum(s for _, s in top) or 1.0

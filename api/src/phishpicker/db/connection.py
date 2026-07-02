@@ -63,9 +63,52 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             pass
 
 
+def _rename_tables_with_old_set_checks(conn: sqlite3.Connection) -> list[str]:
+    """SQLite cannot ALTER a CHECK constraint, so live DBs created before
+    E2/E3 support must have live_show/live_songs rebuilt. Rename the stale
+    tables aside (legacy mode so FK clauses in other tables keep their
+    original text); apply_live_schema's executescript then recreates them
+    fresh and _finish_set_check_migration copies the rows back."""
+    renamed: list[str] = []
+    for table in ("live_show", "live_songs"):
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if row is None or "'E2'" in row["sql"]:
+            continue
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("PRAGMA legacy_alter_table = ON")
+        conn.execute(f"ALTER TABLE {table} RENAME TO {table}_migr_old")
+        conn.execute("PRAGMA legacy_alter_table = OFF")
+        renamed.append(table)
+    conn.commit()
+    return renamed
+
+
+def _finish_set_check_migration(conn: sqlite3.Connection, renamed: list[str]) -> None:
+    # Copy live_show before live_songs so the FK target exists first.
+    for table in ("live_show", "live_songs"):
+        if table not in renamed:
+            continue
+        cols = ", ".join(
+            r["name"]
+            for r in conn.execute(f"PRAGMA table_info({table}_migr_old)").fetchall()
+        )
+        conn.execute(
+            f"INSERT INTO {table} ({cols}) SELECT {cols} FROM {table}_migr_old"
+        )
+        conn.execute(f"DROP TABLE {table}_migr_old")
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = ON")
+
+
 def apply_live_schema(conn: sqlite3.Connection) -> None:
+    renamed = _rename_tables_with_old_set_checks(conn)
     conn.executescript(LIVE_SCHEMA_PATH.read_text())
     conn.commit()
+    if renamed:
+        _finish_set_check_migration(conn, renamed)
     _enable_wal(conn)
     for alter in [
         "ALTER TABLE live_songs ADD COLUMN source TEXT NOT NULL DEFAULT 'user'",

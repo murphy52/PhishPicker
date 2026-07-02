@@ -91,6 +91,18 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # The container runs uvicorn directly (no init-db step), so the live
+        # schema — including idempotent migrations like the E2/E3 CHECK
+        # rebuild and new scoring-game tables — must apply at startup. The
+        # read DB is owned by the ingest pipeline and is not touched here.
+        from phishpicker.db.connection import apply_live_schema
+
+        live = open_db(settings.live_db_path)
+        try:
+            apply_live_schema(live)
+        finally:
+            live.close()
+
         app.state.settings = settings
         app.state.model_path = settings.data_dir / "model.lgb"
         app.state.metrics_path = settings.data_dir / "metrics.json"
@@ -394,8 +406,25 @@ def create_app() -> FastAPI:
         return show
 
     @app.post("/live/song")
-    def add_song(body: LiveSongAppend, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
+    def add_song(
+        body: LiveSongAppend,
+        request: Request,
+        conn: sqlite3.Connection = Depends(get_live),  # noqa: B008
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+    ):
+        from phishpicker.scoring_store import capture_snapshot, ensure_frozen
+
+        # Freeze the pre-show bracket BEFORE the insert — build_preview reads
+        # entered songs, so freezing after would lose the opener pick.
+        try:
+            ensure_frozen(read, conn, body.show_id, scorer=request.app.state.scorer)
+        except Exception:
+            log.warning("bracket freeze failed for %s", body.show_id, exc_info=True)
         order = append_song(conn, body.show_id, body.song_id, body.set_number, body.trans_mark)
+        try:
+            capture_snapshot(read, conn, body.show_id, scorer=request.app.state.scorer)
+        except Exception:
+            log.warning("snapshot capture failed for %s", body.show_id, exc_info=True)
         return {"entered_order": order}
 
     @app.delete("/live/song/last")
@@ -404,8 +433,22 @@ def create_app() -> FastAPI:
         return {"deleted": ok}
 
     @app.post("/live/set-boundary")
-    def set_boundary(body: SetBoundary, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
+    def set_boundary(
+        body: SetBoundary,
+        request: Request,
+        conn: sqlite3.Connection = Depends(get_live),  # noqa: B008
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+    ):
         ok = advance_set(conn, body.show_id, body.set_number)
+        if ok:
+            # A set advance moves the next-song call to the new set's opener —
+            # capture it so scoring sees the call that was actually on screen.
+            from phishpicker.scoring_store import capture_snapshot
+
+            try:
+                capture_snapshot(read, conn, body.show_id, scorer=request.app.state.scorer)
+            except Exception:
+                log.warning("snapshot capture failed for %s", body.show_id, exc_info=True)
         return {"updated": ok}
 
     @app.post("/internal/reload")
@@ -480,6 +523,39 @@ def create_app() -> FastAPI:
             top_k=top_k,
             scorer=request.app.state.scorer,
         )
+
+    @app.get("/live/show/{show_id}/score")
+    def score_endpoint(
+        show_id: str,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.scoring_service import score_live_show
+
+        if get_live_show(live, show_id) is None:
+            raise HTTPException(status_code=404, detail="show not found")
+        return score_live_show(read, live, show_id)
+
+    @app.post("/live/show/{show_id}/scorecard")
+    def finalize_scorecard_endpoint(
+        show_id: str,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.scoring_service import finalize_scorecard
+
+        try:
+            return finalize_scorecard(read, live, show_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="show not found") from None
+
+    @app.get("/scorecards")
+    def scorecards_endpoint(
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.scoring_service import list_scorecards
+
+        return {"scorecards": list_scorecards(live)}
 
     class SyncStart(BaseModel):
         show_date: str
