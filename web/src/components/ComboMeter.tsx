@@ -49,9 +49,9 @@ export function ComboMeter({ streak }: Props) {
             className={`font-score text-lg leading-none transition-all duration-300 ${
               seg <= lit
                 ? seg === 3
-                  ? "text-live drop-shadow-[0_0_8px_rgba(251,191,36,0.8)]"
-                  : "text-live/90"
-                : "text-neutral-800"
+                  ? "drop-shadow-[0_0_8px_rgba(251,191,36,0.8)]"
+                  : ""
+                : "grayscale opacity-25"
             }`}
           >
             ⚡

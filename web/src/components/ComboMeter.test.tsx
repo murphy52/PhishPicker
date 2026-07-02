@@ -13,6 +13,14 @@ test("cold meter: nothing lit, next catch pays ×1", () => {
   expect(screen.getByTestId("combo-mult")).toHaveTextContent("×1");
 });
 
+test("unlit bolts are visually dimmed (emoji ignores CSS color)", () => {
+  render(<ComboMeter streak={1} />);
+  const segs = screen.getAllByTestId("combo-segment");
+  expect(segs[0].className).not.toContain("grayscale");
+  expect(segs[1].className).toContain("grayscale");
+  expect(segs[2].className).toContain("grayscale");
+});
+
 test("streak 1: one bolt, next catch ×1.5", () => {
   render(<ComboMeter streak={1} />);
   expect(litCount()).toBe(1);

@@ -91,6 +91,18 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # The container runs uvicorn directly (no init-db step), so the live
+        # schema — including idempotent migrations like the E2/E3 CHECK
+        # rebuild and new scoring-game tables — must apply at startup. The
+        # read DB is owned by the ingest pipeline and is not touched here.
+        from phishpicker.db.connection import apply_live_schema
+
+        live = open_db(settings.live_db_path)
+        try:
+            apply_live_schema(live)
+        finally:
+            live.close()
+
         app.state.settings = settings
         app.state.model_path = settings.data_dir / "model.lgb"
         app.state.metrics_path = settings.data_dir / "metrics.json"
