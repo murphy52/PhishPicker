@@ -43,6 +43,20 @@ CREATE TABLE IF NOT EXISTS live_score_state (
     updated_at     TEXT
 );
 
+-- Finalized post-show scorecards, one per show — the cross-show "best yet?"
+-- history. payload holds the full ScoreResult JSON for the recap page.
+CREATE TABLE IF NOT EXISTS scorecards (
+    show_id        TEXT PRIMARY KEY REFERENCES live_show(show_id) ON DELETE CASCADE,
+    show_date      TEXT NOT NULL,
+    finalized_at   TEXT NOT NULL,
+    combined       REAL NOT NULL,
+    foresight_total REAL NOT NULL,
+    live_total     REAL NOT NULL,
+    ppps           REAL NOT NULL,
+    max_streak     INTEGER NOT NULL,
+    payload        TEXT NOT NULL
+);
+
 -- Web Push subscriptions. endpoint is the full https URL returned by the
 -- browser's pushManager.subscribe(); its opaque tail identifies the device.
 -- p256dh + auth are the ECDH public key and auth secret the push service

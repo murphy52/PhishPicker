@@ -536,6 +536,27 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="show not found")
         return score_live_show(read, live, show_id)
 
+    @app.post("/live/show/{show_id}/scorecard")
+    def finalize_scorecard_endpoint(
+        show_id: str,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.scoring_service import finalize_scorecard
+
+        try:
+            return finalize_scorecard(read, live, show_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="show not found") from None
+
+    @app.get("/scorecards")
+    def scorecards_endpoint(
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+    ):
+        from phishpicker.scoring_service import list_scorecards
+
+        return {"scorecards": list_scorecards(live)}
+
     class SyncStart(BaseModel):
         show_date: str
 

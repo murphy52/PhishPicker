@@ -2,7 +2,9 @@
 live_score_state, derive the engine inputs, run score_show. Recompute-on-read —
 the model is never re-run here (capture-don't-recompute)."""
 
+import json
 import sqlite3
+from datetime import UTC, datetime
 
 from phishpicker.scoring import normalize_setlist, score_show
 from phishpicker.scoring_store import get_score_state
@@ -94,3 +96,73 @@ def score_live_show(
     result["model_sha"] = state.get("model_sha")
     result["frozen"] = bool(bracket)
     return result
+
+
+def finalize_scorecard(
+    read_conn: sqlite3.Connection, live_conn: sqlite3.Connection, show_id: str
+) -> dict:
+    """Run the same engine over the final setlist and persist the totals.
+    Idempotent — re-finalizing (e.g. after a late phish.net correction)
+    recomputes and overwrites the row. Returns the scorecard plus cross-show
+    "best yet?" context."""
+    show = live_conn.execute(
+        "SELECT show_date FROM live_show WHERE show_id = ?", (show_id,)
+    ).fetchone()
+    if show is None:
+        raise ValueError(f"unknown live show {show_id}")
+
+    result = score_live_show(read_conn, live_conn, show_id)
+    totals = result["totals"]
+    max_streak = max((a["streak"] for a in result["attributions"]), default=0)
+    card = {
+        "show_id": show_id,
+        "show_date": show["show_date"],
+        "finalized_at": datetime.now(UTC).isoformat(),
+        "combined": totals["combined"],
+        "foresight_total": totals["foresight_total"],
+        "live_total": totals["live_total"],
+        "ppps": totals["ppps"],
+        "max_streak": max_streak,
+    }
+    live_conn.execute(
+        "INSERT INTO scorecards (show_id, show_date, finalized_at, combined, "
+        "foresight_total, live_total, ppps, max_streak, payload) "
+        "VALUES (:show_id, :show_date, :finalized_at, :combined, "
+        ":foresight_total, :live_total, :ppps, :max_streak, :payload) "
+        "ON CONFLICT(show_id) DO UPDATE SET "
+        "finalized_at = excluded.finalized_at, combined = excluded.combined, "
+        "foresight_total = excluded.foresight_total, "
+        "live_total = excluded.live_total, ppps = excluded.ppps, "
+        "max_streak = excluded.max_streak, payload = excluded.payload",
+        {**card, "payload": json.dumps(result)},
+    )
+    live_conn.commit()
+
+    stats = live_conn.execute(
+        "SELECT COUNT(*) AS n, MAX(combined) AS best_total, MAX(ppps) AS best_ppps, "
+        "(SELECT COUNT(*) + 1 FROM scorecards o "
+        " WHERE o.combined > s.combined AND o.show_id != s.show_id) AS rank_by_total "
+        "FROM scorecards s WHERE s.show_id = ?",
+        (show_id,),
+    ).fetchone()
+    # MAX() above aggregates only the target row; query the table-wide bests.
+    bests = live_conn.execute(
+        "SELECT COUNT(*) AS n, MAX(combined) AS best_total, MAX(ppps) AS best_ppps "
+        "FROM scorecards"
+    ).fetchone()
+    context = {
+        "shows_scored": bests["n"],
+        "best_total": bests["best_total"],
+        "best_ppps": bests["best_ppps"],
+        "rank_by_total": stats["rank_by_total"],
+        "is_best": card["combined"] >= (bests["best_total"] or 0),
+    }
+    return {"scorecard": card, "context": context, "result": result}
+
+
+def list_scorecards(live_conn: sqlite3.Connection) -> list[dict]:
+    rows = live_conn.execute(
+        "SELECT show_id, show_date, finalized_at, combined, foresight_total, "
+        "live_total, ppps, max_streak FROM scorecards ORDER BY show_date DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
