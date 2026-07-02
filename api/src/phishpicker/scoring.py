@@ -133,6 +133,41 @@ def resolve_claims(
     return attributions
 
 
+def apply_combo(
+    actual: list[dict], attributions: list[dict], next_call_by_index: dict
+) -> list[dict]:
+    """Streak/combo pass, decoupled from the ledger.
+
+    - The streak counts consecutive correct #1 next-song calls, whichever
+      ledger banks the song. A wrong call resets it to 0.
+    - No captured call (key absent/None) is a NO-EVENT: the streak neither
+      advances nor resets — sync gaps and sha-mismatch skips must not punish
+      the combo. Index 0 (the opener) is always a no-event.
+    - The multiplier pays only on Live-banked points; Foresight-banked songs
+      advance the streak but keep final == base.
+    """
+    streak = 0
+    out: list[dict] = []
+    for att in attributions:
+        i = att["index"]
+        call = next_call_by_index.get(i) if i > 0 else None
+        if call is None:
+            called_right = None
+        else:
+            called_right = call == actual[i]["song_id"]
+            streak = streak + 1 if called_right else 0
+        if att["ledger"] == "live":
+            mult = COMBO.get(streak, COMBO_CAP)
+            final = att["base"] * mult
+        else:
+            mult = None
+            final = att["base"]
+        out.append(
+            {**att, "called_right": called_right, "streak": streak, "mult": mult, "final": final}
+        )
+    return out
+
+
 def normalize_setlist(rows: list[dict]) -> list[dict]:
     """Raw live_songs/setlist rows -> the scored setlist: soundcheck dropped,
     ordered by set then position-within-set."""
