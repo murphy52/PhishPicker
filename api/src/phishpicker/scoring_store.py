@@ -138,8 +138,18 @@ def capture_snapshot(
     after_count (corrections/advances don't change the count) — the reader
     takes the last one in append order.
 
-    Refuses to mix model shas in one scorecard (log + skip, per design)."""
+    Refuses to mix model shas in one scorecard (log + skip, per design).
+
+    CHEAP BY DESIGN: captures only the immediate next-song call (one
+    predict_next), not the full remaining setlist. Scoring's
+    next_call_by_index only reads remaining[0], and a full build_preview
+    (~18 predictions) on every song entry saturated the NAS CPU and made
+    add-song take 30s+. The look-ahead badge (which scanned the full
+    remaining list) degrades to 1-ahead — it is a 0-point v1 cosmetic.
+    """
     import time
+
+    from phishpicker.predict import predict_next
 
     state = get_score_state(live_conn, show_id)
     sha = getattr(scorer, "sha", None)
@@ -149,11 +159,35 @@ def capture_snapshot(
             show_id, sha, state["model_sha"],
         )
         return False
+    show = live_conn.execute(
+        "SELECT current_set FROM live_show WHERE show_id = ?", (show_id,)
+    ).fetchone()
+    if show is None:
+        return False
+    current_set = show["current_set"]
     t0 = time.monotonic()
-    remaining = _remaining_prediction(read_conn, live_conn, show_id, scorer)
     after_count = live_conn.execute(
         "SELECT COUNT(*) FROM live_songs WHERE show_id = ?", (show_id,)
     ).fetchone()[0]
+    pos_in_set = (
+        live_conn.execute(
+            "SELECT COUNT(*) FROM live_songs WHERE show_id = ? AND set_number = ?",
+            (show_id, current_set),
+        ).fetchone()[0]
+        + 1
+    )
+    cands = predict_next(read_conn, live_conn, show_id, top_n=1, scorer=scorer)
+    remaining = (
+        [
+            {
+                "set_number": current_set,
+                "position": pos_in_set,
+                "song_id": cands[0]["song_id"],
+            }
+        ]
+        if cands
+        else []
+    )
     append_snapshot(
         live_conn, show_id, {"after_count": after_count, "remaining": remaining}
     )
@@ -162,6 +196,19 @@ def capture_snapshot(
         show_id, after_count, time.monotonic() - t0,
     )
     return True
+
+
+def capture_snapshot_bg(db_path, live_db_path, show_id: str, scorer) -> None:
+    """Open fresh connections and capture — safe as a FastAPI BackgroundTask,
+    where the request-scoped connections are already closed by the time the
+    task runs. Best-effort: never raises into the background runner."""
+    from phishpicker.db.connection import open_db
+
+    try:
+        with open_db(db_path, read_only=True) as read, open_db(live_db_path) as live:
+            capture_snapshot(read, live, show_id, scorer=scorer)
+    except Exception:
+        log.warning("background capture failed for %s", show_id, exc_info=True)
 
 
 def append_snapshot(

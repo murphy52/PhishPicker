@@ -14,6 +14,33 @@ from phishpicker.scoring_store import (
 )
 
 
+def test_capture_is_cheap_no_build_preview(
+    seeded_read_db, live_conn, seeded_live_show, monkeypatch
+):
+    """Capture must be cheap: a single next-song prediction, NOT the full
+    18-slot build_preview (which dominated the write-path latency). Proven by
+    making build_preview blow up and asserting capture still succeeds."""
+    import phishpicker.scoring_store as store
+    from phishpicker.live import append_song
+    from phishpicker.model.scorer import HeuristicScorer
+
+    def _boom(*a, **k):
+        raise AssertionError("capture must not call build_preview")
+
+    monkeypatch.setattr(store, "_remaining_prediction", _boom)
+
+    scorer = HeuristicScorer()
+    upsert_score_state(
+        live_conn, seeded_live_show, model_sha=scorer.sha, frozen_bracket=[]
+    )
+    append_song(live_conn, seeded_live_show, song_id=100, set_number="1")
+    assert capture_snapshot(seeded_read_db, live_conn, seeded_live_show, scorer=scorer)
+    remaining = get_score_state(live_conn, seeded_live_show)["snapshots"][0]["remaining"]
+    assert len(remaining) == 1  # only the immediate next-song call
+    assert remaining[0]["set_number"] == "1"
+    assert remaining[0]["position"] == 2  # slot after the entered opener
+
+
 def test_manual_appends_capture_snapshots(seeded_client, live_show_id, tmp_path):
     for song_id in (100, 101):
         r = seeded_client.post(

@@ -8,7 +8,15 @@ from fastapi.testclient import TestClient
 def test_app_startup_initializes_live_schema(tmp_path, monkeypatch):
     monkeypatch.setenv("PHISHNET_API_KEY", "test-key")
     monkeypatch.setenv("PHISHPICKER_ADMIN_TOKEN", "test-token")
-    monkeypatch.setenv("PHISHPICKER_DATA_DIR", str(tmp_path))  # empty dir
+    monkeypatch.setenv("PHISHPICKER_DATA_DIR", str(tmp_path))
+
+    # The read DB is owned by the ingest pipeline and always exists in prod;
+    # create it (schema only) so create_show's read dependency resolves.
+    from phishpicker.db.connection import apply_schema, open_db
+
+    read = open_db(tmp_path / "phishpicker.db")
+    apply_schema(read)
+    read.close()
 
     from phishpicker.app import create_app
 

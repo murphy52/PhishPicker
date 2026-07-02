@@ -29,6 +29,23 @@ def test_freeze_is_idempotent(seeded_read_db, live_conn, seeded_live_show):
     assert get_score_state(live_conn, seeded_live_show)["frozen_bracket"] == first
 
 
+def test_create_show_freezes_bracket(seeded_client, tmp_path):
+    """Freezing happens at show-create (0 songs guaranteed), so no full
+    build_preview runs on the hot add-song path."""
+    r = seeded_client.post(
+        "/live/show", json={"show_date": "2026-04-23", "venue_id": 1597}
+    )
+    show_id = r.json()["show_id"]
+    live = open_db(tmp_path / "live.db")
+    try:
+        st = get_score_state(live, show_id)
+        assert st is not None and st["frozen_bracket"], "create must freeze the bracket"
+        slots = {(b["set_number"], b["position"]) for b in st["frozen_bracket"]}
+        assert ("1", 1) in slots  # opener captured (0 songs at create time)
+    finally:
+        live.close()
+
+
 def test_first_manual_append_freezes_before_insert(seeded_client, live_show_id, tmp_path):
     r = seeded_client.post(
         "/live/song",
