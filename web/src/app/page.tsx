@@ -8,7 +8,9 @@ import { ShowHeader, type UpcomingShow } from "@/components/ShowHeader";
 import { FullPreview } from "@/components/FullPreview";
 import { PullToRefresh } from "@/components/PullToRefresh";
 import { SlotAltsModal } from "@/components/SlotAltsModal";
+import { ScoreTeaser } from "@/components/ScoreTeaser";
 import { useLiveShow, isStaleLiveShow } from "@/lib/liveShow";
+import { useScore } from "@/lib/score";
 import {
   applyPendingMutation,
   usePreview,
@@ -49,6 +51,8 @@ export default function Home() {
     showId,
     playedSongs.length,
   );
+
+  const { data: score } = useScore(showId, playedSongs.length);
 
   const { data: upcoming, mutate: mutateUpcoming } = useSWR<UpcomingShow | null>(
     "/api/upcoming",
@@ -279,6 +283,10 @@ export default function Home() {
           </div>
         ) : (
           <>
+            {score && score.attributions.length > 0 && (
+              <ScoreTeaser totals={score.totals} />
+            )}
+
             <PlayedStrip songs={playedSongs} onUndo={handleUndo} />
 
             <FullPreview
