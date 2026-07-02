@@ -134,7 +134,60 @@ export function buildFeedEvents(
     .reverse();
 }
 
+export interface Scorecard {
+  show_id: string;
+  show_date: string;
+  finalized_at: string;
+  combined: number;
+  foresight_total: number;
+  live_total: number;
+  ppps: number;
+  max_streak: number;
+}
+
+export interface ScorecardContext {
+  shows_scored: number;
+  best_total: number | null;
+  best_ppps: number | null;
+  rank_by_total: number;
+  is_best: boolean;
+}
+
+export interface FinalizeResponse {
+  scorecard: Scorecard;
+  context: ScorecardContext;
+  result: ScoreResponse;
+}
+
+export interface RecapSections {
+  foresight: Attribution[];
+  live: Attribution[];
+  /** The night's humbling: plain misses + bustouts. */
+  beatTheApp: Attribution[];
+  maxStreak: number;
+}
+
+export function recapBreakdown(result: ScoreResponse): RecapSections {
+  const atts = result.attributions;
+  return {
+    foresight: atts.filter((a) => a.ledger === "foresight"),
+    live: atts.filter((a) => a.ledger === "live"),
+    beatTheApp: atts.filter((a) => a.ledger === null),
+    maxStreak: Math.max(0, ...atts.map((a) => a.streak)),
+  };
+}
+
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+/** POST-finalize (idempotent server-side) and return the scorecard bundle. */
+export function useScorecard(showId: string | null) {
+  const key = showId ? `/api/live/show/${showId}/scorecard` : null;
+  return useSWR<FinalizeResponse>(
+    key,
+    (url: string) => fetch(url, { method: "POST" }).then((r) => r.json()),
+    { revalidateOnFocus: false, dedupingInterval: 30_000 },
+  );
+}
 
 /**
  * Poll the recompute-on-read score. `playedCount` (when known) busts the key

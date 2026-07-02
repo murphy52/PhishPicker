@@ -2,6 +2,7 @@ import {
   buildFeedEvents,
   nextMultiplier,
   reasonLabel,
+  recapBreakdown,
   type Attribution,
 } from "./score";
 
@@ -115,6 +116,33 @@ test("no correction on identical or brand-new rows", () => {
     prev,
   );
   expect(events.every((e) => !e.corrected)).toBe(true);
+});
+
+test("recapBreakdown splits ledgers and finds the hottest run", () => {
+  const result = {
+    attributions: [
+      att({ index: 0, ledger: "foresight", final: 60, streak: 0 }),
+      att({ index: 1, ledger: "live", final: 30, streak: 1 }),
+      att({ index: 2, ledger: "live", final: 45, streak: 2 }),
+      att({ index: 3, missed: true, streak: 0 }),
+      att({ index: 4, bustout: true, streak: 0 }),
+    ],
+    totals: {
+      foresight_total: 60,
+      live_total: 75,
+      combined: 135,
+      ppps: 33.75,
+      hit_counts: {},
+    },
+    pick_outcomes: [],
+    model_sha: null,
+    frozen: true,
+  };
+  const recap = recapBreakdown(result);
+  expect(recap.foresight.map((a) => a.index)).toEqual([0]);
+  expect(recap.live.map((a) => a.index)).toEqual([1, 2]);
+  expect(recap.beatTheApp.map((a) => a.index)).toEqual([3, 4]);
+  expect(recap.maxStreak).toBe(2);
 });
 
 test("nextMultiplier ladder", () => {

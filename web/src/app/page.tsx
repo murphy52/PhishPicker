@@ -297,13 +297,12 @@ export default function Home() {
               onSetChange={handleSetChange}
             />
 
-            <button
-              type="button"
-              onClick={clearShow}
-              className="text-xs text-neutral-600 hover:text-red-400 self-start mt-2"
+            <a
+              href={`/recap?show=${showId}`}
+              className="text-xs text-neutral-600 hover:text-indigo-400 self-start mt-2"
             >
-              End show
-            </button>
+              End show → recap
+            </a>
           </>
         )}
       </main>
