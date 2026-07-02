@@ -29,6 +29,20 @@ CREATE TABLE IF NOT EXISTS live_show_meta (
     encore_size INTEGER NOT NULL DEFAULT 2
 );
 
+-- Scoring-game state: one row per live show. frozen_bracket is the pre-show
+-- predicted setlist (locked before the first song); snapshots appends the
+-- full remaining-setlist prediction each time an entry changes it. Scoring
+-- is a pure recompute over this JSON + live_songs — the model is never
+-- re-run for scoring (capture-don't-recompute).
+CREATE TABLE IF NOT EXISTS live_score_state (
+    show_id        TEXT PRIMARY KEY REFERENCES live_show(show_id) ON DELETE CASCADE,
+    model_sha      TEXT,
+    frozen_bracket TEXT,   -- JSON: [{"set_number","position","song_id"}]
+    snapshots      TEXT NOT NULL DEFAULT '[]',
+                           -- JSON: [{"after_count":N, "remaining":[{"set_number","position","song_id"}]}]
+    updated_at     TEXT
+);
+
 -- Web Push subscriptions. endpoint is the full https URL returned by the
 -- browser's pushManager.subscribe(); its opaque tail identifies the device.
 -- p256dh + auth are the ECDH public key and auth secret the push service
