@@ -218,6 +218,30 @@ def summarize(attributions: list[dict]) -> dict:
     }
 
 
+def score_show(
+    bracket: list[dict],
+    actual: list[dict],
+    next_call_by_index: dict,
+    *,
+    early_called_indices: frozenset | set = frozenset(),
+    bustout_song_ids: frozenset | set = frozenset(),
+) -> dict:
+    """The whole engine: frozen bracket + normalized actual setlist + captured
+    live calls -> per-song attributions, ledger totals, pick outcomes."""
+    foresight, pick_outcomes = score_foresight(bracket, actual)
+    live = score_live(actual, next_call_by_index)
+    attributions = apply_badges(
+        apply_combo(actual, resolve_claims(foresight, live, actual), next_call_by_index),
+        early_called_indices=early_called_indices,
+        bustout_song_ids=bustout_song_ids,
+    )
+    return {
+        "attributions": attributions,
+        "totals": summarize(attributions),
+        "pick_outcomes": pick_outcomes,
+    }
+
+
 def normalize_setlist(rows: list[dict]) -> list[dict]:
     """Raw live_songs/setlist rows -> the scored setlist: soundcheck dropped,
     ordered by set then position-within-set."""
