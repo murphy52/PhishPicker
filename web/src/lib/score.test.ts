@@ -1,9 +1,11 @@
 import {
   buildFeedEvents,
+  groupBracketBySet,
   nextMultiplier,
   reasonLabel,
   recapBreakdown,
   type Attribution,
+  type PickOutcome,
 } from "./score";
 
 function att(overrides: Partial<Attribution>): Attribution {
@@ -143,6 +145,26 @@ test("recapBreakdown splits ledgers and finds the hottest run", () => {
   expect(recap.live.map((a) => a.index)).toEqual([1, 2]);
   expect(recap.beatTheApp.map((a) => a.index)).toEqual([3, 4]);
   expect(recap.maxStreak).toBe(2);
+});
+
+test("groupBracketBySet orders sets and positions, tags outcomes", () => {
+  const outcomes: PickOutcome[] = [
+    { pick: { set_number: "E", position: 1, song_id: 5 }, reason: "opener", base: 60, actual_index: 8, name: "Tweeprise" },
+    { pick: { set_number: "1", position: 2, song_id: 2 }, reason: "absent", base: 0, actual_index: null, name: "Reba" },
+    { pick: { set_number: "1", position: 1, song_id: 1 }, reason: "opener", base: 60, actual_index: 0, name: "Chalk Dust" },
+  ];
+  const groups = groupBracketBySet(outcomes);
+  expect(groups.map((g) => g.label)).toEqual(["Set 1", "Encore"]);
+  expect(groups[0].picks.map((p) => p.name)).toEqual(["Chalk Dust", "Reba"]);
+  expect(groups[0].picks[0].hit).toBe(true); // played, banked points
+  expect(groups[0].picks[1].hit).toBe(false); // absent
+});
+
+test("groupBracketBySet handles multi-encore labels", () => {
+  const outcomes: PickOutcome[] = [
+    { pick: { set_number: "E2", position: 1, song_id: 9 }, reason: "somewhere", base: 5, actual_index: 12, name: "Tube" },
+  ];
+  expect(groupBracketBySet(outcomes)[0].label).toBe("Encore 2");
 });
 
 test("nextMultiplier ladder", () => {

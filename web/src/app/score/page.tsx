@@ -94,6 +94,14 @@ export default function ScorePage() {
         ) : (
           <>
             <ScoreHero totals={score.totals} frozen={score.frozen} />
+            {score.frozen && (
+              <Link
+                href={`/predicted${showId ? `?show=${showId}` : ""}`}
+                className="-mt-2 self-center text-xs text-foresight/80 hover:text-foresight"
+              >
+                🔮 See the pre-show bracket →
+              </Link>
+            )}
             <NextCallCard
               call={pendingCall}
               isOpener={playedCount === 0}
