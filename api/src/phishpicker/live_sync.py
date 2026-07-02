@@ -18,6 +18,7 @@ from phishpicker.live import append_song, get_live_show, replace_song_at
 from phishpicker.phishnet.client import PhishNetClient
 from phishpicker.predict import predict_next_stateless
 from phishpicker.push import send_push
+from phishpicker.scoring_store import capture_snapshot, ensure_frozen
 
 log = logging.getLogger(__name__)
 
@@ -200,6 +201,15 @@ def sync_show_with_phishnet(
         do_rank = scorer is not None
         pending_pushes: list[dict] = []
 
+        # Scoring game: freeze the pre-show bracket BEFORE the first insert
+        # (sync is the likely first-writer on sync-enabled nights), then
+        # capture a prediction snapshot after every append/override below.
+        if scorer is not None and actions:
+            try:
+                ensure_frozen(read_rw, live, show_id, scorer=scorer)
+            except Exception:
+                log.warning("bracket freeze failed for %s", show_id, exc_info=True)
+
         appended = overrides = bustouts = 0
         for a in actions:
             if a.kind == "append":
@@ -238,6 +248,13 @@ def sync_show_with_phishnet(
                 virtual_played = virtual_played + [a.song_id]
                 last_set = a.set_number
                 last_trans_mark = ","
+                if scorer is not None:
+                    try:
+                        capture_snapshot(read_rw, live, show_id, scorer=scorer)
+                    except Exception:
+                        log.warning(
+                            "snapshot capture failed for %s", show_id, exc_info=True
+                        )
 
                 if vapid_private_key:
                     rank_str = (
@@ -266,6 +283,13 @@ def sync_show_with_phishnet(
                     superseded_by=a.old_song_id,
                 )
                 overrides += 1
+                if scorer is not None:
+                    try:
+                        capture_snapshot(read_rw, live, show_id, scorer=scorer)
+                    except Exception:
+                        log.warning(
+                            "snapshot capture failed for %s", show_id, exc_info=True
+                        )
             if a.is_bustout:
                 bustouts += 1
 

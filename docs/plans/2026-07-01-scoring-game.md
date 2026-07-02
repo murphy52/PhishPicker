@@ -29,13 +29,12 @@ from phishpicker.live import create_live_show, append_song
 
 def test_append_e2_encore_song(tmp_path):
     c = open_db(tmp_path / "live.db"); apply_live_schema(c)
-    show = create_live_show(c, show_date="2026-07-07", venue_id=1)
-    append_song(c, show_id=show["show_id"], song_id=1, set_number="E")
-    append_song(c, show_id=show["show_id"], song_id=2, set_number="E2")  # must not raise
+    show_id = create_live_show(c, show_date="2026-07-07", venue_id=1)  # returns str
+    append_song(c, show_id, song_id=1, set_number="E")
+    append_song(c, show_id, song_id=2, set_number="E2")  # must not raise
     rows = c.execute("SELECT set_number FROM live_songs ORDER BY entered_order").fetchall()
     assert [r["set_number"] for r in rows] == ["E", "E2"]
 ```
-(Confirm the real signatures of `create_live_show`/`append_song` in `api/src/phishpicker/live.py` and adjust kwargs.)
 
 **Step 2 — Run, expect fail:** `uv run pytest tests/test_e2_encore.py -v` → FAIL (CHECK constraint / IntegrityError).
 
@@ -116,13 +115,31 @@ def normalize_setlist(rows):
 
 ---
 
+### Task 0.4: `build_preview` handles `E2`/`E3` (mid-encore previews must not corrupt)
+
+Task 0.1 makes `E2` rows reachable, but `build_preview` (`live_preview.py`) hardcodes `set_order = {"1":1,"2":2,"E":3}` and its structure loop only emits sets 1/2/E. During a double encore: entered `E2` songs are invisible to the slot loop (never join `virtual_played`), and with `current_set='E2'`, `_n_for` treats sets 1/2/E as *future* and re-opens them with default predicted slots — corrupting exactly the snapshots Task 2.3 captures. Fix before Phase 2.
+
+**Files:** modify `api/src/phishpicker/live_preview.py`; test `api/tests/test_preview_e2.py`
+
+**Step 1 — Failing test:** seed a live show with full sets 1/2, an `E` song, an `E2` song, `current_set='E2'`. Assert: (a) sets 1/2/E show *only* entered slots (no phantom predicted slots), (b) the entered `E2` song appears in the preview and in `virtual_played` (i.e., it is excluded from any predicted slot's candidates), (c) exactly one predicted slot exists for the next `E2` song.
+
+**Step 3 — Implement:**
+- Extend `set_order` to `{"1":1,"2":2,"E":3,"E2":4,"E3":5}` so past-set logic closes sets correctly when `current_set` is `E2`/`E3`.
+- Make `structure` dynamic: the base `[("1",set1),("2",set2),("E",enc)]` plus, when `current_set` is `E2`/`E3`, append `(current_set, _n_for(current_set, 1))` so entered `E2`/`E3` songs render and one next-song slot exists.
+- **Ruling (documented, accepted for v1):** the frozen bracket only ever predicts `("E", 1..encore_size)` — we never *predict into* `E2`/`E3` pre-show. A real second-encore song arriving as `("E2",1)` scores Foresight "somewhere" (5). The design's "`E2` exact = 40" tier is unreachable in v1.
+
+**Step 5 — Commit:** `git commit -am "fix(preview): handle E2/E3 sets in build_preview"`
+
+---
+
 ## Phase 1 — Pure scoring engine (`scoring.py`)
 
 The engine takes plain dicts/lists (no DB) so it is trivially testable. Inputs:
 - `bracket`: `list[{"set_number","position","song_id"}]` — frozen pre-show picks.
 - `actual`: normalized setlist (from Task 0.3).
-- `next_call_by_index`: `dict[int, int|None]` — the model's #1 next-song prediction that was live right *before* `actual[i]` was revealed, for `i>=1` (derived from captured snapshots by the caller; `None` if no call).
+- `next_call_by_index`: `dict[int, int|None]` — the model's #1 next-song prediction that was live right *before* `actual[i]` was revealed, for `i>=1` (derived from captured snapshots by the caller). **Semantics: key absent or `None` = no call was captured (sync gap, sha-mismatch skip) → a no-event: the streak neither advances nor resets. A present-but-wrong `song_id` = a miss → streak resets.** Only genuine wrong calls punish the combo.
 - `early_called_indices`: `set[int]` — actual indices the model had correctly placed 2+ slots ahead in an earlier snapshot (for the `🔭` badge only). Optional; empty set fine for v1.
+- `bustout_song_ids`: `set[int]` — song_ids that are *genuine* bustouts/debuts, supplied by the caller (derived from `songs.is_bustout_placeholder`, which `live_sync._resolve_or_insert_song` already sets, plus any gap-threshold rule later). The engine must NOT infer bustouts from "no claim + no correct call" — that's just a miss. Misses stay in the PPS denominator and are listed as "songs that beat the app"; only `bustout_song_ids` members get the `🎸 BUSTOUT` flag and PPS exclusion.
 
 Point constants (module-level, tunable):
 ```python
@@ -136,7 +153,7 @@ OPENER_SLOTS = {("1",1), ("2",1), ("3",1), ("4",1), ("E",1)}  # E2/E3 openers NO
 
 **Files:** modify `scoring.py`; test `api/tests/test_scoring_foresight.py`
 
-**Step 1 — Failing tests:** given a bracket pick song and the actual setlist, classify best occurrence:
+**Step 1 — Failing tests:** given a bracket pick song and the actual setlist, classify best occurrence. (Test sketches below use tuples for brevity — the real API takes the same dict shape as the engine inputs: `{"set_number","position","song_id"}`. Pick one shape and use it everywhere.)
 ```python
 from phishpicker.scoring import classify_foresight
 # actual: [("1",1,10),("1",2,20),("2",1,30)]
@@ -165,6 +182,7 @@ Return the *best* (exact > right_set > somewhere). "Consumed once" bookkeeping h
 - For each bracket pick, classify; if `exact` and `(set,position) in OPENER_SLOTS` → base `PTS_OPENER`.
 - Map the claim to the *actual index* it matched (best occurrence). If two bracket picks match the same actual occurrence (shouldn't happen — bracket is deduped), keep the higher base.
 - For a repeated identical song_id: each actual occurrence can be matched by at most one pick; extra occurrences get no Foresight claim (eligible for Live).
+- Also return **per-pick outcomes** (including `absent` picks that matched nothing) alongside the per-actual-index claims — the Phase-5 recap needs "which bracket picks whiffed" and shouldn't re-derive it. Suggested shape: `(claims_by_actual_index, pick_outcomes)`.
 
 **Step 5 — Commit:** `feat(scoring): foresight ledger with opener bonus`
 
@@ -193,31 +211,33 @@ Return the *best* (exact > right_set > somewhere). "Consumed once" bookkeeping h
 - streak counts consecutive correct next-song calls regardless of ledger;
 - a correct call that banks Foresight advances the streak but is NOT multiplied;
 - a Live-banked call during a ×2 streak → 60;
-- a miss (or bustout: no bracket + no correct call) resets streak to 0;
+- a miss (wrong call — including a bustout the model called something else for) resets streak to 0;
+- **no captured call (`next_call_by_index.get(i)` is None/absent) is a no-event: streak neither advances nor resets** (sync gaps and sha-mismatch skips must not punish the combo);
 - combo caps at ×2 (3rd, 4th… all ×2).
 
 **Step 3 — Implement** `apply_combo(actual, attributions, next_call_by_index)`:
-- iterate `i` in order; `called_right = next_call_by_index.get(i) == actual[i].song_id`;
-- if `called_right`: `streak += 1`; if attribution[i].ledger == "live": `mult = COMBO.get(streak, 2.0)`; `final = base * mult`;
-- else: `streak = 0`; live/foresight `final = base`;
+- iterate `i` in order; `call = next_call_by_index.get(i)`;
+- if `call is None`: no-event — streak unchanged, `final = base`;
+- elif `call == actual[i].song_id` (called right): `streak += 1`; if attribution[i].ledger == "live": `mult = COMBO.get(streak, 2.0)`; `final = base * mult`;
+- else (wrong call): `streak = 0`; live/foresight `final = base`;
 - Foresight-banked songs: `final = base` (never multiplied) even if `called_right`.
 - record `streak` and `mult` per index for the UI timeline.
 
 **Step 5 — Commit:** `feat(scoring): combo multiplier decoupled from ledger`
 
-### Task 1.6: Look-ahead badge (0 points) + bustout list
+### Task 1.6: Look-ahead badge (0 points) + bustout/miss flags
 
-**Step 1 — Failing tests:** an actual index in `early_called_indices` gets a `called_early=True` flag and 0 points; a song with no bracket claim and no correct live call is flagged `bustout=True`.
+**Step 1 — Failing tests:** an actual index in `early_called_indices` gets a `called_early=True` flag and 0 points; a song whose `song_id` is in `bustout_song_ids` is flagged `bustout=True`; a song with no bracket claim and no correct live call that is NOT in `bustout_song_ids` is flagged `missed=True` (plain miss — no celebration, stays in PPS denominator).
 
-**Step 3 — Implement** flags in the attribution list. No points.
+**Step 3 — Implement** flags in the attribution list. No points. Bustout status comes ONLY from the `bustout_song_ids` input — never inferred from misses (see Phase-1 inputs).
 
-**Step 5 — Commit:** `feat(scoring): called-early badge + bustout flags`
+**Step 5 — Commit:** `feat(scoring): called-early badge + bustout/miss flags`
 
 ### Task 1.7: Totals + points-per-predictable-song
 
-**Step 1 — Failing tests:** `foresight_total`, `live_total`, `combined`; PPS denominator excludes bustouts/debuts.
+**Step 1 — Failing tests:** `foresight_total`, `live_total`, `combined`; PPS denominator excludes only `bustout=True` songs — a plain `missed=True` song stays in the denominator (the metric must not self-grade by dropping whiffs).
 
-**Step 3 — Implement** `summarize(attributions) -> {foresight_total, live_total, combined, ppps, hit_counts}` where `ppps = combined / max(1, num_non_bustout_songs)`.
+**Step 3 — Implement** `summarize(attributions) -> {foresight_total, live_total, combined, ppps, hit_counts}` where `ppps = combined / max(1, num_non_bustout_songs)` and `num_non_bustout_songs` counts all actual songs minus `bustout=True` ones.
 
 **Step 5 — Commit:** `feat(scoring): score totals and points-per-predictable-song`
 
@@ -225,7 +245,7 @@ Return the *best* (exact > right_set > somewhere). "Consumed once" bookkeeping h
 
 **Step 1 — Failing test:** a hand-built imaginary show (the design doc's Chalk Dust / Reba / Ghost / Tweezer / Fluffhead / Loving Cup example) with a known bracket + `next_call_by_index` → assert exact per-song attributions, ledger totals, streak timeline. This is the regression anchor.
 
-**Step 3 — Implement** the top-level `score_show(bracket, actual, next_call_by_index, early_called_indices) -> ScoreResult` composing 1.1–1.7.
+**Step 3 — Implement** the top-level `score_show(bracket, actual, next_call_by_index, early_called_indices, bustout_song_ids) -> ScoreResult` composing 1.1–1.7.
 
 **Step 5 — Commit:** `feat(scoring): end-to-end score_show engine`
 
@@ -249,17 +269,20 @@ TDD: helper `get_score_state`/`upsert_score_state` round-trips JSON. Commit.
 
 ### Task 2.2: Freeze the bracket at show start
 
-**Files:** new `api/src/phishpicker/scoring_store.py` (freeze/capture helpers); modify live entry path or add `/live/show/{id}/freeze`.
-- `freeze_bracket(read_conn, live_conn, show_id)`: call `build_preview(..., top_k=1)` with zero entered songs; extract `[{set_number, position, song_id: top_k[0].song_id} for slot in slots if slot.state=="predicted"]`; store as `frozen_bracket`, stamp `model_sha`.
-- Trigger: on first `append_song` for a show if `frozen_bracket` is null (idempotent), OR an explicit freeze endpoint.
-TDD: freeze twice → bracket unchanged (idempotent); bracket is deduped one-per-slot. Commit.
+**Files:** new `api/src/phishpicker/scoring_store.py` (freeze/capture helpers); modify BOTH live entry paths (manual `/live/song` in `app.py` AND `sync_show_with_phishnet` in `live_sync.py`); optionally also an explicit `/live/show/{id}/freeze` endpoint.
+- `ensure_frozen(read_conn, live_conn, show_id)`: if `frozen_bracket` is null, call `build_preview(..., top_k=1)`; extract `[{set_number, position, song_id: top_k[0].song_id} for slot in slots if slot.state=="predicted"]`; store as `frozen_bracket`, stamp `model_sha`. Idempotent no-op otherwise.
+- **CRITICAL ORDERING:** `build_preview` reads entered songs from the live DB and has no "pretend zero entered" parameter. If the freeze runs *after* the first insert, the opener slot comes back as `state="entered"` (no `top_k`) and the bracket silently loses the opener pick — the 60-pt slot. `ensure_frozen` MUST run **before** the first `live_songs` insert, in **both** write paths (the sync loop is the likely first-writer on sync-enabled nights).
+TDD: freeze twice → bracket unchanged (idempotent); bracket is deduped one-per-slot; **freeze triggered via the append path includes the opener slot** (assert the bracket has a `("1",1)` entry). Commit.
 
 ### Task 2.3: Capture live-prediction snapshots
 
-**Files:** modify `api/src/phishpicker/live_sync.py` (the loop ~210-227 already computes a preview/prediction and discards it) and the manual `append_song` path.
-- After each entry/change, compute the remaining prediction (`build_preview(..., top_k=1)`), reduce to `[{set_number, position, song_id}]` for `state=="predicted"` slots, and append `{"after_count": len(entered), "remaining": [...]}` to `snapshots`.
+**Files:** modify `api/src/phishpicker/live_sync.py` (the append loop ~204-258 already computes a `predict_next_stateless` rank per append and discards the rest), the manual `append_song` path, AND the correction (`replace_song_at`) + `advance_set` paths.
+- After each change, compute the remaining prediction (`build_preview(..., top_k=1)`), reduce to `[{set_number, position, song_id}]` for `state=="predicted"` slots, and append `{"after_count": len(entered), "remaining": [...]}` to `snapshots`.
+- **Capture on ALL prediction-changing events:** song append, correction (`replace_song_at`), and `advance_set` (a set advance moves the next-song call from a speculative set-closer to the next set's opener). Corrections and set advances don't change the song count, so **multiple snapshots can share an `after_count` — that's expected; last-appended wins at read time** (Task 3.1).
 - Refuse to append if `model_sha` differs from stored (log + skip, per design).
-TDD: entering N songs yields N snapshots; each snapshot's first remaining entry = the live next-song call. Commit.
+- **Concurrency:** manual entry and the sync poller write from different connections; appending to the `snapshots` JSON blob is an app-level read-modify-write. Wrap it in `BEGIN IMMEDIATE` (or route all captures through one helper that does) so simultaneous writers can't drop a snapshot.
+- **Perf note (measure, don't guess):** this replaces one prediction call per append with a full `build_preview` (~18 slot predictions + one hit-rank prediction per already-entered song). Fine at a 60s poll cadence with the per-show caches, but log the capture duration; revisit if it grows past ~2s late in a show.
+TDD: entering N songs yields N snapshots; each snapshot's first remaining entry = the live next-song call; a correction appends a snapshot with a duplicate `after_count`; `advance_set` appends a snapshot. Commit.
 
 ---
 
@@ -271,9 +294,10 @@ TDD: entering N songs yields N snapshots; each snapshot's first remaining entry 
 - `scoring_service.score_live_show(read_conn, live_conn, show_id)`:
   - load `live_songs` → `normalize_setlist`;
   - load `frozen_bracket`, `snapshots`;
-  - derive `next_call_by_index`: for actual index `i>=1`, find the snapshot with `after_count == i` (the prediction made right after `i-1` songs were entered) and take its first remaining entry's `song_id`;
+  - derive `next_call_by_index`: for actual index `i>=1`, find the **LAST** snapshot (in append order) with `after_count == i` — corrections/set-advances create duplicates, and the last one is what was actually on screen when `actual[i]` revealed — and take its first remaining entry's `song_id`; no matching snapshot → omit the key (no-event, per Phase-1 semantics);
   - derive `early_called_indices` from earlier snapshots (song correctly placed when it was `after_count <= i-2`); optional for v1;
-  - call `score_show`; return JSON (totals, per-song attributions with reason/beaten_claim, streak timeline, badges, bustouts).
+  - derive `bustout_song_ids` from `songs.is_bustout_placeholder` for the actual setlist's song_ids;
+  - call `score_show`; return JSON (totals, per-song attributions with reason/beaten_claim, streak timeline, badges, bustouts, missed-pick list).
 - Endpoint returns that JSON.
 TDD: seed a live show + bracket + snapshots, hit the endpoint, assert totals match a Phase-1 fixture. Commit.
 

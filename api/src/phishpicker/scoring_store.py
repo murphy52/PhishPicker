@@ -126,6 +126,44 @@ def ensure_frozen(
     return True
 
 
+def capture_snapshot(
+    read_conn: sqlite3.Connection,
+    live_conn: sqlite3.Connection,
+    show_id: str,
+    *,
+    scorer,
+) -> bool:
+    """Capture the current remaining prediction after a prediction-changing
+    event (append, correction, set advance). Multiple snapshots may share an
+    after_count (corrections/advances don't change the count) — the reader
+    takes the last one in append order.
+
+    Refuses to mix model shas in one scorecard (log + skip, per design)."""
+    import time
+
+    state = get_score_state(live_conn, show_id)
+    sha = getattr(scorer, "sha", None)
+    if state is not None and state["model_sha"] and sha != state["model_sha"]:
+        log.warning(
+            "capture skipped for %s: scorer sha %s != stored %s",
+            show_id, sha, state["model_sha"],
+        )
+        return False
+    t0 = time.monotonic()
+    remaining = _remaining_prediction(read_conn, live_conn, show_id, scorer)
+    after_count = live_conn.execute(
+        "SELECT COUNT(*) FROM live_songs WHERE show_id = ?", (show_id,)
+    ).fetchone()[0]
+    append_snapshot(
+        live_conn, show_id, {"after_count": after_count, "remaining": remaining}
+    )
+    log.info(
+        "captured snapshot for %s (after_count=%d) in %.2fs",
+        show_id, after_count, time.monotonic() - t0,
+    )
+    return True
+
+
 def append_snapshot(
     live_conn: sqlite3.Connection, show_id: str, snapshot: dict
 ) -> None:

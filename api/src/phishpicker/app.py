@@ -400,7 +400,7 @@ def create_app() -> FastAPI:
         conn: sqlite3.Connection = Depends(get_live),  # noqa: B008
         read: sqlite3.Connection = Depends(get_read),  # noqa: B008
     ):
-        from phishpicker.scoring_store import ensure_frozen
+        from phishpicker.scoring_store import capture_snapshot, ensure_frozen
 
         # Freeze the pre-show bracket BEFORE the insert — build_preview reads
         # entered songs, so freezing after would lose the opener pick.
@@ -409,6 +409,10 @@ def create_app() -> FastAPI:
         except Exception:
             log.warning("bracket freeze failed for %s", body.show_id, exc_info=True)
         order = append_song(conn, body.show_id, body.song_id, body.set_number, body.trans_mark)
+        try:
+            capture_snapshot(read, conn, body.show_id, scorer=request.app.state.scorer)
+        except Exception:
+            log.warning("snapshot capture failed for %s", body.show_id, exc_info=True)
         return {"entered_order": order}
 
     @app.delete("/live/song/last")
@@ -417,8 +421,22 @@ def create_app() -> FastAPI:
         return {"deleted": ok}
 
     @app.post("/live/set-boundary")
-    def set_boundary(body: SetBoundary, conn: sqlite3.Connection = Depends(get_live)):  # noqa: B008
+    def set_boundary(
+        body: SetBoundary,
+        request: Request,
+        conn: sqlite3.Connection = Depends(get_live),  # noqa: B008
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+    ):
         ok = advance_set(conn, body.show_id, body.set_number)
+        if ok:
+            # A set advance moves the next-song call to the new set's opener —
+            # capture it so scoring sees the call that was actually on screen.
+            from phishpicker.scoring_store import capture_snapshot
+
+            try:
+                capture_snapshot(read, conn, body.show_id, scorer=request.app.state.scorer)
+            except Exception:
+                log.warning("snapshot capture failed for %s", body.show_id, exc_info=True)
         return {"updated": ok}
 
     @app.post("/internal/reload")
