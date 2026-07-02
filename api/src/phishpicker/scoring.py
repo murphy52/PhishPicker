@@ -168,6 +168,56 @@ def apply_combo(
     return out
 
 
+def apply_badges(
+    attributions: list[dict],
+    *,
+    early_called_indices: frozenset | set = frozenset(),
+    bustout_song_ids: frozenset | set = frozenset(),
+) -> list[dict]:
+    """Zero-point flags.
+
+    - called_early: the app had this song correctly placed 2+ slots ahead
+      (badge only, no points).
+    - bustout: song is a genuine bustout/debut per the EXPLICIT
+      bustout_song_ids input (celebrated; excluded from the PPS denominator).
+      Never inferred from a whiff.
+    - missed: no claim from either ledger and not a bustout — a plain miss,
+      which stays in the PPS denominator.
+    """
+    out: list[dict] = []
+    for att in attributions:
+        bustout = att["song_id"] in bustout_song_ids
+        out.append(
+            {
+                **att,
+                "called_early": att["index"] in early_called_indices,
+                "bustout": bustout,
+                "missed": att["ledger"] is None and not bustout,
+            }
+        )
+    return out
+
+
+def summarize(attributions: list[dict]) -> dict:
+    """Ledger totals + points-per-predictable-song (PPS excludes only genuine
+    bustouts from its denominator — plain misses stay in)."""
+    foresight_total = sum(a["final"] for a in attributions if a["ledger"] == "foresight")
+    live_total = sum(a["final"] for a in attributions if a["ledger"] == "live")
+    combined = foresight_total + live_total
+    predictable = sum(1 for a in attributions if not a["bustout"])
+    hit_counts: dict[str, int] = {}
+    for a in attributions:
+        if a["reason"] is not None:
+            hit_counts[a["reason"]] = hit_counts.get(a["reason"], 0) + 1
+    return {
+        "foresight_total": foresight_total,
+        "live_total": live_total,
+        "combined": combined,
+        "ppps": combined / predictable if predictable else 0,
+        "hit_counts": hit_counts,
+    }
+
+
 def normalize_setlist(rows: list[dict]) -> list[dict]:
     """Raw live_songs/setlist rows -> the scored setlist: soundcheck dropped,
     ordered by set then position-within-set."""
