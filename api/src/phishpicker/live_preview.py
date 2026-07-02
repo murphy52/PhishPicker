@@ -219,7 +219,7 @@ def build_preview(
     #     slots will be played, so drop the unused predictions. A past set with
     #     zero entered rows yields n=0 and is hidden entirely.
     #   - future (s > current_set): default. Preview what might come.
-    set_order = {"1": 1, "2": 2, "E": 3}
+    set_order = {"1": 1, "2": 2, "E": 3, "E2": 4, "E3": 5}
 
     def _n_for(s: str, default: int) -> int:
         entered = per_set_seen.get(s, 0)
@@ -234,6 +234,12 @@ def build_preview(
         ("2", _n_for("2", set2)),
         ("E", _n_for("E", enc)),
     ]
+    # Double/triple encores aren't part of the predicted structure (the
+    # frozen bracket only ever covers E), but once the show is IN one we
+    # must render its entered songs and keep one next-song slot alive.
+    for extra in ("E2", "E3"):
+        if current_set == extra or per_set_seen.get(extra, 0):
+            structure.append((extra, _n_for(extra, 1)))
     slots = []
     slot_idx = 0
     for set_number, n in structure:
