@@ -8,9 +8,18 @@ import contextlib
 import json
 import logging
 import sqlite3
+import threading
 from datetime import UTC, datetime
 
 log = logging.getLogger(__name__)
+
+# Serializes snapshot captures across the whole process. Each capture runs a
+# LightGBM inference (predict_next) then a short live.db write. Left
+# unserialized, a burst of song entries (manual + the sync poller) would run
+# several inferences at once, saturating the low-power NAS CPU and stretching
+# the writer's lock hold until other writers time out ("database is locked").
+# One capture at a time keeps CPU and the single WAL writer slot uncontended.
+_CAPTURE_LOCK = threading.Lock()
 
 
 def _now() -> str:
@@ -166,31 +175,35 @@ def capture_snapshot(
         return False
     current_set = show["current_set"]
     t0 = time.monotonic()
-    after_count = live_conn.execute(
-        "SELECT COUNT(*) FROM live_songs WHERE show_id = ?", (show_id,)
-    ).fetchone()[0]
-    pos_in_set = (
-        live_conn.execute(
-            "SELECT COUNT(*) FROM live_songs WHERE show_id = ? AND set_number = ?",
-            (show_id, current_set),
+    # One capture (inference + write) at a time across the process — see
+    # _CAPTURE_LOCK. The model call and the read-modify-write of the snapshots
+    # blob both live inside the lock so bursts serialize instead of thrashing.
+    with _CAPTURE_LOCK:
+        after_count = live_conn.execute(
+            "SELECT COUNT(*) FROM live_songs WHERE show_id = ?", (show_id,)
         ).fetchone()[0]
-        + 1
-    )
-    cands = predict_next(read_conn, live_conn, show_id, top_n=1, scorer=scorer)
-    remaining = (
-        [
-            {
-                "set_number": current_set,
-                "position": pos_in_set,
-                "song_id": cands[0]["song_id"],
-            }
-        ]
-        if cands
-        else []
-    )
-    append_snapshot(
-        live_conn, show_id, {"after_count": after_count, "remaining": remaining}
-    )
+        pos_in_set = (
+            live_conn.execute(
+                "SELECT COUNT(*) FROM live_songs WHERE show_id = ? AND set_number = ?",
+                (show_id, current_set),
+            ).fetchone()[0]
+            + 1
+        )
+        cands = predict_next(read_conn, live_conn, show_id, top_n=1, scorer=scorer)
+        remaining = (
+            [
+                {
+                    "set_number": current_set,
+                    "position": pos_in_set,
+                    "song_id": cands[0]["song_id"],
+                }
+            ]
+            if cands
+            else []
+        )
+        append_snapshot(
+            live_conn, show_id, {"after_count": after_count, "remaining": remaining}
+        )
     log.info(
         "captured snapshot for %s (after_count=%d) in %.2fs",
         show_id, after_count, time.monotonic() - t0,

@@ -41,6 +41,66 @@ def test_capture_is_cheap_no_build_preview(
     assert remaining[0]["position"] == 2  # slot after the entered opener
 
 
+def test_concurrent_appends_and_captures_are_serialized(tmp_path):
+    """Parallel song entries + captures (manual path + sync poller in real
+    life) must not raise 'database is locked' and must record every snapshot —
+    validates the capture serialization + WAL + busy_timeout hardening."""
+    import threading
+
+    from phishpicker.db.connection import apply_live_schema, apply_schema, open_db
+    from phishpicker.live import append_song, create_live_show
+    from phishpicker.model.scorer import HeuristicScorer
+
+    read_path = tmp_path / "phishpicker.db"
+    live_path = tmp_path / "live.db"
+    r = open_db(read_path)
+    apply_schema(r)
+    r.executescript(
+        "INSERT INTO songs (song_id, name, first_seen_at) VALUES "
+        "(1,'A','2020-01-01'),(2,'B','2020-01-01'),(3,'C','2020-01-01');"
+    )
+    r.commit()
+    r.close()
+    lv = open_db(live_path)
+    apply_live_schema(lv)
+    show_id = create_live_show(lv, "2026-01-01", venue_id=None)
+    upsert_score_state(
+        lv, show_id, model_sha=HeuristicScorer().sha, frozen_bracket=[]
+    )
+    lv.close()
+
+    errors: list[Exception] = []
+
+    def worker(song_id: int):
+        try:
+            with (
+                open_db(read_path, read_only=True) as read,
+                open_db(live_path) as live,
+            ):
+                append_song(live, show_id, song_id=song_id, set_number="1")
+                capture_snapshot(read, live, show_id, scorer=HeuristicScorer())
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker, args=(i % 3 + 1,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, errors
+    lv = open_db(live_path)
+    try:
+        n_songs = lv.execute(
+            "SELECT COUNT(*) FROM live_songs WHERE show_id = ?", (show_id,)
+        ).fetchone()[0]
+        n_snaps = len(get_score_state(lv, show_id)["snapshots"])
+    finally:
+        lv.close()
+    assert n_songs == 8
+    assert n_snaps == 8  # no lost snapshots under concurrent read-modify-write
+
+
 def test_manual_appends_capture_snapshots(seeded_client, live_show_id, tmp_path):
     for song_id in (100, 101):
         r = seeded_client.post(

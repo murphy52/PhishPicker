@@ -50,18 +50,20 @@ def append_song(
     source: str = "user",
 ) -> int:
     now = datetime.now(UTC).isoformat()
-    next_order = conn.execute(
-        "SELECT COALESCE(MAX(entered_order), 0) + 1 FROM live_songs WHERE show_id = ?",
-        (show_id,),
-    ).fetchone()[0]
-    conn.execute(
+    # Allocate entered_order inside the INSERT so it's atomic under the write
+    # lock. Reading MAX+1 in a separate statement let a manual entry and the
+    # sync poller both grab the same order and collide on the PK.
+    row = conn.execute(
         "INSERT INTO live_songs "
         "(show_id, entered_order, song_id, set_number, trans_mark, entered_at, source) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (show_id, next_order, song_id, set_number, trans_mark, now, source),
-    )
+        "VALUES (?, "
+        "  (SELECT COALESCE(MAX(entered_order), 0) + 1 FROM live_songs WHERE show_id = ?), "
+        "  ?, ?, ?, ?, ?) "
+        "RETURNING entered_order",
+        (show_id, show_id, song_id, set_number, trans_mark, now, source),
+    ).fetchone()
     conn.commit()
-    return next_order
+    return row[0]
 
 
 def delete_last_song(conn: sqlite3.Connection, show_id: str) -> bool:
