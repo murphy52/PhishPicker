@@ -67,7 +67,7 @@ test("add: targets the set matching pending.setNumber even if Set 1 still has pr
   expect(out[1].pending).toBe("adding");
 });
 
-test("undo: marks last matching entered slot as pending=removing", () => {
+test("undo: reverts last matching slot to a predicted placeholder (song gone)", () => {
   const slots = [
     entered(1, "1", 1, { song_id: 100, name: "Monsters" }),
     entered(2, "1", 2, { song_id: 200, name: "Wilson" }),
@@ -75,8 +75,11 @@ test("undo: marks last matching entered slot as pending=removing", () => {
   ];
   const out = applyPendingMutation(slots, { kind: "undo", songId: 200 });
   expect(out[1].pending).toBe("removing");
-  expect(out[1].state).toBe("entered"); // still entered, just marked
+  expect(out[1].state).toBe("predicted"); // reverted — the song vanishes
+  expect(out[1].entered_song).toBeUndefined();
+  expect(out[1].top_k).toBeUndefined();
   expect(out[0].pending).toBeUndefined();
+  expect(out[0].state).toBe("entered"); // other entries untouched
 });
 
 test("undo: picks the LAST matching slot when the same song is in multiple slots", () => {
@@ -86,5 +89,7 @@ test("undo: picks the LAST matching slot when the same song is in multiple slots
   ];
   const out = applyPendingMutation(slots, { kind: "undo", songId: 100 });
   expect(out[0].pending).toBeUndefined();
+  expect(out[0].state).toBe("entered");
   expect(out[1].pending).toBe("removing");
+  expect(out[1].state).toBe("predicted");
 });

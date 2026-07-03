@@ -127,6 +127,20 @@ function enteredSlot(
   };
 }
 
+test("undo placeholder: removing slot hides the song, shows a muted pulse, ignores clicks", () => {
+  const onSlotClick = vi.fn();
+  renderPreview({
+    slots: [slot(1, "1", 1, { state: "predicted", pending: "removing", top_k: undefined })],
+    onSlotClick,
+  });
+  const row = screen.getByTestId("slot");
+  expect(row).toHaveAttribute("data-pending", "removing");
+  expect(row).toHaveTextContent("…");
+  expect(screen.queryByText("Chalk Dust Torture")).not.toBeInTheDocument();
+  fireEvent.click(row);
+  expect(onSlotClick).not.toHaveBeenCalled(); // no alternatives modal mid-recompute
+});
+
 test("entered slot with hit_rank=1 renders the bullseye icon", () => {
   renderPreview({ slots: [enteredSlot({ hit_rank: 1 })] });
   expect(screen.getByTestId("hit-rank-bullseye")).toBeInTheDocument();
