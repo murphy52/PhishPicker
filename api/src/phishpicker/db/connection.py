@@ -16,9 +16,14 @@ def open_db(path: Path, read_only: bool = False) -> sqlite3.Connection:
     pattern safe.
 
     busy_timeout tells SQLite to wait (ms) for a lock instead of raising
-    OperationalError("database is locked") immediately — important
-    because the phish.net sync poller holds a write transaction while
-    reconciling, and a concurrent /preview request would otherwise 500.
+    OperationalError("database is locked") immediately. Every live.db write
+    (append_song, snapshot capture, sync reconcile) is quick — ms-scale — so
+    a writer only ever waits when several pile up at once. On the low-power
+    NAS a burst (manual entry + the 60s sync poller + a background capture)
+    could hold the single WAL writer slot past a short timeout and 500 a
+    user's song entry. 15s gives the holders ample room to drain; no
+    operation legitimately holds the write lock that long (model inference
+    runs outside any transaction), so this never masks a real deadlock.
 
     journal_mode=WAL is a persistent DB-file property and is set once by
     apply_schema / apply_live_schema. Touching it on every per-request
@@ -34,7 +39,7 @@ def open_db(path: Path, read_only: bool = False) -> sqlite3.Connection:
     else:
         conn = sqlite3.connect(path, check_same_thread=False)
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA busy_timeout = 15000")
     conn.row_factory = sqlite3.Row
     return conn
 
