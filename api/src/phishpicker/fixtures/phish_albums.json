@@ -317,9 +317,10 @@
         "Ether Edge",
         "Human Nature",
         "Valdese",
+        "The Well",
         "Mercy"
       ],
-      "notes": "Standard 12-track digital/CD release. Vinyl edition adds a 13th track 'The Well' between 'Valdese' and 'Mercy'; excluded here since the task says prefer the standard studio release when editions differ."
+      "notes": "Standard digital/CD release is 12 tracks; the vinyl edition adds 'The Well' between 'Valdese' and 'Mercy'. We include 'The Well' here (13 tracks) because for the album-recency signal it is Evolve-era material in active live rotation (11+ plays through 2026), and excluding it wrongly gave it is_from_latest_album=0. Edition-cataloging preference yields to the model's album-recency intent."
     }
   ]
 }
