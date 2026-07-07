@@ -1,0 +1,913 @@
+{
+  "generated_at": "2026-04-23T20:07:40.359344Z",
+  "model_path": "data/model.lgb",
+  "total_log_prob": 34.41459640233167,
+  "nights": [
+    {
+      "label": "Night 4",
+      "show_date": "2026-04-23",
+      "show_id": 1764702416,
+      "picks": [
+        {
+          "slot_idx": 0,
+          "set": "1",
+          "position": 1,
+          "song_id": 2,
+          "name": "46 Days",
+          "reward": 1.5995824581641285
+        },
+        {
+          "slot_idx": 1,
+          "set": "1",
+          "position": 2,
+          "song_id": 240,
+          "name": "Gumbo",
+          "reward": 0.6768099237769015
+        },
+        {
+          "slot_idx": 2,
+          "set": "1",
+          "position": 3,
+          "song_id": 591,
+          "name": "The Moma Dance",
+          "reward": 2.247614290028997
+        },
+        {
+          "slot_idx": 3,
+          "set": "1",
+          "position": 4,
+          "song_id": 2974,
+          "name": "Knuckle Bone Broth Avenue",
+          "reward": -0.8043258386018795
+        },
+        {
+          "slot_idx": 4,
+          "set": "1",
+          "position": 5,
+          "song_id": 3077,
+          "name": "The Well",
+          "reward": -0.16981501565834065
+        },
+        {
+          "slot_idx": 5,
+          "set": "1",
+          "position": 6,
+          "song_id": 2643,
+          "name": "Moonage Daydream",
+          "reward": -0.8305494828748435
+        },
+        {
+          "slot_idx": 6,
+          "set": "1",
+          "position": 7,
+          "song_id": 2932,
+          "name": "Lonely Trip",
+          "reward": -0.5354805812451707
+        },
+        {
+          "slot_idx": 7,
+          "set": "1",
+          "position": 8,
+          "song_id": 447,
+          "name": "Punch You in the Eye",
+          "reward": 1.9490267433508845
+        },
+        {
+          "slot_idx": 8,
+          "set": "1",
+          "position": 9,
+          "song_id": 311,
+          "name": "Jam",
+          "reward": -0.0033024026619963686
+        },
+        {
+          "slot_idx": 9,
+          "set": "2",
+          "position": 1,
+          "song_id": 2639,
+          "name": "More",
+          "reward": -0.20846476152034574
+        },
+        {
+          "slot_idx": 10,
+          "set": "2",
+          "position": 2,
+          "song_id": 3080,
+          "name": "Pillow Jets",
+          "reward": -0.6737887553608221
+        },
+        {
+          "slot_idx": 11,
+          "set": "2",
+          "position": 3,
+          "song_id": 2573,
+          "name": "Mercury",
+          "reward": -0.09602540874761384
+        },
+        {
+          "slot_idx": 12,
+          "set": "2",
+          "position": 4,
+          "song_id": 80,
+          "name": "Boogie On Reggae Woman",
+          "reward": -0.1108047993438421
+        },
+        {
+          "slot_idx": 13,
+          "set": "2",
+          "position": 5,
+          "song_id": 2946,
+          "name": "A Wave of Hope",
+          "reward": 2.3346908122002334
+        },
+        {
+          "slot_idx": 14,
+          "set": "2",
+          "position": 6,
+          "song_id": 432,
+          "name": "Pebbles and Marbles",
+          "reward": -0.3406462871516871
+        },
+        {
+          "slot_idx": 15,
+          "set": "2",
+          "position": 7,
+          "song_id": 139,
+          "name": "Crosseyed and Painless",
+          "reward": -0.5425610695204199
+        },
+        {
+          "slot_idx": 16,
+          "set": "E",
+          "position": 1,
+          "song_id": 309,
+          "name": "Izabella",
+          "reward": -0.21686087641801774
+        },
+        {
+          "slot_idx": 17,
+          "set": "E",
+          "position": 2,
+          "song_id": 406,
+          "name": "Nellie Kane",
+          "reward": -0.3184250568568118
+        }
+      ]
+    },
+    {
+      "label": "Night 5",
+      "show_date": "2026-04-24",
+      "show_id": 1764702441,
+      "picks": [
+        {
+          "slot_idx": 18,
+          "set": "1",
+          "position": 1,
+          "song_id": 2424,
+          "name": "555",
+          "reward": -0.41170877997022914
+        },
+        {
+          "slot_idx": 19,
+          "set": "1",
+          "position": 2,
+          "song_id": 440,
+          "name": "Possum",
+          "reward": 0.8855965084393767
+        },
+        {
+          "slot_idx": 20,
+          "set": "1",
+          "position": 3,
+          "song_id": 119,
+          "name": "Cities",
+          "reward": -0.15295946214290232
+        },
+        {
+          "slot_idx": 21,
+          "set": "1",
+          "position": 4,
+          "song_id": 45,
+          "name": "Back on the Train",
+          "reward": 1.793512692713006
+        },
+        {
+          "slot_idx": 22,
+          "set": "1",
+          "position": 5,
+          "song_id": 607,
+          "name": "The Wedge",
+          "reward": -0.7816359961567235
+        },
+        {
+          "slot_idx": 23,
+          "set": "1",
+          "position": 6,
+          "song_id": 558,
+          "name": "Taste",
+          "reward": 0.8667701732073334
+        },
+        {
+          "slot_idx": 24,
+          "set": "1",
+          "position": 7,
+          "song_id": 634,
+          "name": "Undermind",
+          "reward": -0.49307944912526014
+        },
+        {
+          "slot_idx": 25,
+          "set": "1",
+          "position": 8,
+          "song_id": 208,
+          "name": "Fluffhead",
+          "reward": 1.2562532692814044
+        },
+        {
+          "slot_idx": 26,
+          "set": "1",
+          "position": 9,
+          "song_id": 234,
+          "name": "Golgi Apparatus",
+          "reward": 0.34040230814355876
+        },
+        {
+          "slot_idx": 27,
+          "set": "2",
+          "position": 1,
+          "song_id": 2984,
+          "name": "The Howling",
+          "reward": -0.5897501829405952
+        },
+        {
+          "slot_idx": 28,
+          "set": "2",
+          "position": 2,
+          "song_id": 3211,
+          "name": "Fling Your Head",
+          "reward": -0.7170839281336309
+        },
+        {
+          "slot_idx": 29,
+          "set": "2",
+          "position": 3,
+          "song_id": 3075,
+          "name": "Monsters",
+          "reward": 0.2795409885364123
+        },
+        {
+          "slot_idx": 30,
+          "set": "2",
+          "position": 4,
+          "song_id": 2414,
+          "name": "Energy",
+          "reward": -0.4710308510918084
+        },
+        {
+          "slot_idx": 31,
+          "set": "2",
+          "position": 5,
+          "song_id": 2797,
+          "name": "The Final Hurrah",
+          "reward": -0.5540896035145162
+        },
+        {
+          "slot_idx": 32,
+          "set": "2",
+          "position": 6,
+          "song_id": 2418,
+          "name": "Fuego",
+          "reward": 0.30511685177603604
+        },
+        {
+          "slot_idx": 33,
+          "set": "2",
+          "position": 7,
+          "song_id": 38,
+          "name": "Axilla (Part II)",
+          "reward": 0.6496444001970882
+        },
+        {
+          "slot_idx": 34,
+          "set": "E",
+          "position": 1,
+          "song_id": 195,
+          "name": "Fee",
+          "reward": 0.20921099325000359
+        },
+        {
+          "slot_idx": 35,
+          "set": "E",
+          "position": 2,
+          "song_id": 94,
+          "name": "Bug",
+          "reward": -0.12345530604356117
+        }
+      ]
+    },
+    {
+      "label": "Night 6",
+      "show_date": "2026-04-25",
+      "show_id": 1764702466,
+      "picks": [
+        {
+          "slot_idx": 36,
+          "set": "1",
+          "position": 1,
+          "song_id": 483,
+          "name": "Sample in a Jar",
+          "reward": 1.4790967054461752
+        },
+        {
+          "slot_idx": 37,
+          "set": "1",
+          "position": 2,
+          "song_id": 108,
+          "name": "Cavern",
+          "reward": -0.037923403875832845
+        },
+        {
+          "slot_idx": 38,
+          "set": "1",
+          "position": 3,
+          "song_id": 318,
+          "name": "Julius",
+          "reward": 0.3839764511538992
+        },
+        {
+          "slot_idx": 39,
+          "set": "1",
+          "position": 4,
+          "song_id": 323,
+          "name": "Kill Devil Falls",
+          "reward": 1.6390333538979411
+        },
+        {
+          "slot_idx": 40,
+          "set": "1",
+          "position": 5,
+          "song_id": 84,
+          "name": "Bouncing Around the Room",
+          "reward": 0.8650319919043035
+        },
+        {
+          "slot_idx": 41,
+          "set": "1",
+          "position": 6,
+          "song_id": 345,
+          "name": "Llama",
+          "reward": 1.305177396267332
+        },
+        {
+          "slot_idx": 42,
+          "set": "1",
+          "position": 7,
+          "song_id": 2935,
+          "name": "I Never Needed You Like This Before",
+          "reward": 0.23205992151560176
+        },
+        {
+          "slot_idx": 43,
+          "set": "1",
+          "position": 8,
+          "song_id": 679,
+          "name": "Wilson",
+          "reward": 1.19301053402828
+        },
+        {
+          "slot_idx": 44,
+          "set": "1",
+          "position": 9,
+          "song_id": 2570,
+          "name": "Blaze On",
+          "reward": 1.959582910151429
+        },
+        {
+          "slot_idx": 45,
+          "set": "2",
+          "position": 1,
+          "song_id": 613,
+          "name": "Timber (Jerry the Mule)",
+          "reward": -0.4998307436875365
+        },
+        {
+          "slot_idx": 46,
+          "set": "2",
+          "position": 2,
+          "song_id": 202,
+          "name": "First Tube",
+          "reward": 1.12631469825446
+        },
+        {
+          "slot_idx": 47,
+          "set": "2",
+          "position": 3,
+          "song_id": 402,
+          "name": "My Soul",
+          "reward": 1.0530313515528775
+        },
+        {
+          "slot_idx": 48,
+          "set": "2",
+          "position": 4,
+          "song_id": 473,
+          "name": "Roggae",
+          "reward": 0.06859595397341448
+        },
+        {
+          "slot_idx": 49,
+          "set": "2",
+          "position": 5,
+          "song_id": 586,
+          "name": "The Lizards",
+          "reward": -0.10863793705011084
+        },
+        {
+          "slot_idx": 50,
+          "set": "2",
+          "position": 6,
+          "song_id": 1102,
+          "name": "Ruby Waves",
+          "reward": -0.5179646112705825
+        },
+        {
+          "slot_idx": 51,
+          "set": "2",
+          "position": 7,
+          "song_id": 622,
+          "name": "Tube",
+          "reward": 0.8592185822915045
+        },
+        {
+          "slot_idx": 52,
+          "set": "E",
+          "position": 1,
+          "song_id": 369,
+          "name": "Meatstick",
+          "reward": -0.22219090094992663
+        },
+        {
+          "slot_idx": 53,
+          "set": "E",
+          "position": 2,
+          "song_id": 518,
+          "name": "Sneakin' Sally Thru the Alley",
+          "reward": 0.010347438420556014
+        }
+      ]
+    },
+    {
+      "label": "Night 7",
+      "show_date": "2026-04-30",
+      "show_id": 1764702491,
+      "picks": [
+        {
+          "slot_idx": 54,
+          "set": "1",
+          "position": 1,
+          "song_id": 2703,
+          "name": "Strawberry Letter 23",
+          "reward": 0.8173738476602224
+        },
+        {
+          "slot_idx": 55,
+          "set": "1",
+          "position": 2,
+          "song_id": 686,
+          "name": "Ya Mar",
+          "reward": -0.615468597302427
+        },
+        {
+          "slot_idx": 56,
+          "set": "1",
+          "position": 3,
+          "song_id": 933,
+          "name": "Fat Man in the Bathtub",
+          "reward": -0.7826286956898343
+        },
+        {
+          "slot_idx": 57,
+          "set": "1",
+          "position": 4,
+          "song_id": 2743,
+          "name": "Set Your Soul Free",
+          "reward": 1.323864737063615
+        },
+        {
+          "slot_idx": 58,
+          "set": "1",
+          "position": 5,
+          "song_id": 576,
+          "name": "The Curtain With",
+          "reward": 1.039548770885281
+        },
+        {
+          "slot_idx": 59,
+          "set": "1",
+          "position": 6,
+          "song_id": 2423,
+          "name": "Devotion to a Dream",
+          "reward": -0.6599271295528434
+        },
+        {
+          "slot_idx": 60,
+          "set": "1",
+          "position": 7,
+          "song_id": 220,
+          "name": "Funky Bitch",
+          "reward": 0.011195290220349013
+        },
+        {
+          "slot_idx": 61,
+          "set": "1",
+          "position": 8,
+          "song_id": 364,
+          "name": "Maze",
+          "reward": -0.07397788930856233
+        },
+        {
+          "slot_idx": 62,
+          "set": "1",
+          "position": 9,
+          "song_id": 1,
+          "name": "1999",
+          "reward": -0.7646835769158276
+        },
+        {
+          "slot_idx": 63,
+          "set": "2",
+          "position": 1,
+          "song_id": 397,
+          "name": "My Friend, My Friend",
+          "reward": 1.1709856138694943
+        },
+        {
+          "slot_idx": 64,
+          "set": "2",
+          "position": 2,
+          "song_id": 46,
+          "name": "Backwards Down the Number Line",
+          "reward": -0.13571778093558395
+        },
+        {
+          "slot_idx": 65,
+          "set": "2",
+          "position": 3,
+          "song_id": 110,
+          "name": "Chalk Dust Torture",
+          "reward": 2.4572825761989554
+        },
+        {
+          "slot_idx": 66,
+          "set": "2",
+          "position": 4,
+          "song_id": 867,
+          "name": "Golden Age",
+          "reward": -0.118279361973278
+        },
+        {
+          "slot_idx": 67,
+          "set": "2",
+          "position": 5,
+          "song_id": 222,
+          "name": "Ghost",
+          "reward": 1.3800066607092518
+        },
+        {
+          "slot_idx": 68,
+          "set": "2",
+          "position": 6,
+          "song_id": 3100,
+          "name": "Life Saving Gun",
+          "reward": 1.8424554934977155
+        },
+        {
+          "slot_idx": 69,
+          "set": "2",
+          "position": 7,
+          "song_id": 2829,
+          "name": "Drift While You're Sleeping",
+          "reward": -0.19247989079740538
+        },
+        {
+          "slot_idx": 70,
+          "set": "E",
+          "position": 1,
+          "song_id": 466,
+          "name": "Rock and Roll",
+          "reward": 0.07233717972331118
+        },
+        {
+          "slot_idx": 71,
+          "set": "E",
+          "position": 2,
+          "song_id": 354,
+          "name": "Loving Cup",
+          "reward": 0.3499908745958318
+        }
+      ]
+    },
+    {
+      "label": "Night 8",
+      "show_date": "2026-05-01",
+      "show_id": 1764702513,
+      "picks": [
+        {
+          "slot_idx": 72,
+          "set": "1",
+          "position": 1,
+          "song_id": 141,
+          "name": "Crowd Control",
+          "reward": 1.0683615003796474
+        },
+        {
+          "slot_idx": 73,
+          "set": "1",
+          "position": 2,
+          "song_id": 193,
+          "name": "Farmhouse",
+          "reward": 0.7411032427023955
+        },
+        {
+          "slot_idx": 74,
+          "set": "1",
+          "position": 3,
+          "song_id": 2571,
+          "name": "Shade",
+          "reward": -0.6408184736664502
+        },
+        {
+          "slot_idx": 75,
+          "set": "1",
+          "position": 4,
+          "song_id": 539,
+          "name": "Stealing Time From the Faulty Plan",
+          "reward": 0.3742723874616667
+        },
+        {
+          "slot_idx": 76,
+          "set": "1",
+          "position": 5,
+          "song_id": 2499,
+          "name": "The Dogs",
+          "reward": 0.9735227804851561
+        },
+        {
+          "slot_idx": 77,
+          "set": "1",
+          "position": 6,
+          "song_id": 165,
+          "name": "Dogs Stole Things",
+          "reward": -0.7387117337273391
+        },
+        {
+          "slot_idx": 78,
+          "set": "1",
+          "position": 7,
+          "song_id": 254,
+          "name": "Heavy Things",
+          "reward": -0.40389427160314473
+        },
+        {
+          "slot_idx": 79,
+          "set": "1",
+          "position": 8,
+          "song_id": 100,
+          "name": "Camel Walk",
+          "reward": -0.6721509429648271
+        },
+        {
+          "slot_idx": 80,
+          "set": "1",
+          "position": 9,
+          "song_id": 2744,
+          "name": "Soul Planet",
+          "reward": -0.6637589901677938
+        },
+        {
+          "slot_idx": 81,
+          "set": "2",
+          "position": 1,
+          "song_id": 442,
+          "name": "Prince Caspian",
+          "reward": 0.543251419095032
+        },
+        {
+          "slot_idx": 82,
+          "set": "2",
+          "position": 2,
+          "song_id": 113,
+          "name": "Character Zero",
+          "reward": 0.05057712173880177
+        },
+        {
+          "slot_idx": 83,
+          "set": "2",
+          "position": 3,
+          "song_id": 148,
+          "name": "David Bowie",
+          "reward": -0.09513769307228007
+        },
+        {
+          "slot_idx": 84,
+          "set": "2",
+          "position": 4,
+          "song_id": 538,
+          "name": "Stash",
+          "reward": 1.2263942148649802
+        },
+        {
+          "slot_idx": 85,
+          "set": "2",
+          "position": 5,
+          "song_id": 393,
+          "name": "Mountains in the Mist",
+          "reward": -0.59460494357871
+        },
+        {
+          "slot_idx": 86,
+          "set": "2",
+          "position": 6,
+          "song_id": 485,
+          "name": "Sand",
+          "reward": 1.4016835461111883
+        },
+        {
+          "slot_idx": 87,
+          "set": "2",
+          "position": 7,
+          "song_id": 651,
+          "name": "Waves",
+          "reward": -0.6716793784704679
+        },
+        {
+          "slot_idx": 88,
+          "set": "E",
+          "position": 1,
+          "song_id": 642,
+          "name": "Wading in the Velvet Sea",
+          "reward": 0.7328281167878105
+        },
+        {
+          "slot_idx": 89,
+          "set": "E",
+          "position": 2,
+          "song_id": 660,
+          "name": "When the Circus Comes",
+          "reward": 0.1497156617659521
+        }
+      ]
+    },
+    {
+      "label": "Night 9",
+      "show_date": "2026-05-02",
+      "show_id": 1764702539,
+      "picks": [
+        {
+          "slot_idx": 90,
+          "set": "1",
+          "position": 1,
+          "song_id": 2792,
+          "name": "Turtle in the Clouds",
+          "reward": 0.9550213534286297
+        },
+        {
+          "slot_idx": 91,
+          "set": "1",
+          "position": 2,
+          "song_id": 106,
+          "name": "Cars Trucks Buses",
+          "reward": 1.726306437864129
+        },
+        {
+          "slot_idx": 92,
+          "set": "1",
+          "position": 3,
+          "song_id": 238,
+          "name": "Grind",
+          "reward": -0.18493187151798865
+        },
+        {
+          "slot_idx": 93,
+          "set": "1",
+          "position": 4,
+          "song_id": 723,
+          "name": "Party Time",
+          "reward": 0.4300281637373591
+        },
+        {
+          "slot_idx": 94,
+          "set": "1",
+          "position": 5,
+          "song_id": 584,
+          "name": "The Landlady",
+          "reward": 1.0978913824758034
+        },
+        {
+          "slot_idx": 95,
+          "set": "1",
+          "position": 6,
+          "song_id": 146,
+          "name": "Daniel Saw the Stone",
+          "reward": -0.10593992009561057
+        },
+        {
+          "slot_idx": 96,
+          "set": "1",
+          "position": 7,
+          "song_id": 479,
+          "name": "Runaway Jim",
+          "reward": 1.6967716458642468
+        },
+        {
+          "slot_idx": 97,
+          "set": "1",
+          "position": 8,
+          "song_id": 523,
+          "name": "Soul Shakedown Party",
+          "reward": 0.17498357050159333
+        },
+        {
+          "slot_idx": 98,
+          "set": "1",
+          "position": 9,
+          "song_id": 164,
+          "name": "Dog Log",
+          "reward": -0.4816558685824589
+        },
+        {
+          "slot_idx": 99,
+          "set": "2",
+          "position": 1,
+          "song_id": 7,
+          "name": "A Song I Heard the Ocean Sing",
+          "reward": 1.072004265386931
+        },
+        {
+          "slot_idx": 100,
+          "set": "2",
+          "position": 2,
+          "song_id": 1085,
+          "name": "Plasma",
+          "reward": 0.4599502160793706
+        },
+        {
+          "slot_idx": 101,
+          "set": "2",
+          "position": 3,
+          "song_id": 2796,
+          "name": "Say It To Me S.A.N.T.O.S.",
+          "reward": 0.3754117118955198
+        },
+        {
+          "slot_idx": 102,
+          "set": "2",
+          "position": 4,
+          "song_id": 592,
+          "name": "The Oh Kee Pa Ceremony",
+          "reward": -0.7549425875354867
+        },
+        {
+          "slot_idx": 103,
+          "set": "2",
+          "position": 5,
+          "song_id": 2845,
+          "name": "A Life Beyond The Dream",
+          "reward": -0.1685461607217034
+        },
+        {
+          "slot_idx": 104,
+          "set": "2",
+          "position": 6,
+          "song_id": 512,
+          "name": "Slave to the Traffic Light",
+          "reward": 0.06753736569931888
+        },
+        {
+          "slot_idx": 105,
+          "set": "2",
+          "position": 7,
+          "song_id": 3139,
+          "name": "What's Going Through Your Mind",
+          "reward": 1.209257308946503
+        },
+        {
+          "slot_idx": 106,
+          "set": "E",
+          "position": 1,
+          "song_id": 582,
+          "name": "The Horse",
+          "reward": -0.16371371169528037
+        },
+        {
+          "slot_idx": 107,
+          "set": "E",
+          "position": 2,
+          "song_id": 603,
+          "name": "The Squirming Coil",
+          "reward": 0.07047320450278279
+        }
+      ]
+    }
+  ]
+}

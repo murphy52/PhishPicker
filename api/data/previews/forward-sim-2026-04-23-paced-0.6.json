@@ -1,0 +1,678 @@
+{
+  "generated_at": "2026-04-23T18:23:53.502776Z",
+  "model_path": "data/model.lgb",
+  "nights": [
+    {
+      "label": "Night 4",
+      "show_date": "2026-04-23",
+      "show_id": 1764702416,
+      "picks": [
+        {
+          "slot_idx": 1,
+          "set": "",
+          "song_id": 0,
+          "name": "Bug"
+        },
+        {
+          "slot_idx": 2,
+          "set": "",
+          "song_id": 0,
+          "name": "Say It To Me S.A.N.T.O.S."
+        },
+        {
+          "slot_idx": 3,
+          "set": "",
+          "song_id": 0,
+          "name": "A Wave of Hope"
+        },
+        {
+          "slot_idx": 4,
+          "set": "",
+          "song_id": 0,
+          "name": "The Howling"
+        },
+        {
+          "slot_idx": 5,
+          "set": "",
+          "song_id": 0,
+          "name": "Good Times Bad Times"
+        },
+        {
+          "slot_idx": 6,
+          "set": "",
+          "song_id": 0,
+          "name": "Fluffhead"
+        },
+        {
+          "slot_idx": 7,
+          "set": "",
+          "song_id": 0,
+          "name": "Possum"
+        },
+        {
+          "slot_idx": 8,
+          "set": "",
+          "song_id": 0,
+          "name": "Cavern"
+        },
+        {
+          "slot_idx": 9,
+          "set": "",
+          "song_id": 0,
+          "name": "More"
+        },
+        {
+          "slot_idx": 10,
+          "set": "",
+          "song_id": 0,
+          "name": "Ghost"
+        },
+        {
+          "slot_idx": 11,
+          "set": "",
+          "song_id": 0,
+          "name": "Backwards Down the Number Line"
+        },
+        {
+          "slot_idx": 12,
+          "set": "",
+          "song_id": 0,
+          "name": "Drift While You're Sleeping"
+        },
+        {
+          "slot_idx": 13,
+          "set": "",
+          "song_id": 0,
+          "name": "Maze"
+        },
+        {
+          "slot_idx": 14,
+          "set": "",
+          "song_id": 0,
+          "name": "Lonely Trip"
+        },
+        {
+          "slot_idx": 15,
+          "set": "",
+          "song_id": 0,
+          "name": "Golden Age"
+        },
+        {
+          "slot_idx": 16,
+          "set": "",
+          "song_id": 0,
+          "name": "Prince Caspian"
+        },
+        {
+          "slot_idx": 17,
+          "set": "",
+          "song_id": 0,
+          "name": "Rock and Roll"
+        },
+        {
+          "slot_idx": 18,
+          "set": "",
+          "song_id": 0,
+          "name": "Meatstick"
+        }
+      ]
+    },
+    {
+      "label": "Night 5",
+      "show_date": "2026-04-24",
+      "show_id": 1764702441,
+      "picks": [
+        {
+          "slot_idx": 1,
+          "set": "",
+          "song_id": 0,
+          "name": "Character Zero"
+        },
+        {
+          "slot_idx": 2,
+          "set": "",
+          "song_id": 0,
+          "name": "First Tube"
+        },
+        {
+          "slot_idx": 3,
+          "set": "",
+          "song_id": 0,
+          "name": "Loving Cup"
+        },
+        {
+          "slot_idx": 4,
+          "set": "",
+          "song_id": 0,
+          "name": "What's Going Through Your Mind"
+        },
+        {
+          "slot_idx": 5,
+          "set": "",
+          "song_id": 0,
+          "name": "A Life Beyond The Dream"
+        },
+        {
+          "slot_idx": 6,
+          "set": "",
+          "song_id": 0,
+          "name": "Slave to the Traffic Light"
+        },
+        {
+          "slot_idx": 7,
+          "set": "",
+          "song_id": 0,
+          "name": "Life Saving Gun"
+        },
+        {
+          "slot_idx": 8,
+          "set": "",
+          "song_id": 0,
+          "name": "Pillow Jets"
+        },
+        {
+          "slot_idx": 9,
+          "set": "",
+          "song_id": 0,
+          "name": "David Bowie"
+        },
+        {
+          "slot_idx": 10,
+          "set": "",
+          "song_id": 0,
+          "name": "Sand"
+        },
+        {
+          "slot_idx": 11,
+          "set": "",
+          "song_id": 0,
+          "name": "Ruby Waves"
+        },
+        {
+          "slot_idx": 12,
+          "set": "",
+          "song_id": 0,
+          "name": "Monsters"
+        },
+        {
+          "slot_idx": 13,
+          "set": "",
+          "song_id": 0,
+          "name": "Plasma"
+        },
+        {
+          "slot_idx": 14,
+          "set": "",
+          "song_id": 0,
+          "name": "Mercury"
+        },
+        {
+          "slot_idx": 15,
+          "set": "",
+          "song_id": 0,
+          "name": "Piper"
+        },
+        {
+          "slot_idx": 16,
+          "set": "",
+          "song_id": 0,
+          "name": "Ether Edge"
+        },
+        {
+          "slot_idx": 17,
+          "set": "",
+          "song_id": 0,
+          "name": "The Squirming Coil"
+        },
+        {
+          "slot_idx": 18,
+          "set": "",
+          "song_id": 0,
+          "name": "Golgi Apparatus"
+        }
+      ]
+    },
+    {
+      "label": "Night 6",
+      "show_date": "2026-04-25",
+      "show_id": 1764702466,
+      "picks": [
+        {
+          "slot_idx": 1,
+          "set": "",
+          "song_id": 0,
+          "name": "46 Days"
+        },
+        {
+          "slot_idx": 2,
+          "set": "",
+          "song_id": 0,
+          "name": "About to Run"
+        },
+        {
+          "slot_idx": 3,
+          "set": "",
+          "song_id": 0,
+          "name": "Walls of the Cave"
+        },
+        {
+          "slot_idx": 4,
+          "set": "",
+          "song_id": 0,
+          "name": "Stash"
+        },
+        {
+          "slot_idx": 5,
+          "set": "",
+          "song_id": 0,
+          "name": "Back on the Train"
+        },
+        {
+          "slot_idx": 6,
+          "set": "",
+          "song_id": 0,
+          "name": "Taste"
+        },
+        {
+          "slot_idx": 7,
+          "set": "",
+          "song_id": 0,
+          "name": "Izabella"
+        },
+        {
+          "slot_idx": 8,
+          "set": "",
+          "song_id": 0,
+          "name": "Julius"
+        },
+        {
+          "slot_idx": 9,
+          "set": "",
+          "song_id": 0,
+          "name": "My Friend, My Friend"
+        },
+        {
+          "slot_idx": 10,
+          "set": "",
+          "song_id": 0,
+          "name": "Fuego"
+        },
+        {
+          "slot_idx": 11,
+          "set": "",
+          "song_id": 0,
+          "name": "Crosseyed and Painless"
+        },
+        {
+          "slot_idx": 12,
+          "set": "",
+          "song_id": 0,
+          "name": "What's the Use?"
+        },
+        {
+          "slot_idx": 13,
+          "set": "",
+          "song_id": 0,
+          "name": "Wading in the Velvet Sea"
+        },
+        {
+          "slot_idx": 14,
+          "set": "",
+          "song_id": 0,
+          "name": "Chalk Dust Torture"
+        },
+        {
+          "slot_idx": 15,
+          "set": "",
+          "song_id": 0,
+          "name": "Wilson"
+        },
+        {
+          "slot_idx": 16,
+          "set": "",
+          "song_id": 0,
+          "name": "Kill Devil Falls"
+        },
+        {
+          "slot_idx": 17,
+          "set": "",
+          "song_id": 0,
+          "name": "Shine a Light"
+        },
+        {
+          "slot_idx": 18,
+          "set": "",
+          "song_id": 0,
+          "name": "Show of Life"
+        }
+      ]
+    },
+    {
+      "label": "Night 7",
+      "show_date": "2026-04-30",
+      "show_id": 1764702491,
+      "picks": [
+        {
+          "slot_idx": 1,
+          "set": "",
+          "song_id": 0,
+          "name": "Blaze On"
+        },
+        {
+          "slot_idx": 2,
+          "set": "",
+          "song_id": 0,
+          "name": "Tube"
+        },
+        {
+          "slot_idx": 3,
+          "set": "",
+          "song_id": 0,
+          "name": "Mountains in the Mist"
+        },
+        {
+          "slot_idx": 4,
+          "set": "",
+          "song_id": 0,
+          "name": "Waves"
+        },
+        {
+          "slot_idx": 5,
+          "set": "",
+          "song_id": 0,
+          "name": "Bouncing Around the Room"
+        },
+        {
+          "slot_idx": 6,
+          "set": "",
+          "song_id": 0,
+          "name": "Axilla (Part II)"
+        },
+        {
+          "slot_idx": 7,
+          "set": "",
+          "song_id": 0,
+          "name": "Mercy"
+        },
+        {
+          "slot_idx": 8,
+          "set": "",
+          "song_id": 0,
+          "name": "The Lizards"
+        },
+        {
+          "slot_idx": 9,
+          "set": "",
+          "song_id": 0,
+          "name": "Sneakin' Sally Thru the Alley"
+        },
+        {
+          "slot_idx": 10,
+          "set": "",
+          "song_id": 0,
+          "name": "Timber (Jerry the Mule)"
+        },
+        {
+          "slot_idx": 11,
+          "set": "",
+          "song_id": 0,
+          "name": "Human Nature"
+        },
+        {
+          "slot_idx": 12,
+          "set": "",
+          "song_id": 0,
+          "name": "It's Ice"
+        },
+        {
+          "slot_idx": 13,
+          "set": "",
+          "song_id": 0,
+          "name": "Cream"
+        },
+        {
+          "slot_idx": 14,
+          "set": "",
+          "song_id": 0,
+          "name": "Boogie On Reggae Woman"
+        },
+        {
+          "slot_idx": 15,
+          "set": "",
+          "song_id": 0,
+          "name": "Cities"
+        }
+      ]
+    },
+    {
+      "label": "Night 8",
+      "show_date": "2026-05-01",
+      "show_id": 1764702513,
+      "picks": [
+        {
+          "slot_idx": 1,
+          "set": "",
+          "song_id": 0,
+          "name": "Set Your Soul Free"
+        },
+        {
+          "slot_idx": 2,
+          "set": "",
+          "song_id": 0,
+          "name": "Lawn Boy"
+        },
+        {
+          "slot_idx": 3,
+          "set": "",
+          "song_id": 0,
+          "name": "Rocky Top"
+        },
+        {
+          "slot_idx": 4,
+          "set": "",
+          "song_id": 0,
+          "name": "Bold As Love"
+        },
+        {
+          "slot_idx": 5,
+          "set": "",
+          "song_id": 0,
+          "name": "Carolina"
+        },
+        {
+          "slot_idx": 6,
+          "set": "",
+          "song_id": 0,
+          "name": "A Day in the Life"
+        },
+        {
+          "slot_idx": 7,
+          "set": "",
+          "song_id": 0,
+          "name": "Runaway Jim"
+        },
+        {
+          "slot_idx": 8,
+          "set": "",
+          "song_id": 0,
+          "name": "Farmhouse"
+        },
+        {
+          "slot_idx": 9,
+          "set": "",
+          "song_id": 0,
+          "name": "Pebbles and Marbles"
+        },
+        {
+          "slot_idx": 10,
+          "set": "",
+          "song_id": 0,
+          "name": "The Moma Dance"
+        },
+        {
+          "slot_idx": 11,
+          "set": "",
+          "song_id": 0,
+          "name": "The Well"
+        },
+        {
+          "slot_idx": 12,
+          "set": "",
+          "song_id": 0,
+          "name": "Daniel Saw the Stone"
+        },
+        {
+          "slot_idx": 13,
+          "set": "",
+          "song_id": 0,
+          "name": "Saw It Again"
+        },
+        {
+          "slot_idx": 14,
+          "set": "",
+          "song_id": 0,
+          "name": "Leaves"
+        },
+        {
+          "slot_idx": 15,
+          "set": "",
+          "song_id": 0,
+          "name": "The Wedge"
+        },
+        {
+          "slot_idx": 16,
+          "set": "",
+          "song_id": 0,
+          "name": "555"
+        },
+        {
+          "slot_idx": 17,
+          "set": "",
+          "song_id": 0,
+          "name": "Sleeping Monkey"
+        },
+        {
+          "slot_idx": 18,
+          "set": "",
+          "song_id": 0,
+          "name": "McGrupp and the Watchful Hosemasters"
+        }
+      ]
+    },
+    {
+      "label": "Night 9",
+      "show_date": "2026-05-02",
+      "show_id": 1764702539,
+      "picks": [
+        {
+          "slot_idx": 1,
+          "set": "",
+          "song_id": 0,
+          "name": "Punch You in the Eye"
+        },
+        {
+          "slot_idx": 2,
+          "set": "",
+          "song_id": 0,
+          "name": "Strawberry Letter 23"
+        },
+        {
+          "slot_idx": 3,
+          "set": "",
+          "song_id": 0,
+          "name": "Sample in a Jar"
+        },
+        {
+          "slot_idx": 4,
+          "set": "",
+          "song_id": 0,
+          "name": "The Old Home Place"
+        },
+        {
+          "slot_idx": 5,
+          "set": "",
+          "song_id": 0,
+          "name": "Ginseng Sullivan"
+        },
+        {
+          "slot_idx": 6,
+          "set": "",
+          "song_id": 0,
+          "name": "Waiting All Night"
+        },
+        {
+          "slot_idx": 7,
+          "set": "",
+          "song_id": 0,
+          "name": "Horn"
+        },
+        {
+          "slot_idx": 8,
+          "set": "",
+          "song_id": 0,
+          "name": "Ya Mar"
+        },
+        {
+          "slot_idx": 9,
+          "set": "",
+          "song_id": 0,
+          "name": "Roggae"
+        },
+        {
+          "slot_idx": 10,
+          "set": "",
+          "song_id": 0,
+          "name": "A Song I Heard the Ocean Sing"
+        },
+        {
+          "slot_idx": 11,
+          "set": "",
+          "song_id": 0,
+          "name": "Mr. Completely"
+        },
+        {
+          "slot_idx": 12,
+          "set": "",
+          "song_id": 0,
+          "name": "Energy"
+        },
+        {
+          "slot_idx": 13,
+          "set": "",
+          "song_id": 0,
+          "name": "Soul Planet"
+        },
+        {
+          "slot_idx": 14,
+          "set": "",
+          "song_id": 0,
+          "name": "Wingsuit"
+        },
+        {
+          "slot_idx": 15,
+          "set": "",
+          "song_id": 0,
+          "name": "Bittersweet Motel"
+        },
+        {
+          "slot_idx": 16,
+          "set": "",
+          "song_id": 0,
+          "name": "While My Guitar Gently Weeps"
+        },
+        {
+          "slot_idx": 17,
+          "set": "",
+          "song_id": 0,
+          "name": "Grind"
+        },
+        {
+          "slot_idx": 18,
+          "set": "",
+          "song_id": 0,
+          "name": "Miss You"
+        }
+      ]
+    }
+  ]
+}
