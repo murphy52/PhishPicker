@@ -335,6 +335,10 @@ export default function Home() {
               <span className="text-neutral-700">·</span>
             </>
           ) : null}
+          <a href="/history" className="text-neutral-500 hover:text-indigo-400">
+            history
+          </a>
+          <span className="text-neutral-700">·</span>
           <a href="/about" className="text-neutral-500 hover:text-indigo-400">
             about
           </a>
