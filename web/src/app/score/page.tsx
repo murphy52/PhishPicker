@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ComboMeter } from "@/components/ComboMeter";
 import { NextCallCard, type PendingCall } from "@/components/NextCallCard";
 import { ScoreFeed } from "@/components/ScoreFeed";
@@ -10,13 +11,21 @@ import { useLiveShow } from "@/lib/liveShow";
 import { usePreview } from "@/lib/preview";
 import { buildFeedEvents, useScore, type Attribution } from "@/lib/score";
 
-export default function ScorePage() {
-  const { showId } = useLiveShow();
+function ScoreContent() {
+  // A `?show=<id>` param loads a past finalized show's board (from the history
+  // page); with no param we track tonight's live show.
+  const params = useSearchParams();
+  const paramShow = params.get("show");
+  const { showId: liveShowId } = useLiveShow();
+  const showId = paramShow ?? liveShowId;
+  const isHistorical = paramShow != null;
+
   const { data: score } = useScore(showId);
   const playedCount = score?.attributions.length ?? 0;
   // Reuses the preview cache key from the home screen; the count in the key
-  // busts it when a new song lands so the pending call stays current.
-  const { data: preview } = usePreview(showId, playedCount);
+  // busts it when a new song lands so the pending call stays current. Skipped
+  // for a past show — there is no "next call" to make.
+  const { data: preview } = usePreview(isHistorical ? null : showId, playedCount);
 
   // A phish.net correction swaps a song at an existing index. Detect it by
   // diffing against the previous poll and pin the ↻ marker for the session —
@@ -66,14 +75,17 @@ export default function ScorePage() {
   return (
     <div className="flex min-h-dvh flex-col bg-neutral-950 text-neutral-100">
       <header className="flex items-center justify-between px-4 pt-6">
-        <Link href="/" className="text-sm text-neutral-500 hover:text-neutral-300">
-          ← show
+        <Link
+          href={isHistorical ? "/history" : "/"}
+          className="text-sm text-neutral-500 hover:text-neutral-300"
+        >
+          {isHistorical ? "← history" : "← show"}
         </Link>
         <h1 className="font-score text-lg font-extrabold uppercase tracking-[0.3em]">
           Scoreboard
         </h1>
         <span className="w-12 text-right">
-          {showId && (
+          {showId && !isHistorical && (
             <span
               aria-label="live"
               className="inline-block h-2 w-2 animate-pulse rounded-full bg-live"
@@ -102,11 +114,13 @@ export default function ScorePage() {
                 🔮 See the pre-show bracket →
               </Link>
             )}
-            <NextCallCard
-              call={pendingCall}
-              isOpener={playedCount === 0}
-              lastEvent={events[0]}
-            />
+            {!isHistorical && (
+              <NextCallCard
+                call={pendingCall}
+                isOpener={playedCount === 0}
+                lastEvent={events[0]}
+              />
+            )}
             <ComboMeter streak={streak} />
             <ScoreFeed events={events} />
             <footer className="mt-4 flex justify-between text-[10px] text-neutral-700">
@@ -121,5 +135,13 @@ export default function ScorePage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function ScorePage() {
+  return (
+    <Suspense fallback={null}>
+      <ScoreContent />
+    </Suspense>
   );
 }
