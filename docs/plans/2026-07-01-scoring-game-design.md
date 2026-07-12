@@ -57,10 +57,19 @@ All values tunable; the **ordering** does the work.
 |---|---|---|
 | 🔮 Foresight | predicted song played **somewhere** (wrong set) | 5 |
 | 🔮 Foresight | predicted song, **right set**, wrong position | 15 |
-| 🔮 Foresight | predicted song, **exact slot** (set + position) | 40 |
-| 🔮 Foresight | exact slot **and it's a set opener** | **60** |
+| 🔮 Foresight | predicted song, **exact slot** (set + position) | 80 |
+| 🔮 Foresight | exact slot **and it's a set opener** | **100** |
 | ⚡ Live | **next-song call** exact (#1 pick = actual next), base | 30 (×combo) |
 | ⚡ Live | **look-ahead** correct | 0 — `🔭 called it early` badge only |
+
+> **Retune (2026-07-12):** exact 40→**80**, opener 60→**100**. Measured on the
+> first three scored shows (54 bracket picks): a *right-set* hit turned out about
+> as likely as a *somewhere* hit yet already paid 3×, while an *exact* slot was
+> ~6× rarer than right-set but paid only 2.7× — underpriced. 80/100 push the
+> scarce events toward fair odds and roughly double Foresight's share of the
+> combined total, which was running ~27% (Live is far higher-frequency per
+> attempt). Live base (30) and the combo cap are unchanged; the top live call
+> (30×2 = 60) now sits strictly below the opener prize.
 
 **Set-opener bonus (60)** applies to: **S1.1, S2.1, festival Set-3/Set-4
 openers, and the first encore song (`E`)**. First songs of a **second/third
@@ -83,7 +92,7 @@ Consecutive **correct next-song calls** build a combo:
 | 2nd | ×1.5 | 45 |
 | 3rd+ | ×2 (cap) | 60 |
 
-Cap ×2 keeps the top live call (60) equal to — never above — the opener prize,
+Cap ×2 keeps the top live call (60) below the opener prize (100) — never above —
 and stops one hot run from swamping the total.
 
 **Combo rules (decoupled from the ledger):**

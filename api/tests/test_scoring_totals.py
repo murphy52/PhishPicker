@@ -59,13 +59,13 @@ def test_claimed_song_is_not_missed():
 
 
 def test_totals_split_by_ledger():
-    # Foresight: song 20 exact at ("1",2) -> banks 40 AND advances the streak
+    # Foresight: song 20 exact at ("1",2) -> banks 80 AND advances the streak
     # (correct call). Live: songs 30, 40 called at streak 2 and 3 -> 45 + 60.
     atts = _atts({1: 20, 2: 30, 3: 40}, bracket=[_row("1", 2, 20)])
     totals = summarize(atts)
-    assert totals["foresight_total"] == 40
+    assert totals["foresight_total"] == 80
     assert totals["live_total"] == 45 + 60
-    assert totals["combined"] == 40 + 45 + 60
+    assert totals["combined"] == 80 + 45 + 60
 
 
 def test_ppps_excludes_only_bustouts():

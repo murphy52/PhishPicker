@@ -45,7 +45,7 @@ def test_no_call_no_claim():
 
 
 def test_foresight_exact_beats_live():
-    foresight, _ = score_foresight([_row("1", 2, 20)], ACTUAL)  # exact 40
+    foresight, _ = score_foresight([_row("1", 2, 20)], ACTUAL)  # exact 80
     live = score_live(ACTUAL, {1: 20})  # 30
     atts = resolve_claims(foresight, live, ACTUAL)
     assert atts[1]["ledger"] == "foresight"

@@ -8,8 +8,15 @@ captured live next-song calls (see docs/plans/2026-07-01-scoring-game-design.md)
 # 'S' (soundcheck) intentionally absent — never predicted, never scored.
 _SET_ORDER = {"1": 1, "2": 2, "3": 3, "4": 4, "E": 5, "E2": 6, "E3": 7}
 
-# Point ladder — values are tunable; the ordering does the work.
-PTS_SOMEWHERE, PTS_RIGHT_SET, PTS_EXACT, PTS_OPENER = 5, 15, 40, 60
+# Point ladder — values tuned to observed event difficulty (see the retune note
+# below). The ordering does the work; the magnitudes reward scarcity.
+#   somewhere 5  · right_set 15 : empirically about as likely as "somewhere" but
+#     the model places the right song in the right set well, so it pays 3x.
+#   exact 80 : an exact slot is ~6x rarer than a right-set hit yet used to pay
+#     only 2.7x it — underpriced. 80 puts it near fair odds vs right_set.
+#   opener 100 : the show-opening jackpot stays the singular top prize; the top
+#     live call (30 x2 combo = 60) sits strictly below it.
+PTS_SOMEWHERE, PTS_RIGHT_SET, PTS_EXACT, PTS_OPENER = 5, 15, 80, 100
 PTS_NEXT_SONG = 30
 COMBO = {1: 1.0, 2: 1.5}  # 3rd+ in a row -> 2.0 (cap)
 COMBO_CAP = 2.0
