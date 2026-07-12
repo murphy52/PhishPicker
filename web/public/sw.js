@@ -31,7 +31,22 @@ self.addEventListener("push", (event) => {
     data,
   } = payload;
   event.waitUntil(
-    self.registration.showNotification(title, { body, icon, badge, tag, data }),
+    (async () => {
+      await self.registration.showNotification(title, {
+        body,
+        icon,
+        badge,
+        tag,
+        data,
+      });
+      // Nudge any open app windows to re-hydrate their setlist immediately —
+      // the push means a new song just landed server-side (issue #23).
+      const windows = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      for (const c of windows) c.postMessage({ type: "phishnet-sync" });
+    })(),
   );
 });
 

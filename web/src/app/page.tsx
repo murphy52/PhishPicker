@@ -18,6 +18,7 @@ import {
   type PreviewCandidate,
 } from "@/lib/preview";
 import { getCachedSongs, setCachedSongs, type Song } from "@/lib/songs";
+import { useServiceWorkerSyncMessage } from "@/lib/syncMessage";
 
 interface Meta {
   shows_count: number;
@@ -250,6 +251,18 @@ export default function Home() {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [showId, upcoming, refresh, songs, mutatePreview]);
+
+  // A phish.net sync push means a new song landed server-side. The service
+  // worker relays it here so the open list updates at once, instead of the
+  // user having to pull-to-refresh or re-focus the tab (issue #23). The
+  // server appends before pushing, so a plain re-hydrate is enough.
+  useServiceWorkerSyncMessage(
+    useCallback(() => {
+      if (!showId) return;
+      refresh(songs);
+      mutatePreview();
+    }, [showId, refresh, songs, mutatePreview]),
+  );
 
   const slots = applyPendingMutation(preview?.slots ?? [], pending);
 
