@@ -1,6 +1,7 @@
 """Stateless preview builder — loops predict_next_stateless across all slots."""
 
 import sqlite3
+from collections import OrderedDict
 
 from fastapi import HTTPException
 
@@ -9,6 +10,64 @@ from phishpicker.model.stats import _find_run_start, compute_song_stats
 from phishpicker.predict import predict_next_stateless
 from phishpicker.train.bigrams import compute_bigram_probs
 from phishpicker.train.extended_stats import compute_extended_stats
+
+# Per-show feature caches (song stats, extended stats, bigram probabilities)
+# depend only on (db, show_date, venue_id, scorer kind) and the canonical data
+# strictly before the show — all fixed for a live show's duration. build_preview
+# runs on every song add / set change / initial load, so recomputing these each
+# call wastes ~450ms. Memoize them across calls, keyed on the DB *file* so the
+# entry can't collide across shows or across tests that reuse the same
+# (date, venue). Bounded; a redeploy (which follows any ingest) restarts the
+# process and clears it, so a mid-show data change is never served stale.
+_FEATURE_CACHE_MAX = 6
+_feature_cache: "OrderedDict[tuple, tuple]" = OrderedDict()
+
+
+def _db_path(conn: sqlite3.Connection) -> str:
+    # PRAGMA database_list row is (seq, name, file); 'file' is '' in-memory.
+    row = conn.execute("PRAGMA database_list").fetchone()
+    return (row[2] if row and row[2] else "") or f"mem:{id(conn)}"
+
+
+def clear_feature_cache() -> None:
+    """Test hook — drop all memoized per-show feature caches."""
+    _feature_cache.clear()
+
+
+def _show_feature_caches(
+    read_conn: sqlite3.Connection,
+    show_date: str,
+    venue_id: int | None,
+    song_ids: list[int],
+    scorer_name: str,
+) -> tuple:
+    """(stats_cache, ext_cache, bigram_cache) for a show, memoized across calls."""
+    key = (_db_path(read_conn), show_date, venue_id, scorer_name)
+    cached = _feature_cache.get(key)
+    if cached is not None:
+        _feature_cache.move_to_end(key)
+        return cached
+    stats = (
+        compute_song_stats(read_conn, show_date, venue_id, song_ids)
+        if scorer_name in ("lightgbm", "heuristic")
+        else None
+    )
+    ext = (
+        compute_extended_stats(read_conn, show_date, venue_id, song_ids)
+        if scorer_name == "lightgbm"
+        else None
+    )
+    bigram = (
+        compute_bigram_probs(read_conn, cutoff_date=show_date)
+        if scorer_name == "lightgbm"
+        else None
+    )
+    val = (stats, ext, bigram)
+    _feature_cache[key] = val
+    _feature_cache.move_to_end(key)
+    while len(_feature_cache) > _FEATURE_CACHE_MAX:
+        _feature_cache.popitem(last=False)
+    return val
 
 
 def _played_in_run(
@@ -169,22 +228,12 @@ def build_preview(
     song_slugs = {r["song_id"]: r["slug"] for r in song_rows}
     song_ids = list(song_names.keys())
 
-    # Per-show caches. These depend only on (show_date, venue_id, song set),
-    # which are fixed across all 18 slots — so compute once, reuse.
-    stats_cache = (
-        compute_song_stats(read_conn, show_date, venue_id, song_ids)
-        if scorer.name in ("lightgbm", "heuristic")
-        else None
-    )
-    ext_cache = (
-        compute_extended_stats(read_conn, show_date, venue_id, song_ids)
-        if scorer.name == "lightgbm"
-        else None
-    )
-    bigram_cache = (
-        compute_bigram_probs(read_conn, cutoff_date=show_date)
-        if scorer.name == "lightgbm"
-        else None
+    # Per-show caches. These depend only on (show_date, venue_id, song set) and
+    # the data before the show — fixed for the whole show — so they're memoized
+    # across preview calls (not just across this call's 18 slots). See
+    # _show_feature_caches.
+    stats_cache, ext_cache, bigram_cache = _show_feature_caches(
+        read_conn, show_date, venue_id, song_ids, scorer.name
     )
     # Songs played earlier in this run (prior same-venue same-tour shows).
     # Computed once per /preview call and reused across all slots.
