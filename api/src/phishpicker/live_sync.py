@@ -18,6 +18,7 @@ from phishpicker.live import append_song, get_live_show, replace_song_at
 from phishpicker.phishnet.client import PhishNetClient
 from phishpicker.predict import predict_next_stateless
 from phishpicker.push import send_push
+from phishpicker.scoring_service import score_live_show
 from phishpicker.scoring_store import capture_snapshot, ensure_frozen
 
 log = logging.getLogger(__name__)
@@ -133,6 +134,26 @@ def _rank_emoji(rank: int | None) -> str:
 
 def _set_label(set_number: str) -> str:
     return "Encore" if set_number == "E" else f"Set {set_number}"
+
+
+def _points_suffix(att: dict) -> str:
+    """A short 'points scored' tag for a push body, from a scoring
+    attribution — or '' when the song banked nothing (issue #22).
+
+    A bustout is celebrated (0 pts, but a fun rare song); a plain miss is
+    silent so the notification isn't cluttered with '+0'.
+    """
+    if att.get("bustout"):
+        return "🎸 Bustout!"
+    final = att.get("final") or 0
+    if final <= 0:
+        return ""
+    pts = int(final)
+    if att.get("ledger") == "live":
+        mult = att.get("mult")
+        combo = f" ×{mult:g}" if mult and mult > 1 else ""
+        return f"⚡ +{pts}{combo}"
+    return f"🔮 +{pts}"
 
 
 def sync_show_with_phishnet(
@@ -263,15 +284,19 @@ def sync_show_with_phishnet(
                         else "unranked"
                     )
                     pending_pushes.append(
-                        {
-                            "title": f"{_rank_emoji(rank)} {name}",
-                            "body": (
-                                f"{_set_label(a.set_number)} · "
-                                f"Slot {a.position_in_set} · Model rank {rank_str}"
-                            ),
-                            "tag": f"phishpicker-{show_date}-{a.song_id}-{a.set_number}-{a.position_in_set}",
-                            "data": {"url": "/"},
-                        }
+                        (
+                            {
+                                "title": f"{_rank_emoji(rank)} {name}",
+                                "body": (
+                                    f"{_set_label(a.set_number)} · "
+                                    f"Slot {a.position_in_set} · Model rank {rank_str}"
+                                ),
+                                "tag": f"phishpicker-{show_date}-{a.song_id}-{a.set_number}-{a.position_in_set}",
+                                "data": {"url": "/"},
+                            },
+                            # Match key for points enrichment after the commit.
+                            (a.set_number, a.position_in_set),
+                        )
                     )
             else:
                 replace_song_at(
@@ -318,7 +343,24 @@ def sync_show_with_phishnet(
         )
         live.commit()
 
-        for payload in pending_pushes:
+        # Enrich each push with the points the song scored (issue #22). One
+        # scoring pass over the now-committed setlist; match by (set, position).
+        att_by_slot: dict[tuple[str, int], dict] = {}
+        if scorer is not None and pending_pushes:
+            try:
+                scored = score_live_show(read_rw, live, show_id)
+                att_by_slot = {
+                    (att["set_number"], att["position"]): att
+                    for att in scored["attributions"]
+                }
+            except Exception:
+                log.warning("push points enrichment failed", exc_info=True)
+
+        for payload, slot_key in pending_pushes:
+            att = att_by_slot.get(slot_key)
+            suffix = _points_suffix(att) if att else ""
+            if suffix:
+                payload["body"] += f" · {suffix}"
             send_push(
                 live,
                 payload,

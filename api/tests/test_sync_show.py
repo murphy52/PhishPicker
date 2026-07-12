@@ -3,8 +3,33 @@ from unittest.mock import MagicMock, patch
 from pytest_httpx import HTTPXMock
 
 from phishpicker.db.connection import open_db
-from phishpicker.live_sync import sync_show_with_phishnet
+from phishpicker.live_sync import _points_suffix, sync_show_with_phishnet
 from phishpicker.push import save_subscription
+
+
+def test_points_suffix_foresight():
+    att = {"ledger": "foresight", "final": 80, "mult": None, "bustout": False}
+    assert _points_suffix(att) == "🔮 +80"
+
+
+def test_points_suffix_live_shows_combo_multiplier():
+    att = {"ledger": "live", "final": 45, "mult": 1.5, "bustout": False}
+    assert _points_suffix(att) == "⚡ +45 ×1.5"
+
+
+def test_points_suffix_live_without_combo():
+    att = {"ledger": "live", "final": 30, "mult": 1.0, "bustout": False}
+    assert _points_suffix(att) == "⚡ +30"
+
+
+def test_points_suffix_bustout_is_celebrated():
+    att = {"ledger": None, "final": 0, "mult": None, "bustout": True}
+    assert _points_suffix(att) == "🎸 Bustout!"
+
+
+def test_points_suffix_plain_miss_is_silent():
+    att = {"ledger": None, "final": 0, "mult": None, "bustout": False}
+    assert _points_suffix(att) == ""
 
 
 def test_sync_appends_net_rows_when_user_empty(
@@ -149,6 +174,60 @@ def test_sync_fires_push_with_rank_on_append(
     assert "Chalk Dust Torture" in body
     assert "#1" in body
     assert "Slot 1" in body
+
+
+def test_sync_push_body_includes_points_scored(httpx_mock: HTTPXMock, live_setup):
+    """Issue #22: a synced song's push body carries the points it banked,
+    matched to its scoring attribution by (set, position)."""
+    with open_db(live_setup.live_db_path) as live:
+        save_subscription(live, "https://push/x", "p", "a")
+
+    httpx_mock.add_response(
+        url="https://api.phish.net/v5/setlists/showdate/2026-04-23.json?apikey=k",
+        json={
+            "data": [
+                {"songid": 100, "song": "Chalk Dust Torture", "set": "1",
+                 "position": 1, "artist_name": "Phish"},
+            ]
+        },
+    )
+
+    scorer = MagicMock()
+    scorer.name = "stub"
+
+    scored = {
+        "attributions": [
+            {
+                "set_number": "1", "position": 1, "song_id": 100,
+                "ledger": "foresight", "final": 100, "mult": None,
+                "bustout": False,
+            }
+        ]
+    }
+
+    with patch("phishpicker.live_sync.predict_next_stateless") as pred, patch(
+        "phishpicker.live_sync.score_live_show", return_value=scored
+    ), patch("phishpicker.push.webpush") as wp:
+        pred.return_value = [
+            {"song_id": 100, "name": "Chalk Dust Torture", "score": 10.0,
+             "probability": 0.25},
+        ]
+        sync_show_with_phishnet(
+            db_path=live_setup.db_path,
+            live_db_path=live_setup.live_db_path,
+            api_key="k",
+            show_id=live_setup.show_id,
+            show_date="2026-04-23",
+            scorer=scorer,
+            vapid_private_key="fake-priv",
+            vapid_subject="mailto:x@y.z",
+        )
+
+    assert wp.called
+    body = wp.call_args.kwargs["data"]
+    # Foresight opener = 100 pts, tagged into the body (emoji is unicode-escaped
+    # in the JSON string, so assert on the ASCII points token).
+    assert "+100" in body
 
 
 def test_sync_skips_push_when_no_vapid_key(
