@@ -25,13 +25,31 @@ _feature_cache: "OrderedDict[tuple, tuple]" = OrderedDict()
 
 def _db_path(conn: sqlite3.Connection) -> str:
     # PRAGMA database_list row is (seq, name, file); 'file' is '' in-memory.
-    row = conn.execute("PRAGMA database_list").fetchone()
-    return (row[2] if row and row[2] else "") or f"mem:{id(conn)}"
+    # Defensive: unit tests may pass a stub/None conn — fall back to identity.
+    try:
+        row = conn.execute("PRAGMA database_list").fetchone()
+        return (row[2] if row and row[2] else "") or f"mem:{id(conn)}"
+    except Exception:
+        return f"nc:{id(conn)}"
+
+
+# Entered-slot hit-ranks. build_preview computes a full ranked prediction for
+# EVERY already-entered song on every call, just to find that song's rank — so a
+# show with N entered songs pays N predictions per call, and over the show that's
+# ~N^2/2 predictions (the dominant cost late in a show). But an entered slot's
+# hit-rank is a pure function of its inputs (the played prefix, the target song,
+# the slot, the prev-marks, the model), all frozen once the song is entered. Key
+# on that exact input tuple: a phish.net correction that rewrites an earlier song
+# changes the played prefix — and therefore every downstream key — so stale
+# ranks self-invalidate. Bounded/LRU; cleared on redeploy like the feature cache.
+_HIT_RANK_CACHE_MAX = 2048
+_hit_rank_cache: "OrderedDict[tuple, int | None]" = OrderedDict()
 
 
 def clear_feature_cache() -> None:
-    """Test hook — drop all memoized per-show feature caches."""
+    """Test hook — drop all memoized preview caches (features + hit-ranks)."""
     _feature_cache.clear()
+    _hit_rank_cache.clear()
 
 
 def _show_feature_caches(
@@ -153,6 +171,30 @@ def _compute_hit_rank(
     played_in_run: set[int] | None = None,
 ) -> int | None:
     """Return 1-based rank of `target_song_id` in the top-10 predictions, or None if absent."""
+    # Skip the cache for stubbed/None conns (direct unit tests) — there's no
+    # real dataset to key on and predict is usually monkeypatched.
+    key = (
+        (
+            _db_path(read_conn),
+            getattr(scorer, "sha", None),
+            show_date,
+            venue_id,
+            tuple(played_songs),
+            target_song_id,
+            current_set,
+            slots_into_current_set,
+            prev_trans_mark,
+            prev_set_number,
+        )
+        if read_conn is not None
+        else None
+    )
+    if key is not None:
+        cached = _hit_rank_cache.get(key)
+        if cached is not None or key in _hit_rank_cache:
+            _hit_rank_cache.move_to_end(key)
+            return cached
+
     cands = predict_next_stateless(
         read_conn=read_conn,
         played_songs=played_songs,
@@ -171,10 +213,18 @@ def _compute_hit_rank(
         bigram_cache=bigram_cache,
         played_in_run=played_in_run,
     )
+    rank: int | None = None
     for i, c in enumerate(cands):
         if c["song_id"] == target_song_id:
-            return i + 1
-    return None
+            rank = i + 1
+            break
+
+    if key is not None:
+        _hit_rank_cache[key] = rank
+        _hit_rank_cache.move_to_end(key)
+        while len(_hit_rank_cache) > _HIT_RANK_CACHE_MAX:
+            _hit_rank_cache.popitem(last=False)
+    return rank
 
 
 def build_preview(

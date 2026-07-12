@@ -732,3 +732,40 @@ def test_preview_repeat_call_is_consistent(seeded_client, live_show_id):
     first = seeded_client.get(f"/live/show/{live_show_id}/preview").json()
     second = seeded_client.get(f"/live/show/{live_show_id}/preview").json()
     assert first == second
+
+
+def test_hit_rank_memoized_across_preview_calls(
+    seeded_client, live_show_with_one_song
+):
+    """The entered slot's hit-rank is computed once and reused — a repeat
+    preview call adds no new hit-rank cache entries and returns identical output."""
+    from phishpicker.live_preview import _hit_rank_cache, clear_feature_cache
+
+    clear_feature_cache()
+    sid = live_show_with_one_song["show_id"]
+    r1 = seeded_client.get(f"/live/show/{sid}/preview").json()
+    n_after_first = len(_hit_rank_cache)
+    assert n_after_first >= 1, "the entered slot's hit-rank should be cached"
+
+    r2 = seeded_client.get(f"/live/show/{sid}/preview").json()
+    assert r1 == r2, "cached hit-rank must not change preview output"
+    assert len(_hit_rank_cache) == n_after_first, "repeat call must hit the cache"
+
+
+def test_hit_rank_cache_key_includes_played_prefix(
+    seeded_client, live_show_with_one_song
+):
+    """Correction safety: a different played prefix must not collide — adding a
+    song creates a new entered slot with its own key, not reuse an old one."""
+    from phishpicker.live_preview import _hit_rank_cache, clear_feature_cache
+
+    clear_feature_cache()
+    sid = live_show_with_one_song["show_id"]
+    seeded_client.get(f"/live/show/{sid}/preview")
+    before = len(_hit_rank_cache)
+    # Enter a second song -> a second entered slot -> a new distinct key.
+    seeded_client.post(
+        "/live/song", json={"show_id": sid, "song_id": 101, "set_number": "1"}
+    )
+    seeded_client.get(f"/live/show/{sid}/preview")
+    assert len(_hit_rank_cache) > before, "new entered slot must add a fresh key"
