@@ -33,6 +33,24 @@ test("streak 4: capped at three bolts, ×2", () => {
   expect(screen.getByTestId("combo-mult")).toHaveTextContent("×2");
 });
 
+test("closed show: no forward 'next catch' tease", () => {
+  render(<ComboMeter streak={1} closed />);
+  const mult = screen.getByTestId("combo-mult");
+  expect(mult).not.toHaveTextContent(/next catch/i);
+});
+
+test("closed show with a real combo notes the multiplier it earned", () => {
+  render(<ComboMeter streak={2} closed />);
+  const mult = screen.getByTestId("combo-mult");
+  expect(mult).toHaveTextContent("×1.5");
+  expect(mult).not.toHaveTextContent(/next catch/i);
+});
+
+test("closed show still lights the segments for the achieved streak", () => {
+  render(<ComboMeter streak={2} closed />);
+  expect(litCount()).toBe(2);
+});
+
 test("a streak drop triggers the drain", () => {
   const { rerender } = render(<ComboMeter streak={3} />);
   expect(screen.getByTestId("combo-meter")).toHaveAttribute(
