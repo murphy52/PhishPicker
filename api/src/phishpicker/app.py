@@ -116,6 +116,20 @@ def create_app() -> FastAPI:
         app.state.metrics_path = settings.data_dir / "metrics.json"
         app.state.scorer = load_runtime_scorer(app.state.model_path)
         log.info("loaded scorer: %s", app.state.scorer.name)
+        # Optional show-level "Likely Tonight" inclusion model. Absent artifact
+        # (e.g. not yet trained/deployed) is non-fatal — the endpoint 503s.
+        app.state.inclusion_path = settings.data_dir / "inclusion_model.lgb"
+        app.state.inclusion_scorer = None
+        if app.state.inclusion_path.exists():
+            try:
+                from phishpicker.inclusion import load_inclusion_scorer
+
+                app.state.inclusion_scorer = load_inclusion_scorer(
+                    app.state.inclusion_path
+                )
+                log.info("loaded inclusion scorer (Likely Tonight)")
+            except Exception:  # noqa: BLE001 - never block startup on the optional model
+                log.exception("failed to load inclusion scorer; Likely Tonight disabled")
         app.state.phishnet_client = PhishNetClient(api_key=settings.phishnet_api_key)
         app.state.pollers = PollerRegistry()
         try:
@@ -257,6 +271,22 @@ def create_app() -> FastAPI:
             "run_position": run_position,
             "run_length": run_length,
         }
+
+    @app.get("/likely-tonight/{show_id}")
+    def likely_tonight_route(
+        show_id: int,
+        request: Request,
+        top_n: int = 30,
+        read: sqlite3.Connection = Depends(get_read),  # noqa: B008
+    ):
+        """Show-level inclusion: songs ranked by P(appears anywhere tonight).
+        Distinct from /predict (slot-level next-song). See the Likely Tonight view."""
+        scorer = request.app.state.inclusion_scorer
+        if scorer is None:
+            raise HTTPException(status_code=503, detail="inclusion model not available")
+        from phishpicker.inclusion import likely_tonight
+
+        return {"candidates": likely_tonight(read, show_id, scorer, top_n=top_n)}
 
     @app.get("/last-show")
     def last_show(read: sqlite3.Connection = Depends(get_read)):  # noqa: B008

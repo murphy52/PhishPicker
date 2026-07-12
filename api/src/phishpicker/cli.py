@@ -71,6 +71,11 @@ def main() -> int:
     p_train = sub.add_parser("train", help="training commands")
     train_sub = p_train.add_subparsers(dest="train_cmd", required=True)
     p_run = train_sub.add_parser("run", help="train + eval + ship artifacts")
+    p_incl = train_sub.add_parser(
+        "inclusion", help="train the show-level 'Likely Tonight' inclusion model"
+    )
+    p_incl.add_argument("--holdout-days", type=int, default=365)
+    p_incl.add_argument("--iterations", type=int, default=300)
     p_ab = train_sub.add_parser("ab-era", help="A/B: era-only vs era+recency weighting")
     p_ab.add_argument("--holdout", type=int, default=20)
     p_ab.add_argument("--negatives", type=int, default=50)
@@ -184,6 +189,20 @@ def main() -> int:
             seed=args.seed,
         )
         print(json.dumps(result, indent=2))
+        return 0
+
+    if args.cmd == "train" and args.train_cmd == "inclusion":
+        from phishpicker.train.inclusion_runner import train_inclusion
+
+        result = train_inclusion(
+            s.db_path,
+            s.data_dir / "inclusion_model.lgb",
+            holdout_days=args.holdout_days,
+            num_boost_round=args.iterations,
+        )
+        # keep the console readable — importances go to the artifact meta, not stdout
+        result_summary = {k: v for k, v in result.items() if k != "feature_importance_gain"}
+        print(json.dumps(result_summary, indent=2))
         return 0
 
     if args.cmd == "train" and args.train_cmd == "run":
