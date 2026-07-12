@@ -698,3 +698,37 @@ def test_build_preview_backfills_venue_id_when_live_show_has_null(seeded_client)
                 f"target song {target_song_id} leaked into top_k for slot "
                 f"{s['slot_idx']} — venue_id backfill failed"
             )
+
+
+# --- perf: per-show feature caches are memoized across preview calls (#24) ---
+
+
+def test_feature_caches_memoized_across_calls(seeded_read_db):
+    from phishpicker.live_preview import _show_feature_caches, clear_feature_cache
+
+    clear_feature_cache()
+    sids = [r["song_id"] for r in seeded_read_db.execute("SELECT song_id FROM songs")]
+    a = _show_feature_caches(seeded_read_db, "2024-07-21", 500, sids, "lightgbm")
+    b = _show_feature_caches(seeded_read_db, "2024-07-21", 500, sids, "lightgbm")
+    assert a is b, "second call must reuse the memoized caches, not recompute"
+    # A different show key recomputes (distinct object).
+    c = _show_feature_caches(seeded_read_db, "2024-07-22", 500, sids, "lightgbm")
+    assert c is not a
+
+
+def test_clear_feature_cache_forces_recompute(seeded_read_db):
+    from phishpicker.live_preview import _show_feature_caches, clear_feature_cache
+
+    clear_feature_cache()
+    sids = [r["song_id"] for r in seeded_read_db.execute("SELECT song_id FROM songs")]
+    a = _show_feature_caches(seeded_read_db, "2024-07-21", 500, sids, "heuristic")
+    clear_feature_cache()
+    b = _show_feature_caches(seeded_read_db, "2024-07-21", 500, sids, "heuristic")
+    assert a is not b, "clearing the cache must force a recompute"
+
+
+def test_preview_repeat_call_is_consistent(seeded_client, live_show_id):
+    """Warming the feature cache must not change preview output."""
+    first = seeded_client.get(f"/live/show/{live_show_id}/preview").json()
+    second = seeded_client.get(f"/live/show/{live_show_id}/preview").json()
+    assert first == second
