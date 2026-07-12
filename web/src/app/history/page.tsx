@@ -48,7 +48,13 @@ export default function HistoryPage() {
         <h1 className="font-score text-lg font-extrabold uppercase tracking-[0.3em]">
           History
         </h1>
-        <span className="w-12" />
+        <Link
+          href="/scoring"
+          className="w-12 text-right text-sm text-neutral-500 hover:text-neutral-300"
+          aria-label="How scoring works"
+        >
+          rules
+        </Link>
       </header>
 
       <main className="flex flex-1 flex-col px-4 pb-16 pt-4">

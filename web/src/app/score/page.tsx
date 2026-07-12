@@ -123,13 +123,18 @@ function ScoreContent() {
             )}
             <ComboMeter streak={streak} />
             <ScoreFeed events={events} />
-            <footer className="mt-4 flex justify-between text-[10px] text-neutral-700">
+            <footer className="mt-4 flex items-center justify-between text-[10px] text-neutral-700">
               <span>
                 {score.totals.ppps > 0
                   ? `${score.totals.ppps.toFixed(1)} pts / predictable song`
                   : ""}
               </span>
-              <span>{score.model_sha ? `model ${score.model_sha.slice(0, 7)}` : ""}</span>
+              <span className="flex items-center gap-3">
+                <Link href="/scoring" className="text-neutral-600 hover:text-neutral-400">
+                  how scoring works
+                </Link>
+                <span>{score.model_sha ? `model ${score.model_sha.slice(0, 7)}` : ""}</span>
+              </span>
             </footer>
           </>
         )}
