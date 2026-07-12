@@ -70,6 +70,7 @@ def test_review_returns_setlist_with_ranks(client):
     assert s["actual_song_id"] == 1
     assert s["actual_song"] == "A"
     assert "actual_rank" in s
+    assert "actual_slug" in s  # phish.net deep-link slug (may be null)
 
 
 def test_review_cache_hit_serves_stored_rank(client, tmp_path):

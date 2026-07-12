@@ -10,6 +10,9 @@ interface Slot {
   position: number;
   actual_song_id: number;
   actual_song: string;
+  // phish.net song slug for the deep link; null on songs ingested before the
+  // slug column existed (until the next ingest backfills them).
+  actual_slug: string | null;
   actual_rank: number | null;
 }
 
@@ -89,7 +92,19 @@ export default function LastShowPage() {
                   <span className="text-xs text-neutral-500 w-5 text-right">
                     {slot.position}
                   </span>
-                  <span>{slot.actual_song}</span>
+                  {slot.actual_slug ? (
+                    <a
+                      href={`https://phish.net/song/${slot.actual_slug}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      data-testid="phishnet-link"
+                      className="truncate underline decoration-dotted decoration-neutral-600 underline-offset-4 hover:decoration-indigo-400"
+                    >
+                      {slot.actual_song}
+                    </a>
+                  ) : (
+                    <span>{slot.actual_song}</span>
+                  )}
                 </span>
                 <RankPill rank={slot.actual_rank} />
               </li>

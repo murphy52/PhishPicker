@@ -48,6 +48,31 @@ test("renders setlist grouped by set", async () => {
   expect(screen.getByText("ENCORE")).toBeInTheDocument();
 });
 
+test("songs with a slug deep-link to phish.net", async () => {
+  mockReview([
+    {
+      slot_idx: 1, set_number: "1", position: 1, actual_song_id: 1,
+      actual_song: "Timber", actual_slug: "timber", actual_rank: 7,
+    },
+  ]);
+  renderIsolated();
+  const link = await screen.findByTestId("phishnet-link");
+  expect(link).toHaveTextContent("Timber");
+  expect(link).toHaveAttribute("href", "https://phish.net/song/timber");
+});
+
+test("songs without a slug render as plain text", async () => {
+  mockReview([
+    {
+      slot_idx: 1, set_number: "1", position: 1, actual_song_id: 1,
+      actual_song: "Timber", actual_slug: null, actual_rank: 7,
+    },
+  ]);
+  renderIsolated();
+  await waitFor(() => expect(screen.getByText("Timber")).toBeInTheDocument());
+  expect(screen.queryByTestId("phishnet-link")).toBeNull();
+});
+
 test("renders rank pills for each slot", async () => {
   mockReview([
     { slot_idx: 1, set_number: "1", position: 1, actual_song_id: 1, actual_song: "X", actual_rank: 1 },
