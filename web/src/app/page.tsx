@@ -19,6 +19,7 @@ import {
 } from "@/lib/preview";
 import { getCachedSongs, setCachedSongs, type Song } from "@/lib/songs";
 import { useServiceWorkerSyncMessage } from "@/lib/syncMessage";
+import { useSyncPoll } from "@/lib/syncPoll";
 
 interface Meta {
   shows_count: number;
@@ -54,6 +55,14 @@ export default function Home() {
   );
 
   const { data: score } = useScore(showId, playedSongs.length);
+
+  // Sync state — shares its SWR key with SyncStatus, so this doesn't add a
+  // second poll. Gates the foreground reconciler poll below.
+  const { data: syncStatus } = useSWR<{ sync_enabled: boolean } | null>(
+    showId ? `/api/live/show/${showId}/sync/status` : null,
+    (url: string) => fetch(url).then((r) => r.json()),
+    { refreshInterval: 5_000, revalidateOnFocus: false },
+  );
 
   const { data: upcoming, mutate: mutateUpcoming } = useSWR<UpcomingShow | null>(
     "/api/upcoming",
@@ -262,6 +271,18 @@ export default function Home() {
       refresh(songs);
       mutatePreview();
     }, [showId, refresh, songs, mutatePreview]),
+  );
+
+  // Foreground fallback for the reconciler: while sync is enabled, poll the
+  // live show so server-side appends land in the UI even when push isn't
+  // subscribed (the setInterval pauses in a backgrounded tab, where the push
+  // above takes over). refresh() grows playedSongs, which re-keys the
+  // count-based preview + score queries so they refetch automatically.
+  useSyncPoll(
+    !!showId && (syncStatus?.sync_enabled ?? false),
+    useCallback(() => {
+      if (showId) refresh(songs);
+    }, [showId, refresh, songs]),
   );
 
   const slots = applyPendingMutation(preview?.slots ?? [], pending);
