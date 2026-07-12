@@ -331,10 +331,9 @@ def create_app() -> FastAPI:
                     int(r["position"]),
                 ),
             )
-            song_names = {
-                r["song_id"]: r["name"]
-                for r in read.execute("SELECT song_id, name FROM songs")
-            }
+            song_rows = read.execute("SELECT song_id, name, slug FROM songs").fetchall()
+            song_names = {r["song_id"]: r["name"] for r in song_rows}
+            song_slugs = {r["song_id"]: r["slug"] for r in song_rows}
             slots_out = []
             for idx, s in enumerate(setlist, start=1):
                 rank_entry = cached.get(idx)
@@ -345,6 +344,7 @@ def create_app() -> FastAPI:
                     "position": int(s["position"]),
                     "actual_song_id": int(s["song_id"]),
                     "actual_song": song_names.get(s["song_id"], f"#{s['song_id']}"),
+                    "actual_slug": song_slugs.get(s["song_id"]),
                     "actual_rank": actual_rank,
                 })
         else:
@@ -363,10 +363,9 @@ def create_app() -> FastAPI:
                     ],
                 )
                 write.commit()
-            song_names = {
-                r["song_id"]: r["name"]
-                for r in read.execute("SELECT song_id, name FROM songs")
-            }
+            song_rows = read.execute("SELECT song_id, name, slug FROM songs").fetchall()
+            song_names = {r["song_id"]: r["name"] for r in song_rows}
+            song_slugs = {r["song_id"]: r["slug"] for r in song_rows}
             slots_out = [
                 {
                     "slot_idx": r.slot_idx,
@@ -374,6 +373,7 @@ def create_app() -> FastAPI:
                     "position": r.position,
                     "actual_song_id": r.actual_song_id,
                     "actual_song": song_names.get(r.actual_song_id, f"#{r.actual_song_id}"),
+                    "actual_slug": song_slugs.get(r.actual_song_id),
                     "actual_rank": r.actual_rank,
                 }
                 for r in ranks
