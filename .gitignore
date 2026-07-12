@@ -2,6 +2,11 @@
 data/*
 # keep the previews/ subdir for ahead-of-show retro truth
 !data/previews/
+# api/data model artifacts (trained locally, prod serves its own)
+api/data/model.lgb
+api/data/model.meta.json
+api/data/metrics.json
+api/data/*.v10-local-backup
 *.db
 *.db-journal
 *.db-wal
