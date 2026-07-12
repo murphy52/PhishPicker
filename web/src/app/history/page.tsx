@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import {
   sortScorecards,
   useScorecards,
-  type SortDir,
+  useSortPreference,
   type SortKey,
 } from "@/lib/scoreHistory";
 
@@ -23,17 +22,7 @@ function formatShowDate(iso: string): string {
 
 export default function HistoryPage() {
   const { scorecards, isLoading } = useScorecards();
-  const [key, setKey] = useState<SortKey>("date");
-  const [dir, setDir] = useState<SortDir>("desc");
-
-  function toggle(nextKey: SortKey) {
-    if (nextKey === key) {
-      setDir((d) => (d === "desc" ? "asc" : "desc"));
-    } else {
-      setKey(nextKey);
-      setDir("desc");
-    }
-  }
+  const [{ key, dir }, toggle] = useSortPreference();
 
   const rows = sortScorecards(scorecards, key, dir);
   const arrow = (col: SortKey) =>

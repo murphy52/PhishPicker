@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { sortScorecards, type Scorecard } from "./scoreHistory";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  sortScorecards,
+  useSortPreference,
+  type Scorecard,
+} from "./scoreHistory";
 
 const card = (show_date: string, combined: number): Scorecard => ({
   show_id: `${show_date}-${combined}`,
@@ -45,5 +50,54 @@ describe("sortScorecards", () => {
     const copy = [...rows];
     sortScorecards(rows, "score", "asc");
     expect(rows).toEqual(copy);
+  });
+});
+
+describe("useSortPreference", () => {
+  afterEach(() => localStorage.clear());
+
+  it("defaults to date descending", () => {
+    const { result } = renderHook(() => useSortPreference());
+    expect(result.current[0]).toEqual({ key: "date", dir: "desc" });
+  });
+
+  it("toggle switches column (desc), then flips direction on re-select", () => {
+    const { result } = renderHook(() => useSortPreference());
+    act(() => result.current[1]("score"));
+    expect(result.current[0]).toEqual({ key: "score", dir: "desc" });
+    act(() => result.current[1]("score"));
+    expect(result.current[0]).toEqual({ key: "score", dir: "asc" });
+  });
+
+  it("persists the choice to localStorage", () => {
+    const { result } = renderHook(() => useSortPreference());
+    act(() => result.current[1]("score")); // new column -> desc
+    expect(JSON.parse(localStorage.getItem("phishpicker:history_sort")!)).toEqual(
+      { key: "score", dir: "desc" },
+    );
+  });
+
+  it("hydrates a stored preference on mount (survives refresh/navigation)", () => {
+    localStorage.setItem(
+      "phishpicker:history_sort",
+      JSON.stringify({ key: "score", dir: "asc" }),
+    );
+    const { result } = renderHook(() => useSortPreference());
+    expect(result.current[0]).toEqual({ key: "score", dir: "asc" });
+  });
+
+  it("ignores a corrupt stored value and keeps the default", () => {
+    localStorage.setItem("phishpicker:history_sort", "{not json");
+    const { result } = renderHook(() => useSortPreference());
+    expect(result.current[0]).toEqual({ key: "date", dir: "desc" });
+  });
+
+  it("ignores a structurally invalid stored value", () => {
+    localStorage.setItem(
+      "phishpicker:history_sort",
+      JSON.stringify({ key: "bogus", dir: "sideways" }),
+    );
+    const { result } = renderHook(() => useSortPreference());
+    expect(result.current[0]).toEqual({ key: "date", dir: "desc" });
   });
 });
