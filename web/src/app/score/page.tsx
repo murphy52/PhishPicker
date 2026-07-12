@@ -7,6 +7,7 @@ import { ComboMeter } from "@/components/ComboMeter";
 import { NextCallCard, type PendingCall } from "@/components/NextCallCard";
 import { ScoreFeed } from "@/components/ScoreFeed";
 import { ScoreHero } from "@/components/ScoreHero";
+import { ShowMetaBar } from "@/components/ShowMetaBar";
 import { useLiveShow } from "@/lib/liveShow";
 import { usePreview } from "@/lib/preview";
 import { buildFeedEvents, useScore, type Attribution } from "@/lib/score";
@@ -71,6 +72,11 @@ function ScoreContent() {
   }, [preview]);
 
   const streak = score?.attributions.at(-1)?.streak ?? 0;
+  // The combo can't advance on a finalized/past board, or once the preview
+  // has loaded and no next slot remains. Undefined preview = still loading,
+  // so don't declare the show closed yet.
+  const showClosed =
+    isHistorical || (preview !== undefined && pendingCall === null);
 
   return (
     <div className="flex min-h-dvh flex-col bg-neutral-950 text-neutral-100">
@@ -105,6 +111,7 @@ function ScoreContent() {
           </p>
         ) : (
           <>
+            {score.show && <ShowMetaBar show={score.show} />}
             <ScoreHero totals={score.totals} frozen={score.frozen} />
             {score.frozen && (
               <Link
@@ -121,7 +128,7 @@ function ScoreContent() {
                 lastEvent={events[0]}
               />
             )}
-            <ComboMeter streak={streak} />
+            <ComboMeter streak={streak} closed={showClosed} />
             <ScoreFeed events={events} />
             <footer className="mt-4 flex items-center justify-between text-[10px] text-neutral-700">
               <span>

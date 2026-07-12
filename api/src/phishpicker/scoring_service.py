@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from phishpicker.scoring import normalize_setlist, score_show
 from phishpicker.scoring_store import get_score_state
+from phishpicker.show_meta import resolve_show_meta
 
 
 def _actual_setlist(live_conn: sqlite3.Connection, show_id: str) -> list[dict]:
@@ -103,6 +104,16 @@ def score_live_show(
         outcome["name"] = _name(outcome["pick"]["song_id"])
     result["model_sha"] = state.get("model_sha")
     result["frozen"] = bool(bracket)
+    # Venue/date/city/run for the scoreboard + bracket header. Resolved from
+    # the live_show's (date, venue_id); degrades to empty fields, never errors.
+    show_row = live_conn.execute(
+        "SELECT show_date, venue_id FROM live_show WHERE show_id = ?", (show_id,)
+    ).fetchone()
+    result["show"] = (
+        resolve_show_meta(read_conn, show_row["show_date"], show_row["venue_id"])
+        if show_row
+        else None
+    )
     return result
 
 

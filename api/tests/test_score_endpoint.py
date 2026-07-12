@@ -139,6 +139,21 @@ def test_pick_outcomes_carry_names_including_absent(seeded_read_db, live_conn):
     assert by_song[101]["reason"] == "absent"
 
 
+def test_score_exposes_show_meta(seeded_read_db, live_conn):
+    """The scoreboard + bracket header read venue/date/city/run from the
+    score payload's `show` block, resolved from (show_date, venue_id)."""
+    show_id = create_live_show(live_conn, "2024-07-21", venue_id=500)
+    append_song(live_conn, show_id, song_id=100, set_number="1")
+    result = score_live_show(seeded_read_db, live_conn, show_id)
+    meta = result["show"]
+    assert meta["show_date"] == "2024-07-21"
+    assert meta["venue"] == "Madison Square Garden"
+    assert meta["city"] == "New York"
+    assert meta["state"] == "NY"
+    # The lone fixture show at this venue -> a one-off, no residency badge.
+    assert meta["run_length"] is None
+
+
 def test_score_endpoint_exposes_named_bracket(seeded_client, live_show_id):
     seeded_client.post(
         "/live/song",

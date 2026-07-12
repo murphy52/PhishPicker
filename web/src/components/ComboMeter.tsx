@@ -6,18 +6,32 @@ import { nextMultiplier } from "@/lib/score";
 interface Props {
   /** Current consecutive-correct-calls streak (from the last attribution). */
   streak: number;
+  /**
+   * The show is over (a finalized/past board, or no next slot remains), so
+   * the streak can't advance. Suppresses the forward "next catch ×N" tease —
+   * it would dangle a multiplier the show can never pay.
+   */
+  closed?: boolean;
 }
 
 const DRAIN_MS = 900;
+
+/** The multiplier the streak's final catch actually paid (past tense). */
+function achievedMultiplier(streak: number): number {
+  if (streak >= 3) return 2;
+  if (streak === 2) return 1.5;
+  return 1;
+}
 
 /**
  * Understated at ×1, escalates at ×1.5/×2, and drains with weight on reset.
  * Framed as "banking toward the next live catch" so a foreseen call's
  * unmultiplied points never read as a glowing-but-empty meter.
  */
-export function ComboMeter({ streak }: Props) {
+export function ComboMeter({ streak, closed = false }: Props) {
   const lit = Math.min(streak, 3);
   const mult = nextMultiplier(streak);
+  const achieved = achievedMultiplier(streak);
   const prev = useRef(streak);
   const [draining, setDraining] = useState(false);
 
@@ -61,18 +75,35 @@ export function ComboMeter({ streak }: Props) {
           {streak > 0 ? `${streak} in a row` : "combo"}
         </span>
       </div>
-      <span
-        data-testid="combo-mult"
-        className={`font-score text-xl font-extrabold ${
-          mult >= 2
-            ? "text-live drop-shadow-[0_0_10px_rgba(251,191,36,0.6)]"
-            : mult > 1
-              ? "text-live/90"
-              : "text-neutral-600"
-        }`}
-      >
-        next catch ×{mult}
-      </span>
+      {closed ? (
+        // Show is over: no forward tease. If the run reached a real combo,
+        // note the multiplier it earned (past tense); otherwise stay quiet.
+        achieved > 1 ? (
+          <span
+            data-testid="combo-mult"
+            className="font-score text-lg font-bold text-live/70"
+          >
+            ✓ ×{achieved} combo
+          </span>
+        ) : (
+          <span data-testid="combo-mult" className="text-xs text-neutral-600">
+            {streak > 0 ? "combo ended" : "no combo"}
+          </span>
+        )
+      ) : (
+        <span
+          data-testid="combo-mult"
+          className={`font-score text-xl font-extrabold ${
+            mult >= 2
+              ? "text-live drop-shadow-[0_0_10px_rgba(251,191,36,0.6)]"
+              : mult > 1
+                ? "text-live/90"
+                : "text-neutral-600"
+          }`}
+        >
+          next catch ×{mult}
+        </span>
+      )}
     </div>
   );
 }

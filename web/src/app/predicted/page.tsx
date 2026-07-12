@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { PredictedSetlist } from "@/components/PredictedSetlist";
+import { ShowMetaBar } from "@/components/ShowMetaBar";
 import { useLiveShow } from "@/lib/liveShow";
 import { useScore } from "@/lib/score";
 
@@ -39,6 +40,7 @@ function PredictedContent() {
           </p>
         ) : (
           <>
+            {score.show && <ShowMetaBar show={score.show} />}
             <p className="text-center text-[10px] uppercase tracking-[0.35em] text-neutral-500">
               What the app called before the show
             </p>

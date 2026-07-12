@@ -45,12 +45,24 @@ export interface PickOutcome {
   name: string;
 }
 
+export interface ShowMeta {
+  show_date: string;
+  venue: string;
+  city: string;
+  state: string;
+  run_position: number | null;
+  run_length: number | null;
+}
+
 export interface ScoreResponse {
   attributions: Attribution[];
   totals: ScoreTotals;
   pick_outcomes: PickOutcome[];
   model_sha: string | null;
   frozen: boolean;
+  // Venue/date/city/run for the scoreboard + bracket header. Null when the
+  // live show row is gone; individual fields degrade to "" when unresolved.
+  show?: ShowMeta | null;
 }
 
 const SET_LABEL_ORDER = ["1", "2", "3", "4", "E", "E2", "E3"];
