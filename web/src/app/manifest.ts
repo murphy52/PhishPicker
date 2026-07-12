@@ -7,6 +7,9 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Real-time Phish setlist prediction",
     start_url: "/",
     display: "standalone",
+    // Lock the installed PWA to portrait (honored on Android; iOS ignores it,
+    // so RotateGuard provides the cross-platform landscape block).
+    orientation: "portrait",
     background_color: "#0a0a0a",
     theme_color: "#0a0a0a",
     icons: [

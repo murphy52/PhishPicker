@@ -81,3 +81,15 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Portrait lock (#12). RotateGuard is hidden by default; reveal it only on a
+   touch device held in landscape. max-height keeps tablets/desktop out; the
+   layout classes (flex-col, centering) apply once display becomes flex. */
+.rotate-guard {
+  display: none;
+}
+@media screen and (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .rotate-guard {
+    display: flex;
+  }
+}
