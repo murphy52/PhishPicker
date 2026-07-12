@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Barlow_Condensed, Geist, Geist_Mono } from "next/font/google";
+import { RotateGuard } from "@/components/RotateGuard";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import "./globals.css";
 
@@ -55,6 +56,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
         <ServiceWorkerRegister />
+        <RotateGuard />
         {children}
       </body>
     </html>
