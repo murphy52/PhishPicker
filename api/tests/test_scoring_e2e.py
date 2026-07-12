@@ -15,12 +15,12 @@ def _row(set_number, position, song_id):
 
 
 BRACKET = [
-    _row("1", 1, 1),   # Chalk Dust opener — plays exactly there -> 60
+    _row("1", 1, 1),   # Chalk Dust opener — plays exactly there -> 100
     _row("1", 2, 2),   # Reba — plays ("1",3) -> right_set 15 (beaten by live 30)
     _row("1", 3, 4),   # Tweezer — plays ("2",1) -> somewhere 5 (beaten by live 30)
     _row("2", 1, 3),   # Ghost — plays ("2",2) -> right_set 15 (beaten by live 30)
     _row("2", 3, 8),   # Harry Hood — never plays -> absent whiff
-    _row("E", 1, 6),   # Loving Cup encore opener — exact -> 60
+    _row("E", 1, 6),   # Loving Cup encore opener — exact -> 100
 ]
 
 ACTUAL = [
@@ -48,13 +48,13 @@ def test_full_show():
 
     # (ledger, final, streak) timeline
     assert [(a["ledger"], a["final"], a["streak"]) for a in atts] == [
-        ("foresight", 60, 0),   # opener banked pre-show; live starts after
+        ("foresight", 100, 0),  # opener banked pre-show; live starts after
         ("live", 30, 1),        # Fluffhead called, x1
         ("live", 45, 2),        # Reba called, x1.5 — beat foresight right_set
         ("live", 60, 3),        # Tweezer called, x2 — the design's worked example
         ("live", 60, 4),        # Ghost called, x2 (cap holds)
         (None, 0, 0),           # bustout: wrong call resets the streak
-        ("foresight", 60, 0),   # Loving Cup encore opener; no capture = no-event
+        ("foresight", 100, 0),  # Loving Cup encore opener; no capture = no-event
     ]
 
     # Beaten claims are recorded for the UI
@@ -71,10 +71,10 @@ def test_full_show():
 
     # Totals
     totals = result["totals"]
-    assert totals["foresight_total"] == 120
+    assert totals["foresight_total"] == 200  # two openers at 100
     assert totals["live_total"] == 30 + 45 + 60 + 60
-    assert totals["combined"] == 315
-    assert totals["ppps"] == 315 / 6  # 7 songs minus 1 bustout
+    assert totals["combined"] == 395
+    assert totals["ppps"] == 395 / 6  # 7 songs minus 1 bustout
     assert totals["hit_counts"] == {"opener": 2, "next_song": 4}
 
     # The Hood whiff shows up in pick outcomes for the recap

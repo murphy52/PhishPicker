@@ -16,11 +16,11 @@ test("explains both ledgers", () => {
 
 test("shows the full foresight point ladder", () => {
   render(<ScoringPage />);
-  // 5 / 15 / 40 / 60 — the ordering does the work.
+  // 5 / 15 / 80 / 100 — the ordering does the work, magnitudes reward scarcity.
   expect(screen.getByText("+5")).toBeInTheDocument();
   expect(screen.getByText("+15")).toBeInTheDocument();
-  expect(screen.getByText("+40")).toBeInTheDocument();
-  expect(screen.getByText("+60")).toBeInTheDocument();
+  expect(screen.getByText("+80")).toBeInTheDocument();
+  expect(screen.getByText("+100")).toBeInTheDocument();
 });
 
 test("shows the combo multiplier tiers", () => {

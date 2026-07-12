@@ -33,16 +33,16 @@ def test_finalize_persists_scorecard(seeded_read_db, live_conn):
     )
     out = finalize_scorecard(seeded_read_db, live_conn, show_id)
     card = out["scorecard"]
-    # opener 60 + live next-song 30
-    assert card["combined"] == 90
-    assert card["foresight_total"] == 60
+    # opener 100 + live next-song 30
+    assert card["combined"] == 130
+    assert card["foresight_total"] == 100
     assert card["live_total"] == 30
     assert card["max_streak"] == 1
     assert card["show_date"] == "2026-04-23"
     row = live_conn.execute(
         "SELECT combined FROM scorecards WHERE show_id = ?", (show_id,)
     ).fetchone()
-    assert row["combined"] == 90
+    assert row["combined"] == 130
 
 
 def test_finalize_is_idempotent_and_refreshes(seeded_read_db, live_conn):
@@ -55,25 +55,25 @@ def test_finalize_is_idempotent_and_refreshes(seeded_read_db, live_conn):
     out = finalize_scorecard(seeded_read_db, live_conn, show_id)
     n = live_conn.execute("SELECT COUNT(*) FROM scorecards").fetchone()[0]
     assert n == 1
-    assert out["scorecard"]["combined"] == 90  # 102 was a miss, no change
+    assert out["scorecard"]["combined"] == 130  # 102 was a miss, no change
 
 
 def test_best_yet_context(seeded_read_db, live_conn):
     a = _seed_show(
         live_conn, "2026-04-21", [100, 101], bracket=BRACKET, snapshots=SNAPS
     )
-    finalize_scorecard(seeded_read_db, live_conn, a)  # 90 pts
+    finalize_scorecard(seeded_read_db, live_conn, a)  # 130 pts
     b = _seed_show(live_conn, "2026-04-22", [102])  # nothing banked
     out = finalize_scorecard(seeded_read_db, live_conn, b)
     ctx = out["context"]
     assert ctx["shows_scored"] == 2
-    assert ctx["best_total"] == 90
+    assert ctx["best_total"] == 130
     assert ctx["rank_by_total"] == 2
     assert ctx["is_best"] is False
 
     cards = list_scorecards(live_conn)
     assert [c["show_date"] for c in cards] == ["2026-04-22", "2026-04-21"]
-    assert cards[1]["combined"] == 90
+    assert cards[1]["combined"] == 130
 
 
 def test_scorecard_endpoints(seeded_client, live_show_id):

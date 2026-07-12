@@ -42,7 +42,7 @@ def test_score_live_show_derivations(seeded_read_db, live_conn):
     atts = result["attributions"]
 
     assert [(a["ledger"], a["final"], a["streak"]) for a in atts] == [
-        ("foresight", 60, 0),  # opener exact + bonus
+        ("foresight", 100, 0),  # opener exact + bonus
         ("live", 30, 1),       # last-wins: the corrected snapshot called 101
         (None, 0, 0),          # wrong call -> miss, streak resets
         (None, 0, 0),          # wrong call
@@ -53,10 +53,10 @@ def test_score_live_show_derivations(seeded_read_db, live_conn):
     assert atts[3]["called_early"] is True
 
     totals = result["totals"]
-    assert totals["foresight_total"] == 60
+    assert totals["foresight_total"] == 100
     assert totals["live_total"] == 30
-    assert totals["combined"] == 90
-    assert totals["ppps"] == 90 / 4
+    assert totals["combined"] == 130
+    assert totals["ppps"] == 130 / 4
     assert result["model_sha"] == "test-sha"
 
 
@@ -80,7 +80,7 @@ def test_correction_rescores_cleanly(seeded_read_db, live_conn):
     score by exactly the corrected song's claim delta — no extra code."""
     show_id = _seed_show(live_conn)
     before = score_live_show(seeded_read_db, live_conn, show_id)
-    assert before["totals"]["combined"] == 90
+    assert before["totals"]["combined"] == 130
 
     # phish.net says the 2nd song was actually 105, and the model's call for
     # the NEXT reveal (i4, not yet played) refreshes — same after_count as
@@ -91,9 +91,9 @@ def test_correction_rescores_cleanly(seeded_read_db, live_conn):
     after = score_live_show(seeded_read_db, live_conn, show_id)
     # The i1 live hit (30) is gone — its captured call said 101, but the
     # corrected setlist says 105 played. Everything else is untouched.
-    assert after["totals"]["combined"] == 60
+    assert after["totals"]["combined"] == 100
     assert after["attributions"][1]["ledger"] is None
-    assert after["attributions"][0]["final"] == 60
+    assert after["attributions"][0]["final"] == 100
 
 
 def test_score_endpoint_smoke(seeded_client, live_show_id):

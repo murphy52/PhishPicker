@@ -99,13 +99,13 @@ export default function ScoringPage() {
               accent="foresight"
               event="Exact slot"
               note="same set and same position within it"
-              points="+40"
+              points="+80"
             />
             <LadderRow
               accent="foresight"
               event="Exact slot and it's a set opener"
-              note="S1.1, S2.1, or the first encore song — the showiest call in the game. Second/third-encore openers score plain exact (+40)."
-              points="+60"
+              note="S1.1, S2.1, or the first encore song — the showiest call in the game. Second/third-encore openers score plain exact (+80)."
+              points="+100"
             />
           </ul>
         </Section>
@@ -140,7 +140,7 @@ export default function ScoringPage() {
           <p className="text-sm text-neutral-400">
             A song the app both foresaw <em>and</em> called live banks only the
             larger of the two base values — never both. Ties go to Foresight.
-            Since a well-placed pick (+40/+60) beats a live call (+30), Live
+            Since a well-placed pick (+80/+100) beats a live call (+30), Live
             earns its keep on the songs the bracket missed or mis-placed. The
             feed always shows the claim that lost, so you can see the math.
           </p>

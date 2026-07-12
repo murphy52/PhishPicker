@@ -27,7 +27,7 @@ def test_full_timeline():
         (None, 0, 0),           # opener: never a live event
         ("live", 1, 30),        # 1st in a row, x1
         ("live", 2, 45),        # 2nd, x1.5
-        ("foresight", 3, 40),   # streak advances but Foresight never multiplied
+        ("foresight", 3, 80),   # streak advances but Foresight never multiplied
         ("live", 4, 60),        # x2 (cap) pays on the Live-banked call
         (None, 0, 0),           # wrong call: streak resets, nothing banked
         ("live", 1, 30),        # streak restarts at x1
