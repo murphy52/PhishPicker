@@ -259,3 +259,74 @@ def test_pending_close_outs_ignores_shows_outside_the_backstop_window(tmp_path):
     assert all(
         d >= (now.date() - timedelta(days=BACKSTOP_DAYS)).isoformat() for d in dates
     )
+
+
+# --- canonical setlist refresh (what makes the 6am rollover safe) ---
+
+
+def test_close_out_writes_the_setlist_into_the_canonical_db(tmp_path):
+    """resolve_last_show_id requires setlist_songs rows to exist. /last-show and
+    /upcoming now flip at 06:00 EDT, but only the 11am full ingest used to write
+    canonical setlists — so without this the flip would point /last-show at the
+    WRONG (older) show for five hours every morning."""
+    from types import SimpleNamespace
+
+    from phishpicker.close_out import refresh_canonical_setlist
+    from phishpicker.db.connection import apply_schema, open_db
+
+    read = open_db(tmp_path / "phishpicker.db")
+    apply_schema(read)
+    read.execute("INSERT INTO venues (venue_id, name, state) VALUES (1, 'Ruoff', 'IN')")
+    read.execute(
+        "INSERT INTO shows (show_id, show_date, venue_id, fetched_at) "
+        "VALUES (99, '2026-07-14', 1, '2026-07-13T00:00:00Z')"
+    )
+    read.commit()
+    read.close()
+
+    settings = SimpleNamespace(db_path=tmp_path / "phishpicker.db")
+    net_rows = [
+        {"showid": 99, "set": "1", "position": 1, "songid": 1, "song": "AC/DC Bag"},
+        {"showid": 99, "set": "e", "position": 1, "songid": 2, "song": "Wilson"},
+    ]
+    refresh_canonical_setlist(settings, net_rows)
+
+    conn = open_db(tmp_path / "phishpicker.db", read_only=True)
+    rows = conn.execute(
+        "SELECT set_number, position FROM setlist_songs WHERE show_id = 99"
+    ).fetchall()
+    assert len(rows) == 2
+
+    # And the whole point: the show now resolves as "last show".
+    from phishpicker.last_show import resolve_last_show_id
+
+    assert resolve_last_show_id(conn, today="2026-07-15") == 99
+
+
+def test_refresh_canonical_setlist_ignores_an_empty_setlist(tmp_path):
+    """A failed/empty poll must not DELETE an existing canonical setlist —
+    upsert_setlist_songs is DELETE+INSERT, so passing [] would wipe the show."""
+    from types import SimpleNamespace
+
+    from phishpicker.close_out import refresh_canonical_setlist
+    from phishpicker.db.connection import apply_schema, open_db
+
+    read = open_db(tmp_path / "phishpicker.db")
+    apply_schema(read)
+    read.execute("INSERT INTO songs (song_id, name, first_seen_at) VALUES (1, 'AC/DC Bag', '1990-01-01')")
+    read.execute(
+        "INSERT INTO shows (show_id, show_date, fetched_at) "
+        "VALUES (99, '2026-07-14', '2026-07-13T00:00:00Z')"
+    )
+    read.execute(
+        "INSERT INTO setlist_songs (show_id, set_number, position, song_id) "
+        "VALUES (99, '1', 1, 1)"
+    )
+    read.commit()
+    read.close()
+
+    refresh_canonical_setlist(SimpleNamespace(db_path=tmp_path / "phishpicker.db"), [])
+
+    conn = open_db(tmp_path / "phishpicker.db", read_only=True)
+    n = conn.execute("SELECT COUNT(*) FROM setlist_songs WHERE show_id = 99").fetchone()[0]
+    assert n == 1, "an empty poll wiped the existing setlist"

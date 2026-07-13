@@ -5,7 +5,7 @@ import logging
 import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, closing
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import (
     BackgroundTasks,
@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from phishpicker.config import Settings
 from phishpicker.db.connection import open_db
+from phishpicker.last_show import rollover_today
 from phishpicker.live import (
     advance_set,
     append_song,
@@ -240,14 +241,9 @@ def create_app() -> FastAPI:
         request: Request,
         read: sqlite3.Connection = Depends(get_read),  # noqa: B008
     ):
-        # Compute "today" with a 15-hour lag so the rollover from one show
-        # to the next happens the morning AFTER a show, not during it.
-        # Plain UTC midnight = 5pm Pacific / 8pm Eastern, which is before
-        # a typical 7pm-11pm show even starts — causing the next day's
-        # show to appear "upcoming" while tonight's is still pending or
-        # in progress. 15h shifts the rollover to 15:00 UTC = 8am PDT
-        # / 11am EDT, comfortably after any US show has ended.
-        today = (datetime.now(UTC) - timedelta(hours=15)).date().isoformat()
+        # Shared with /last-show so the two flip atomically at the same instant;
+        # the lag and its rationale live in last_show.ROLLOVER_LAG_HOURS.
+        today = rollover_today(datetime.now(UTC))
         shows = request.app.state.phishnet_client.fetch_upcoming_shows(today)
         if not shows:
             raise HTTPException(status_code=404, detail="no upcoming Phish shows")
