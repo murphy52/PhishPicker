@@ -5,6 +5,7 @@ from collections import OrderedDict
 
 from fastapi import HTTPException
 
+from phishpicker.model.rules import build_reprise_deps
 from phishpicker.model.scorer import Scorer
 from phishpicker.model.stats import _find_run_start, compute_song_stats
 from phishpicker.predict import predict_next_stateless
@@ -169,6 +170,7 @@ def _compute_hit_rank(
     ext_cache,
     bigram_cache,
     played_in_run: set[int] | None = None,
+    reprise_deps: dict[int, int] | None = None,
 ) -> int | None:
     """Return 1-based rank of `target_song_id` in the top-10 predictions, or None if absent."""
     # Skip the cache for stubbed/None conns (direct unit tests) — there's no
@@ -212,6 +214,7 @@ def _compute_hit_rank(
         ext_cache=ext_cache,
         bigram_cache=bigram_cache,
         played_in_run=played_in_run,
+        reprise_deps=reprise_deps,
     )
     rank: int | None = None
     for i, c in enumerate(cands):
@@ -277,6 +280,12 @@ def build_preview(
     song_names = {r["song_id"]: r["name"] for r in song_rows}
     song_slugs = {r["song_id"]: r["slug"] for r in song_rows}
     song_ids = list(song_names.keys())
+    # Reprise -> base-song map, built once per preview off the names we already
+    # loaded. Demotes e.g. Tweezer Reprise in slots where Tweezer is neither
+    # entered nor forecast; because virtual_played carries each slot's top pick
+    # forward, a bracket that predicts Tweezer earlier still keeps Reprise at
+    # the encore.
+    reprise_deps = build_reprise_deps(song_names)
 
     # Per-show caches. These depend only on (show_date, venue_id, song set) and
     # the data before the show — fixed for the whole show — so they're memoized
@@ -365,6 +374,7 @@ def build_preview(
                     ext_cache=ext_cache,
                     bigram_cache=bigram_cache,
                     played_in_run=played_in_run,
+                    reprise_deps=reprise_deps,
                 )
                 slots.append(
                     {
@@ -402,6 +412,7 @@ def build_preview(
                 ext_cache=ext_cache,
                 bigram_cache=bigram_cache,
                 played_in_run=played_in_run,
+                reprise_deps=reprise_deps,
             )
             slots.append(
                 {

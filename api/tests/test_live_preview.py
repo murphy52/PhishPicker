@@ -304,6 +304,36 @@ def test_preview_passes_prior_only_context_to_hit_rank(
     assert captured_played[1] == [100]
 
 
+def test_preview_threads_reprise_deps_into_every_slot(
+    seeded_client, live_show_id, monkeypatch
+):
+    """Every slot call — predicted slots and entered-slot hit_ranks alike — must
+    receive the reprise->base map. Drop it and 'X Reprise' floats back up to the
+    encore on base rate even when its base song is nowhere in the show."""
+    from phishpicker import live_preview
+
+    seeded_client.post(
+        "/live/song",
+        json={"show_id": live_show_id, "song_id": 100, "set_number": "1"},
+    )
+
+    real_predict = live_preview.predict_next_stateless
+    seen: list[dict | None] = []
+
+    def spy_predict(*, reprise_deps=None, **kwargs):
+        seen.append(reprise_deps)
+        return real_predict(reprise_deps=reprise_deps, **kwargs)
+
+    monkeypatch.setattr(live_preview, "predict_next_stateless", spy_predict)
+    resp = seeded_client.get(f"/live/show/{live_show_id}/preview")
+
+    assert resp.status_code == 200
+    assert seen, "preview produced no predictions to check"
+    # None would mean predict_next_stateless falls back to its own DB query per
+    # slot — correct, but silently off the cached path build_preview exists for.
+    assert all(isinstance(d, dict) for d in seen)
+
+
 def test_played_in_run_returns_empty_when_show_not_in_tour(seeded_client):
     """A show date with no matching tour returns an empty filter set."""
     from contextlib import closing

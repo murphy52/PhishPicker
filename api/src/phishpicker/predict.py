@@ -1,6 +1,6 @@
 import sqlite3
 
-from phishpicker.model.rules import apply_post_rules
+from phishpicker.model.rules import apply_post_rules, build_reprise_deps
 from phishpicker.model.scorer import HeuristicScorer, Scorer
 
 
@@ -22,6 +22,7 @@ def predict_next_stateless(
     ext_cache: dict | None = None,
     bigram_cache: dict | None = None,
     played_in_run: set[int] | None = None,
+    reprise_deps: dict[int, int] | None = None,
 ) -> list[dict]:
     """Pure prediction over an explicit played list — no live DB.
 
@@ -30,6 +31,13 @@ def predict_next_stateless(
     """
     if scorer is None:
         scorer = HeuristicScorer()
+
+    # Correct by default: a caller that doesn't supply the map still gets the
+    # reprise rule. The preview loop passes one in to keep it off the hot path.
+    if reprise_deps is None:
+        reprise_deps = build_reprise_deps(
+            dict(read_conn.execute("SELECT song_id, name FROM songs").fetchall())
+        )
 
     if song_ids_cache is not None:
         song_ids = song_ids_cache
@@ -58,7 +66,10 @@ def predict_next_stateless(
         bigram_cache=bigram_cache,
     )
     scored = apply_post_rules(
-        scored, played_tonight=set(played_songs), played_in_run=played_in_run
+        scored,
+        played_tonight=set(played_songs),
+        played_in_run=played_in_run,
+        reprise_deps=reprise_deps,
     )
     scored = [(sid, s) for sid, s in scored if s > 0.0]
     # Deterministic tiebreak: score desc, then song_id asc — the live
