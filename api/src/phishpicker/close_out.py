@@ -170,6 +170,28 @@ def show_on(read_conn: sqlite3.Connection, show_date: str) -> dict | None:
     }
 
 
+def refresh_canonical_setlist(settings: Settings, net_rows: list[dict]) -> int:
+    """Write the show's setlist into the CANONICAL db.
+
+    Load-bearing for the 06:00 EDT rollover (last_show.ROLLOVER_LAG_HOURS):
+    resolve_last_show_id only considers shows that have setlist rows, and until
+    now the only thing writing canonical setlists was the 11am full ingest. So a
+    6am flip without this would leave /last-show pointing at the WRONG (older)
+    show every morning until 11am.
+
+    Refuses an empty setlist on purpose: upsert_setlist_songs is DELETE+INSERT,
+    so handing it [] after a failed poll would wipe the show's real setlist.
+    """
+    from phishpicker.ingest.shows import upsert_setlist_songs
+
+    if not net_rows:
+        return 0
+    with closing(open_db(settings.db_path)) as write:
+        n = upsert_setlist_songs(write, net_rows)
+        write.commit()
+    return n
+
+
 def is_finalized(live_conn: sqlite3.Connection, show_id: str) -> bool:
     return (
         live_conn.execute(
@@ -232,6 +254,18 @@ def close_out_show(
     with closing(open_db(settings.live_db_path)) as live:
         show_id = create_live_show(live, show_date, show["venue_id"])
         already = is_finalized(live, show_id)
+
+    # Canonical setlist first: this is what lets /last-show and /upcoming flip at
+    # 6am instead of 11am (see refresh_canonical_setlist). Best-effort — a failure
+    # here must not cost us the scorecard, and the 11am ingest re-writes it anyway.
+    try:
+        from phishpicker.phishnet.client import PhishNetClient
+
+        with PhishNetClient(settings.phishnet_api_key) as client:
+            refresh_canonical_setlist(settings, client.fetch_setlist_by_date(show_date))
+    except Exception:
+        log.warning("close-out: canonical setlist refresh failed for %s",
+                    show_date, exc_info=True)
 
     # scorer on => capture_snapshot per append, so LIVE points are credited just
     # as if sync had been left running all night. vapid_private_key="" => the
