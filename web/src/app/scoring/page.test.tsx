@@ -23,11 +23,12 @@ test("shows the full foresight point ladder", () => {
   expect(screen.getByText("+100")).toBeInTheDocument();
 });
 
-test("shows the combo multiplier tiers", () => {
+test("shows the combo multiplier tiers for both the live and foresight combos", () => {
   render(<ScoringPage />);
-  expect(screen.getByText("×1")).toBeInTheDocument();
-  expect(screen.getByText("×1.5")).toBeInTheDocument();
-  expect(screen.getByText("×2")).toBeInTheDocument();
+  // Each ladder (live next-song + foresight exact-sequence) lists ×1/×1.5/×2.
+  expect(screen.getAllByText("×1")).toHaveLength(2);
+  expect(screen.getAllByText("×1.5")).toHaveLength(2);
+  expect(screen.getAllByText("×2")).toHaveLength(2);
 });
 
 test("explains best-claim-wins", () => {

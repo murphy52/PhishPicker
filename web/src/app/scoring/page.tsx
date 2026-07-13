@@ -167,10 +167,32 @@ export default function ScoringPage() {
             />
           </ul>
           <p className="mt-3 text-xs text-neutral-500">
-            The multiplier pays only on Live-banked points — a foreseen song
-            advances the meter but keeps its Foresight value. A wrong call
+            The multiplier pays only on Live-banked points. A wrong call
             resets the streak to 0; a gap in the capture (no call recorded)
             neither advances nor resets it.
+          </p>
+        </Section>
+
+        <Section title="🔮 Exact-sequence combo">
+          <p className="mb-3 text-sm text-neutral-400">
+            The bracket has its own combo. Nail <em>consecutive</em> exact
+            slots — the app called not just the songs but their order — and the
+            run multiplies, on the same ladder:
+          </p>
+          <ul>
+            <LadderRow accent="foresight" event="First exact in a row" points="×1" />
+            <LadderRow accent="foresight" event="Second in a row" points="×1.5" />
+            <LadderRow
+              accent="foresight"
+              event="Third and beyond"
+              note="capped at ×2, matching the live combo"
+              points="×2"
+            />
+          </ul>
+          <p className="mt-3 text-xs text-neutral-500">
+            Openers count as exact hits for the streak. Any non-exact song —
+            right-set, played-somewhere, a live catch, a miss, or a bustout —
+            breaks the run. A lone exact just scores its flat value (×1).
           </p>
         </Section>
 

@@ -143,17 +143,28 @@ def resolve_claims(
 def apply_combo(
     actual: list[dict], attributions: list[dict], next_call_by_index: dict
 ) -> list[dict]:
-    """Streak/combo pass, decoupled from the ledger.
+    """Streak/combo pass, decoupled from the ledger. Two independent streaks:
 
-    - The streak counts consecutive correct #1 next-song calls, whichever
-      ledger banks the song. A wrong call resets it to 0.
+    LIVE combo (`streak` / `mult`):
+    - Counts consecutive correct #1 next-song calls, whichever ledger banks the
+      song. A wrong call resets it to 0.
     - No captured call (key absent/None) is a NO-EVENT: the streak neither
       advances nor resets — sync gaps and sha-mismatch skips must not punish
       the combo. Index 0 (the opener) is always a no-event.
-    - The multiplier pays only on Live-banked points; Foresight-banked songs
-      advance the streak but keep final == base.
+    - The multiplier pays only on Live-banked points.
+
+    FORESIGHT combo (`fs_streak` / `fs_mult`):
+    - Counts consecutive **exact-tier** foresight hits (reason exact or opener)
+      in setlist order — the reward for calling an exact *sequence*, not just
+      scattered slots. Any non-exact song (right_set, somewhere, live, miss,
+      bustout) resets it.
+    - Same ×1 / ×1.5 / ×2-cap ladder; pays on the banked foresight points.
+      A lone exact stays at ×1.0, so the flat base is unchanged.
+
+    A song banks exactly one ledger, so at most one multiplier ever applies.
     """
     streak = 0
+    fs_streak = 0
     out: list[dict] = []
     for att in attributions:
         i = att["index"]
@@ -163,14 +174,33 @@ def apply_combo(
         else:
             called_right = call == actual[i]["song_id"]
             streak = streak + 1 if called_right else 0
+
+        is_fs_exact = att["ledger"] == "foresight" and att["reason"] in (
+            "exact",
+            "opener",
+        )
+        fs_streak = fs_streak + 1 if is_fs_exact else 0
+
+        mult: float | None = None
+        fs_mult: float | None = None
         if att["ledger"] == "live":
             mult = COMBO.get(streak, COMBO_CAP)
             final = att["base"] * mult
+        elif is_fs_exact:
+            fs_mult = COMBO.get(fs_streak, COMBO_CAP)
+            final = att["base"] * fs_mult
         else:
-            mult = None
             final = att["base"]
         out.append(
-            {**att, "called_right": called_right, "streak": streak, "mult": mult, "final": final}
+            {
+                **att,
+                "called_right": called_right,
+                "streak": streak,
+                "mult": mult,
+                "fs_streak": fs_streak,
+                "fs_mult": fs_mult,
+                "final": final,
+            }
         )
     return out
 
