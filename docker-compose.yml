@@ -49,10 +49,11 @@ services:
     restart: unless-stopped
 
   ingest-cron:
-    # Daily phish.net ingest. Runs once at container start, then every day
-    # at 11am EDT. Lives here (not host crontab) because Murphy52 doesn't
-    # have host cron perms on the NAS. Reuses the api image — the deps and
-    # phishpicker module are already installed there.
+    # Daily phish.net ingest (once at container start, then 11am EDT) AND the
+    # post-show close-out watcher, which ticks every 10 min and finalizes a show
+    # once its setlist goes quiet — see docs/plans/2026-07-13-automated-close-out.md.
+    # Lives here (not host crontab) because Murphy52 doesn't have host cron perms
+    # on the NAS. Reuses the api image — deps and phishpicker are already there.
     build: ./api
     volumes:
       - ${PHISHPICKER_DATA_HOST:?PHISHPICKER_DATA_HOST must be set in .env}:/data
@@ -65,6 +66,11 @@ services:
       PHISHPICKER_ADMIN_TOKEN: ${PHISHPICKER_ADMIN_TOKEN:?PHISHPICKER_ADMIN_TOKEN must be set in .env}
       INGEST_CRON_TZ: ${INGEST_CRON_TZ:-America/New_York}
       INGEST_CRON_HOUR: ${INGEST_CRON_HOUR:-11}
+      # The close-out watcher sends the one-per-show summary push from HERE, not
+      # from the api container — without these it would silently no-op.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
     networks: [internal]
     restart: unless-stopped
     command: ["python", "-m", "phishpicker.ingest_cron"]
