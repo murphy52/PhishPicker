@@ -11,6 +11,7 @@ function event(overrides: Partial<FeedEvent>): FeedEvent {
     headline: "NEXT-SONG ✓",
     points: 30,
     mult: null,
+    sequenceStreak: null,
     beaten: null,
     foreseen: false,
     calledEarly: false,
@@ -57,6 +58,25 @@ test("bustout row celebrates; miss row stays quiet", () => {
   expect(rows[0]).toHaveAttribute("data-kind", "bustout");
   expect(screen.getByText(/nobody calls those/)).toBeInTheDocument();
   expect(rows[1]).toHaveAttribute("data-kind", "miss");
+});
+
+test("exact-sequence combo shows the 🔥 badge and the ×mult", () => {
+  render(
+    <ScoreFeed
+      events={[
+        event({
+          kind: "foresight",
+          headline: "EXACT SLOT",
+          points: 120,
+          mult: 1.5,
+          sequenceStreak: 2,
+        }),
+      ]}
+    />,
+  );
+  const badge = screen.getByTestId("sequence-badge");
+  expect(badge).toHaveTextContent("2 in a row");
+  expect(screen.getByText("×1.5")).toBeInTheDocument();
 });
 
 test("badges: foreseen, called-early, corrected", () => {

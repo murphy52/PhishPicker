@@ -143,6 +143,14 @@ function FeedRow({ event: e }: { event: FeedEvent }) {
           <span className="text-neutral-500">nobody calls those — no penalty</span>
         )}
         {e.beaten && <span className="text-neutral-500">({e.beaten})</span>}
+        {e.sequenceStreak != null && (
+          <span
+            data-testid="sequence-badge"
+            className="font-semibold text-foresight motion-safe:animate-[feed-in_0.35s_ease-out]"
+          >
+            🔥 exact sequence — {e.sequenceStreak} in a row
+          </span>
+        )}
         {e.foreseen && (
           <span data-testid="foreseen-badge" className="text-foresight">
             ✓ foreseen — streak holds

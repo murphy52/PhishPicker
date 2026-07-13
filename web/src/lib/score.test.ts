@@ -61,6 +61,33 @@ test("live hit event carries points, multiplier, and the beaten claim", () => {
   expect(e.beaten).toBe("beat 🔮 on the board +5");
 });
 
+test("foresight exact-sequence combo carries the mult and streak", () => {
+  const [e] = buildFeedEvents([
+    att({
+      index: 3,
+      name: "Bathtub Gin",
+      ledger: "foresight",
+      reason: "exact",
+      base: 80,
+      fs_streak: 2,
+      fs_mult: 1.5,
+      final: 120,
+    }),
+  ]);
+  expect(e.kind).toBe("foresight");
+  expect(e.points).toBe(120);
+  expect(e.mult).toBe(1.5); // foresight combo mult surfaces like the live one
+  expect(e.sequenceStreak).toBe(2);
+});
+
+test("a lone foresight exact shows no combo (mult 1, no streak badge)", () => {
+  const [e] = buildFeedEvents([
+    att({ ledger: "foresight", reason: "exact", base: 80, fs_streak: 1, fs_mult: 1.0, final: 80 }),
+  ]);
+  expect(e.sequenceStreak).toBeNull();
+  expect(e.mult).toBe(1.0); // >1 check in the UI keeps it hidden
+});
+
 test("foresight opener event", () => {
   const [e] = buildFeedEvents([
     att({
