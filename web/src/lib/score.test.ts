@@ -21,6 +21,8 @@ function att(overrides: Partial<Attribution>): Attribution {
     called_right: null,
     streak: 0,
     mult: null,
+    fs_streak: 0,
+    fs_mult: null,
     final: 0,
     called_early: false,
     bustout: false,

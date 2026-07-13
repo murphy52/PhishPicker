@@ -95,6 +95,16 @@ Consecutive **correct next-song calls** build a combo:
 Cap ×2 keeps the top live call (60) below the opener prize (100) — never above —
 and stops one hot run from swamping the total.
 
+**Foresight exact-sequence combo (added 2026-07-12).** The bracket gets a
+parallel combo: **consecutive exact-tier hits** (reason `exact` or `opener`, in
+setlist order) streak on the same ×1 / ×1.5 / ×2-cap ladder, paying on the
+banked foresight points. It rewards calling an exact *sequence* — the app got
+not just the songs but their order — mirroring the live combo's "in a row"
+intuition. Any non-exact song (right-set, somewhere, a live catch, a miss, a
+bustout) resets it; a lone exact stays ×1.0 so flat bases are unchanged. Tracked
+as `fs_streak` / `fs_mult`, independent of the live `streak` / `mult` (a song
+banks one ledger, so at most one multiplier applies).
+
 **Combo rules (decoupled from the ledger):**
 - The streak counts **consecutive correct #1 next-song calls**, *regardless of
   which ledger banks the song* — the intuitive "how many in a row."

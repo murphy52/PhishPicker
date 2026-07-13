@@ -55,3 +55,43 @@ def test_index_zero_call_ignored():
     assert atts[0]["called_right"] is None
     assert atts[0]["streak"] == 0
     assert atts[1]["streak"] == 1  # i0 contributed nothing to the streak
+
+
+# --- Foresight combo: consecutive exact-tier hits streak like the live combo ---
+
+
+def test_foresight_combo_rewards_consecutive_exacts():
+    # Bracket nails ("1",2)=20 and ("1",3)=30 -> back-to-back exacts at
+    # actual indices 1,2. No live calls.
+    atts = _attributions({}, bracket=[_row("1", 2, 20), _row("1", 3, 30)])
+    # (reason, fs_streak, fs_mult, final)
+    got = [(a["reason"], a["fs_streak"], a["fs_mult"], a["final"]) for a in atts]
+    assert got[1] == ("exact", 1, 1.0, 80)   # 1st exact: no bonus
+    assert got[2] == ("exact", 2, 1.5, 120)  # 2nd consecutive: x1.5
+    assert got[0][1] == 0 and got[3][1] == 0  # misses carry no fs_streak
+
+
+def test_foresight_combo_caps_at_x2():
+    atts = _attributions(
+        {}, bracket=[_row("1", 1, 10), _row("1", 2, 20), _row("1", 3, 30), _row("1", 4, 40)]
+    )
+    # ("1",1) is a set opener -> reason "opener" (base 100); the rest exact.
+    assert [a["fs_mult"] for a in atts[:4]] == [1.0, 1.5, 2.0, 2.0]  # cap holds
+    assert atts[0]["final"] == 100  # opener x1
+    assert atts[3]["final"] == 80 * 2.0  # 4th in a row, capped x2
+
+
+def test_foresight_combo_resets_on_a_gap():
+    # Exact at ("1",1) opener, nothing foreseen at ("1",2), exact at ("1",3).
+    atts = _attributions({}, bracket=[_row("1", 1, 10), _row("1", 3, 30)])
+    assert atts[0]["fs_streak"] == 1
+    assert atts[1]["fs_streak"] == 0  # song 20 not an exact -> reset
+    assert atts[2]["fs_streak"] == 1  # streak restarts, no bonus
+    assert atts[2]["final"] == 80
+
+
+def test_lone_exact_is_unchanged_by_the_combo():
+    # A single exact still scores its flat base (x1.0) — backward compatible.
+    atts = _attributions({}, bracket=[_row("1", 3, 30)])
+    assert atts[2]["reason"] == "exact"
+    assert atts[2]["fs_mult"] == 1.0 and atts[2]["final"] == 80

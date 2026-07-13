@@ -22,6 +22,12 @@ export interface Attribution {
   called_right: boolean | null;
   streak: number;
   mult: number | null;
+  // Foresight exact-sequence combo (parallel to the live streak/mult above):
+  // fs_streak counts consecutive exact-tier bracket hits, fs_mult is what the
+  // current one paid. Present on every attribution; null mult when not banked
+  // as an exact-tier foresight hit.
+  fs_streak: number;
+  fs_mult: number | null;
   final: number;
   called_early: boolean;
   bustout: boolean;
