@@ -13,6 +13,7 @@ function event(overrides: Partial<FeedEvent>): FeedEvent {
     headline: "NEXT-SONG ✓",
     points: 45,
     mult: 1.5,
+    sequenceStreak: null,
     beaten: null,
     foreseen: false,
     calledEarly: false,

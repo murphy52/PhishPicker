@@ -144,7 +144,10 @@ export interface FeedEvent {
   kind: "foresight" | "live" | "bustout" | "miss";
   headline: string;
   points: number;
+  /** Multiplier applied to this row's points — live combo or foresight combo. */
   mult: number | null;
+  /** Foresight exact-sequence streak (≥2), for the "🔥 exact sequence" beat. */
+  sequenceStreak: number | null;
   /** e.g. "beat 🔮 on the board +5" — makes best-claim-wins self-evident. */
   beaten: string | null;
   /** Foresight bank on a correct call — the "✓ foreseen" beat. */
@@ -187,7 +190,11 @@ export function buildFeedEvents(
         kind,
         headline,
         points: a.final,
-        mult: a.ledger === "live" ? a.mult : null,
+        // Live rows carry the live combo mult; foresight rows carry the
+        // exact-sequence combo mult (fs_mult). The UI only surfaces it when >1.
+        mult: a.ledger === "live" ? a.mult : a.fs_mult,
+        sequenceStreak:
+          a.ledger === "foresight" && (a.fs_mult ?? 0) > 1 ? a.fs_streak : null,
         beaten,
         foreseen: a.ledger === "foresight" && a.called_right === true,
         calledEarly: a.called_early,
