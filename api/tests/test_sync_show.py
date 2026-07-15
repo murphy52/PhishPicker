@@ -284,3 +284,68 @@ def test_sync_inserts_bustout_for_unknown_song(
         ).fetchone()
     assert row is not None
     assert bool(row["is_bustout_placeholder"]) is True
+
+
+def test_sync_advances_current_set_through_the_show(httpx_mock: HTTPXMock, live_setup):
+    """An unattended close-out has no UI to advance the set, so sync must do it.
+    Otherwise current_set stays pinned at '1' and capture_snapshot predicts every
+    slot in a set-1 frame — so set 2 and encore never score live points."""
+    httpx_mock.add_response(
+        url="https://api.phish.net/v5/setlists/showdate/2026-04-23.json?apikey=k",
+        json={
+            "data": [
+                {"songid": 100, "song": "Chalk Dust Torture", "set": "1",
+                 "position": 1, "artist_name": "Phish"},
+                {"songid": 101, "song": "Tweezer", "set": "2",
+                 "position": 1, "artist_name": "Phish"},
+                {"songid": 102, "song": "Tweezer Reprise", "set": "e",
+                 "position": 1, "artist_name": "Phish"},
+            ]
+        },
+    )
+    sync_show_with_phishnet(
+        db_path=live_setup.db_path,
+        live_db_path=live_setup.live_db_path,
+        api_key="k",
+        show_id=live_setup.show_id,
+        show_date="2026-04-23",
+    )
+    with open_db(live_setup.live_db_path) as live:
+        current_set = live.execute(
+            "SELECT current_set FROM live_show WHERE show_id = ?",
+            (live_setup.show_id,),
+        ).fetchone()["current_set"]
+    assert current_set == "E"
+
+
+def test_sync_never_moves_current_set_backward(httpx_mock: HTTPXMock, live_setup):
+    """Forward-only: if the UI has already advanced to set 2 (David is watching
+    live), a lagging phish.net that confirms a set-1 song must not yank the live
+    view back to set 1."""
+    from phishpicker.live import advance_set
+
+    with open_db(live_setup.live_db_path) as live:
+        advance_set(live, live_setup.show_id, "2")
+
+    httpx_mock.add_response(
+        url="https://api.phish.net/v5/setlists/showdate/2026-04-23.json?apikey=k",
+        json={
+            "data": [
+                {"songid": 100, "song": "Chalk Dust Torture", "set": "1",
+                 "position": 1, "artist_name": "Phish"},
+            ]
+        },
+    )
+    sync_show_with_phishnet(
+        db_path=live_setup.db_path,
+        live_db_path=live_setup.live_db_path,
+        api_key="k",
+        show_id=live_setup.show_id,
+        show_date="2026-04-23",
+    )
+    with open_db(live_setup.live_db_path) as live:
+        current_set = live.execute(
+            "SELECT current_set FROM live_show WHERE show_id = ?",
+            (live_setup.show_id,),
+        ).fetchone()["current_set"]
+    assert current_set == "2"
