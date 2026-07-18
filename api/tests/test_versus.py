@@ -109,3 +109,13 @@ def test_direction_matches_the_tour_weird_night():
     act = _actual(*[(500 + i, "1", i) for i in range(1, 16)])  # all absent
     out = score_versus(br, act, surprise_by_song={})
     assert out["leader"] == "phish"
+
+
+def test_somewhere_tier_wrong_set_still_picker():
+    # Predicted (1,2), played (2,2): different set -> "somewhere".
+    br = _bracket((100, "1", 2))
+    act = _actual((100, "2", 2))
+    out = score_versus(br, act, surprise_by_song={})
+    assert out["per_song"][0]["side"] == "picker"
+    assert out["per_song"][0]["reason"] == "somewhere"
+    assert out["per_song"][0]["points"] == VS_PICKER["somewhere"]
