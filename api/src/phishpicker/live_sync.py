@@ -8,6 +8,7 @@ entered_order order). For `net_rows`, we trust phish.net's `position` field.
 import asyncio
 import contextlib
 import logging
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -23,6 +24,27 @@ from phishpicker.scoring_store import capture_snapshot, ensure_frozen
 from phishpicker.slot_ranks import _SET_ORDER
 
 log = logging.getLogger(__name__)
+
+# Per-show reconcile locks. sync_show_with_phishnet does a read-modify-write on
+# live_songs (read current rows -> reconcile against phish.net -> append/override).
+# The app triggers sync from several places that can overlap — the 15s foreground
+# poll, /sync/now, the background poller, the close-out watcher — and without
+# serialization two overlapping calls both read the same stale live_songs and both
+# append the new songs, producing duplicate rows (the 2026-07-17 corruption). This
+# lock serializes the critical section per show so the second caller recomputes
+# against the first's committed result. In-process only (covers the api container's
+# own concurrency, which is what corrupted 07-17); a threading.Lock works for both
+# the asyncio poller (runs sync via to_thread) and the threadpool HTTP handlers.
+_show_locks: dict[str, threading.Lock] = {}
+_show_locks_guard = threading.Lock()
+
+
+def _lock_for(show_id: str) -> threading.Lock:
+    with _show_locks_guard:
+        lock = _show_locks.get(show_id)
+        if lock is None:
+            lock = _show_locks[show_id] = threading.Lock()
+        return lock
 
 
 def _advance_current_set_forward(live_conn, show_id: str, set_number: str) -> None:
@@ -202,7 +224,9 @@ def sync_show_with_phishnet(
     with PhishNetClient(api_key) as client:
         net_raw = client.fetch_setlist_by_date(show_date)
 
-    with open_db(db_path, read_only=False) as read_rw, open_db(live_db_path) as live:
+    with _lock_for(show_id), open_db(
+        db_path, read_only=False
+    ) as read_rw, open_db(live_db_path) as live:
         net_rows: list[dict] = []
         for r in net_raw:
             sid, is_unknown = _resolve_or_insert_song(read_rw, r)
