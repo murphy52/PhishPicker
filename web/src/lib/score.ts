@@ -60,6 +60,22 @@ export interface ShowMeta {
   run_length: number | null;
 }
 
+export interface VersusSong {
+  index: number;
+  song_id: number;
+  name: string;
+  side: "picker" | "phish";
+  points: number;
+  reason: string;
+}
+
+export interface Versus {
+  picker_total: number;
+  phish_total: number;
+  leader: "picker" | "phish" | "tie";
+  per_song: VersusSong[];
+}
+
 export interface ScoreResponse {
   attributions: Attribution[];
   totals: ScoreTotals;
@@ -69,6 +85,7 @@ export interface ScoreResponse {
   // Venue/date/city/run for the scoreboard + bracket header. Null when the
   // live show row is gone; individual fields degrade to "" when unresolved.
   show?: ShowMeta | null;
+  versus?: Versus;
 }
 
 const SET_LABEL_ORDER = ["1", "2", "3", "4", "E", "E2", "E3"];
