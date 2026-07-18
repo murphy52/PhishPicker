@@ -14,14 +14,37 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from phishpicker.db.connection import open_db
-from phishpicker.live import append_song, get_live_show, replace_song_at
+from phishpicker.live import advance_set, append_song, get_live_show, replace_song_at
 from phishpicker.phishnet.client import PhishNetClient
 from phishpicker.predict import predict_next_stateless
 from phishpicker.push import send_push
 from phishpicker.scoring_service import score_live_show
 from phishpicker.scoring_store import capture_snapshot, ensure_frozen
+from phishpicker.slot_ranks import _SET_ORDER
 
 log = logging.getLogger(__name__)
+
+
+def _advance_current_set_forward(live_conn, show_id: str, set_number: str) -> None:
+    """Move live_show.current_set forward to `set_number` if that's a later set.
+
+    Forward-only, and this matters. During live play the UI owns set advancement,
+    and phish.net lags real time — so a sync that confirms a set-1 song while the
+    user is already in set 2 must NOT yank the view back. But an UNATTENDED
+    close-out has no UI at all, so without this current_set stays pinned at '1'
+    and capture_snapshot predicts every slot in a set-1 frame — set 2 and the
+    encore then score no live points (they never enter the frame). Advancing on
+    each appended song's set fixes the automated path and is a safe no-op for the
+    live path (never moves backward, only forward to a set with a confirmed song).
+    """
+    row = live_conn.execute(
+        "SELECT current_set FROM live_show WHERE show_id = ?", (show_id,)
+    ).fetchone()
+    if row is None:
+        return
+    cur = row["current_set"]
+    if _SET_ORDER.get(set_number, 0) > _SET_ORDER.get(cur, 0):
+        advance_set(live_conn, show_id, set_number)
 
 
 @dataclass
@@ -269,6 +292,9 @@ def sync_show_with_phishnet(
                 virtual_played = virtual_played + [a.song_id]
                 last_set = a.set_number
                 last_trans_mark = ","
+                # Keep current_set in step with the song just appended, so the
+                # snapshot below predicts the next slot in the right set frame.
+                _advance_current_set_forward(live, show_id, a.set_number)
                 if scorer is not None:
                     try:
                         capture_snapshot(read_rw, live, show_id, scorer=scorer)
