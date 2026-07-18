@@ -9,6 +9,9 @@ import { FullPreview } from "@/components/FullPreview";
 import { PullToRefresh } from "@/components/PullToRefresh";
 import { SlotAltsModal } from "@/components/SlotAltsModal";
 import { ScoreTeaser } from "@/components/ScoreTeaser";
+import { VersusBoard } from "@/components/VersusBoard";
+import { LiveViewToggle } from "@/components/LiveViewToggle";
+import { useLiveView } from "@/lib/liveView";
 import { useLiveShow, isStaleLiveShow } from "@/lib/liveShow";
 import { useScore } from "@/lib/score";
 import {
@@ -55,6 +58,8 @@ export default function Home() {
   );
 
   const { data: score } = useScore(showId, playedSongs.length);
+
+  const [liveView, setLiveView] = useLiveView();
 
   // Sync state — shares its SWR key with SyncStatus, so this doesn't add a
   // second poll. Gates the foreground reconciler poll below.
@@ -304,7 +309,7 @@ export default function Home() {
         </div>
       )}
 
-      <main className="flex-1 flex flex-col gap-4 px-4 pt-3 pb-24">
+      <main className="flex-1 flex flex-col gap-4 px-4 pt-3 pb-28">
         {!showId ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-4">
             <p className="text-neutral-400 text-sm">
@@ -315,6 +320,23 @@ export default function Home() {
                   : "Starting show…"}
             </p>
           </div>
+        ) : liveView === "vs" ? (
+          <>
+            {score?.versus ? (
+              <VersusBoard versus={score.versus} />
+            ) : (
+              <p className="text-neutral-400 text-sm py-8 text-center">
+                Freeze your bracket to start the matchup.
+              </p>
+            )}
+            <PlayedStrip songs={playedSongs} onUndo={handleUndo} />
+            <a
+              href={`/recap?show=${showId}`}
+              className="text-xs text-neutral-600 hover:text-indigo-400 self-start mt-2"
+            >
+              End show → recap
+            </a>
+          </>
         ) : (
           <>
             {score && score.attributions.length > 0 && (
@@ -340,6 +362,12 @@ export default function Home() {
           </>
         )}
       </main>
+
+      {showId && (
+        <div className="fixed bottom-6 left-4 right-24 z-40">
+          <LiveViewToggle value={liveView} onChange={setLiveView} />
+        </div>
+      )}
 
       {showId && <AddSongSheet songs={songs} onAdd={handleAdd} />}
 
