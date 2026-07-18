@@ -7,8 +7,7 @@ import sqlite3
 from datetime import UTC, datetime
 
 from phishpicker.scoring import (
-    VS_BAND_BUSTOUT_BONUS,
-    VS_BAND_RARE_BONUS,
+    classify_surprise,
     normalize_setlist,
     score_show,
     score_versus,
@@ -69,17 +68,14 @@ def _early_called_indices(snapshots: list[dict], actual: list[dict]) -> set[int]
     return early
 
 
-# Below this many all-time plays a song counts as a "deep cut" — a bigger flex
-# for the band when the model didn't see it coming. Tunable.
-VS_RARE_PLAYS_MAX = 50
-
-
 def _surprise_weights(
     read_conn: sqlite3.Connection,
     actual: list[dict],
     bustout_song_ids: set[int],
 ) -> dict[int, tuple[int, str]]:
-    """Per absent-song band bonus: bustout > deep cut > common. One cheap query."""
+    """Band bonus per absent song. This layer does only what needs the DB —
+    one grouped play-count query — and hands the raw facts to the engine's
+    classify_surprise, which owns the tier thresholds and magnitudes."""
     ids = [r["song_id"] for r in actual]
     plays: dict[int, int] = dict.fromkeys(ids, 0)
     if ids:
@@ -89,15 +85,9 @@ def _surprise_weights(
             f"WHERE song_id IN ({ph}) GROUP BY song_id", ids
         ).fetchall():
             plays[sid] = c
-    out: dict[int, tuple[int, str]] = {}
-    for sid in ids:
-        if sid in bustout_song_ids:
-            out[sid] = (VS_BAND_BUSTOUT_BONUS, "absent-bustout")
-        elif plays.get(sid, 0) < VS_RARE_PLAYS_MAX:
-            out[sid] = (VS_BAND_RARE_BONUS, "absent-rare")
-        else:
-            out[sid] = (0, "absent")
-    return out
+    return {
+        sid: classify_surprise(plays[sid], sid in bustout_song_ids) for sid in ids
+    }
 
 
 def score_live_show(

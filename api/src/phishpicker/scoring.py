@@ -32,6 +32,8 @@ VS_PICKER = {"opener": 20, "exact": 16, "right_set": 10, "somewhere": 6}
 VS_BAND_BASE = 3
 VS_BAND_BUSTOUT_BONUS = 6
 VS_BAND_RARE_BONUS = 2
+# Below this many all-time plays, a missed song counts as a "deep cut".
+VS_BAND_RARE_PLAYS_MAX = 50
 
 # Classification tiers, weakest -> strongest.
 _TIER_BASE = {"somewhere": PTS_SOMEWHERE, "right_set": PTS_RIGHT_SET, "exact": PTS_EXACT}
@@ -100,6 +102,17 @@ def score_foresight(
     return claims, outcomes
 
 
+def classify_surprise(play_count: int, is_bustout: bool) -> tuple[int, str]:
+    """Band-side surprise bonus + tag for a song the bracket missed: bustout >
+    deep cut > common. The whole vs ladder (both sides) lives in this engine;
+    the caller supplies only the raw play count and bustout flag (no DB here)."""
+    if is_bustout:
+        return VS_BAND_BUSTOUT_BONUS, "absent-bustout"
+    if play_count < VS_BAND_RARE_PLAYS_MAX:
+        return VS_BAND_RARE_BONUS, "absent-rare"
+    return 0, "absent"
+
+
 def score_versus(
     bracket: list[dict],
     actual: list[dict],
@@ -110,7 +123,8 @@ def score_versus(
     score_foresight's consume-once placement), PHISH otherwise.
 
     surprise_by_song maps song_id -> (bonus_points, reason_tag) for absent
-    (band) songs; the caller computes it from rarity/bustout stats. Pure — no DB.
+    (band) songs; the caller computes it from rarity/bustout stats (see
+    classify_surprise). Pure — no DB.
     """
     claims, _ = score_foresight(bracket, actual)
     per_song: list[dict] = []
@@ -118,17 +132,14 @@ def score_versus(
     for i, row in enumerate(actual):
         claim = claims.get(i)
         if claim is not None:
-            pts = VS_PICKER.get(claim["reason"], VS_PICKER["somewhere"])
+            side, pts, reason = "picker", VS_PICKER[claim["reason"]], claim["reason"]
             picker_total += pts
-            per_song.append({"index": i, "song_id": row["song_id"],
-                             "side": "picker", "points": pts,
-                             "reason": claim["reason"]})
         else:
-            bonus, tag = surprise_by_song.get(row["song_id"], (0, "absent"))
-            pts = VS_BAND_BASE + bonus
+            bonus, reason = surprise_by_song.get(row["song_id"], (0, "absent"))
+            side, pts = "phish", VS_BAND_BASE + bonus
             phish_total += pts
-            per_song.append({"index": i, "song_id": row["song_id"],
-                             "side": "phish", "points": pts, "reason": tag})
+        per_song.append({"index": i, "song_id": row["song_id"],
+                         "side": side, "points": pts, "reason": reason})
     leader = ("picker" if picker_total > phish_total
               else "phish" if phish_total > picker_total else "tie")
     return {"picker_total": picker_total, "phish_total": phish_total,

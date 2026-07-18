@@ -1,4 +1,4 @@
-import type { Versus } from "@/lib/score";
+import { reasonLabel, type Versus } from "@/lib/score";
 
 export function VersusBoard({ versus }: { versus: Versus }) {
   const { picker_total, phish_total, leader, per_song } = versus;
@@ -42,7 +42,7 @@ export function VersusBoard({ versus }: { versus: Versus }) {
           >
             <span className="truncate">{s.name}</span>
             <span className="flex items-center gap-2 text-xs text-neutral-400">
-              <span>{s.reason}</span>
+              <span>{reasonLabel(s.reason)}</span>
               <span className={s.side === "phish" ? "text-emerald-400" : "text-indigo-400"}>
                 +{s.points}
               </span>
