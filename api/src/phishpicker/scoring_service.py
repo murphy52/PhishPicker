@@ -6,7 +6,12 @@ import json
 import sqlite3
 from datetime import UTC, datetime
 
-from phishpicker.scoring import normalize_setlist, score_show
+from phishpicker.scoring import (
+    classify_surprise,
+    normalize_setlist,
+    score_show,
+    score_versus,
+)
 from phishpicker.scoring_store import get_score_state
 from phishpicker.show_meta import resolve_show_meta
 
@@ -63,6 +68,28 @@ def _early_called_indices(snapshots: list[dict], actual: list[dict]) -> set[int]
     return early
 
 
+def _surprise_weights(
+    read_conn: sqlite3.Connection,
+    actual: list[dict],
+    bustout_song_ids: set[int],
+) -> dict[int, tuple[int, str]]:
+    """Band bonus per absent song. This layer does only what needs the DB —
+    one grouped play-count query — and hands the raw facts to the engine's
+    classify_surprise, which owns the tier thresholds and magnitudes."""
+    ids = [r["song_id"] for r in actual]
+    plays: dict[int, int] = dict.fromkeys(ids, 0)
+    if ids:
+        ph = ",".join("?" * len(ids))
+        for sid, c in read_conn.execute(
+            f"SELECT song_id, COUNT(*) FROM setlist_songs "
+            f"WHERE song_id IN ({ph}) GROUP BY song_id", ids
+        ).fetchall():
+            plays[sid] = c
+    return {
+        sid: classify_surprise(plays[sid], sid in bustout_song_ids) for sid in ids
+    }
+
+
 def score_live_show(
     read_conn: sqlite3.Connection, live_conn: sqlite3.Connection, show_id: str
 ) -> dict:
@@ -102,6 +129,16 @@ def score_live_show(
         att["name"] = _name(att["song_id"])
     for outcome in result["pick_outcomes"]:
         outcome["name"] = _name(outcome["pick"]["song_id"])
+    # Only attach the vs-game when a bracket was actually frozen. An empty
+    # bracket makes score_foresight claim nothing, so every song would fall to
+    # the band and the board would read "Phish 100%" pre-freeze. Gating here lets
+    # the frontend's score.frozen / score?.versus checks hide it cleanly.
+    if bracket:
+        versus = score_versus(bracket, actual, _surprise_weights(
+            read_conn, actual, bustout_song_ids))
+        for ps in versus["per_song"]:
+            ps["name"] = _name(ps["song_id"])
+        result["versus"] = versus
     result["model_sha"] = state.get("model_sha")
     result["frozen"] = bool(bracket)
     # Venue/date/city/run for the scoreboard + bracket header. Resolved from
