@@ -23,6 +23,16 @@ COMBO_CAP = 2.0
 # E2/E3 openers are NOT bonus-eligible (they score plain exact).
 OPENER_SLOTS = {("1", 1), ("2", 1), ("3", 1), ("4", 1), ("E", 1)}
 
+# Phish vs PhishPicker — a second, additive lens (see
+# docs/plans/2026-07-18-phish-vs-phishpicker-design.md). Its own ladder,
+# independent of the foresight point values above. Calibrated against the 8 real
+# tour brackets to a near-even coin (0.87 band:picker, model wins 3/8 nights — a
+# mild underdog with rare blowout nights). Still tunable after more live shows.
+VS_PICKER = {"opener": 20, "exact": 16, "right_set": 10, "somewhere": 6}
+VS_BAND_BASE = 3
+VS_BAND_BUSTOUT_BONUS = 6
+VS_BAND_RARE_BONUS = 2
+
 # Classification tiers, weakest -> strongest.
 _TIER_BASE = {"somewhere": PTS_SOMEWHERE, "right_set": PTS_RIGHT_SET, "exact": PTS_EXACT}
 _TIER_RANK = {"absent": 0, "somewhere": 1, "right_set": 2, "exact": 3}
@@ -88,6 +98,41 @@ def score_foresight(
             {"pick": pick, "reason": reason, "base": base, "actual_index": best_idx}
         )
     return claims, outcomes
+
+
+def score_versus(
+    bracket: list[dict],
+    actual: list[dict],
+    surprise_by_song: dict[int, tuple[int, str]],
+) -> dict:
+    """Phish vs PhishPicker: invert the frozen bracket. Each played song scores
+    for exactly one side — PICKER if the bracket claimed it (reusing
+    score_foresight's consume-once placement), PHISH otherwise.
+
+    surprise_by_song maps song_id -> (bonus_points, reason_tag) for absent
+    (band) songs; the caller computes it from rarity/bustout stats. Pure — no DB.
+    """
+    claims, _ = score_foresight(bracket, actual)
+    per_song: list[dict] = []
+    picker_total = phish_total = 0
+    for i, row in enumerate(actual):
+        claim = claims.get(i)
+        if claim is not None:
+            pts = VS_PICKER.get(claim["reason"], VS_PICKER["somewhere"])
+            picker_total += pts
+            per_song.append({"index": i, "song_id": row["song_id"],
+                             "side": "picker", "points": pts,
+                             "reason": claim["reason"]})
+        else:
+            bonus, tag = surprise_by_song.get(row["song_id"], (0, "absent"))
+            pts = VS_BAND_BASE + bonus
+            phish_total += pts
+            per_song.append({"index": i, "song_id": row["song_id"],
+                             "side": "phish", "points": pts, "reason": tag})
+    leader = ("picker" if picker_total > phish_total
+              else "phish" if phish_total > picker_total else "tie")
+    return {"picker_total": picker_total, "phish_total": phish_total,
+            "leader": leader, "per_song": per_song}
 
 
 def score_live(actual: list[dict], next_call_by_index: dict) -> dict[int, dict]:
