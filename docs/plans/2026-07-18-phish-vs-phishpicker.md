@@ -48,15 +48,38 @@ def _bracket(*specs):
 
 
 def test_exact_bracket_hit_scores_for_the_picker():
-    # Song 100 predicted at (1,1) and played at (1,1) -> exact -> picker.
-    br = _bracket((100, "1", 1))
-    act = _actual((100, "1", 1))
+    # NOTE: (1,1)/(2,1)/etc are OPENER slots that score_foresight upgrades to
+    # reason "opener" (see OPENER_SLOTS in scoring.py). Use a NON-opener exact
+    # slot here so we test the "exact" tier, not the opener tier.
+    br = _bracket((100, "1", 2))
+    act = _actual((100, "1", 2))
     out = score_versus(br, act, surprise_by_song={})
     assert out["per_song"][0]["side"] == "picker"
+    assert out["per_song"][0]["reason"] == "exact"
     assert out["per_song"][0]["points"] == VS_PICKER["exact"]
     assert out["picker_total"] == VS_PICKER["exact"]
     assert out["phish_total"] == 0
     assert out["leader"] == "picker"
+
+
+def test_opener_slot_hit_scores_the_opener_tier():
+    # A pick placed and played at slot (1,1) upgrades exact -> opener.
+    br = _bracket((100, "1", 1))
+    act = _actual((100, "1", 1))
+    out = score_versus(br, act, surprise_by_song={})
+    assert out["per_song"][0]["reason"] == "opener"
+    assert out["per_song"][0]["points"] == VS_PICKER["opener"]
+
+
+def test_repeated_song_splits_picker_then_phish():
+    # Consume-once: one bracket pick for song 100; played twice. First
+    # occurrence claimed (picker), second falls through to phish.
+    br = _bracket((100, "1", 2))
+    act = _actual((100, "1", 2), (100, "2", 3))
+    out = score_versus(br, act, surprise_by_song={100: (2, "absent-rare")})
+    assert out["per_song"][0]["side"] == "picker"
+    assert out["per_song"][1]["side"] == "phish"
+    assert out["per_song"][1]["points"] == VS_BAND_BASE + 2
 
 
 def test_song_absent_from_bracket_scores_for_phish():
@@ -89,9 +112,10 @@ def test_right_set_scores_less_than_exact_but_still_picker():
 
 
 def test_tie_reports_tie():
-    br = _bracket((100, "1", 1))
-    # one exact picker hit + one absent band song weighted to match exactly
-    act = _actual((100, "1", 1), (999, "2", 1))
+    # Non-opener exact pick (banks VS_PICKER["exact"]) + one absent band song
+    # weighted to match it exactly. Note (2,3) is not an opener slot.
+    br = _bracket((100, "1", 2))
+    act = _actual((100, "1", 2), (999, "2", 3))
     out = score_versus(
         br, act, surprise_by_song={999: (VS_PICKER["exact"] - VS_BAND_BASE, "absent")}
     )
@@ -100,10 +124,12 @@ def test_tie_reports_tie():
 
 
 def test_direction_matches_the_tour_magic_night():
-    """Jul-12 shape: mostly right-set hits -> picker should win."""
+    """Synthetic magic-night shape: bracket places most songs -> picker wins.
+    (This is a sign-flip guard only; the REAL calibration contract is the
+    real-data test in Task 6, which uses the actual Jul-12/Jul-14 brackets.)"""
     br = _bracket(*[(i, "1", i) for i in range(1, 9)],
                   *[(i, "2", i - 8) for i in range(9, 16)])
-    # 8 of the played songs land in the right set (picker), 7 are absent (band).
+    # 8 played songs hit their exact predicted slots (picker), 7 are absent (band).
     act = _actual(*[(i, "1", i) for i in range(1, 9)],
                   *[(900 + i, "2", i) for i in range(1, 8)])
     out = score_versus(br, act, surprise_by_song={})
@@ -130,13 +156,14 @@ In `api/src/phishpicker/scoring.py`, add the constants near the existing ladder
 
 ```python
 # Phish vs PhishPicker — a second, additive lens (see
-# docs/plans/2026-07-18-phish-vs-phishpicker-design.md). Its own compressed
-# ladder, independent of the foresight point values above. STARTING VALUES —
-# calibrated to a fair coin after a few live shows; tune freely.
-VS_PICKER = {"opener": 12, "exact": 10, "right_set": 6, "somewhere": 3}
-VS_BAND_BASE = 5
-VS_BAND_BUSTOUT_BONUS = 8
-VS_BAND_RARE_BONUS = 3
+# docs/plans/2026-07-18-phish-vs-phishpicker-design.md). Its own ladder,
+# independent of the foresight point values above. Calibrated against the 8 real
+# tour brackets to a near-even coin (0.87 band:picker, model wins 3/8 nights — a
+# mild underdog with rare blowout nights). Still tunable after more live shows.
+VS_PICKER = {"opener": 20, "exact": 16, "right_set": 10, "somewhere": 6}
+VS_BAND_BASE = 3
+VS_BAND_BUSTOUT_BONUS = 6
+VS_BAND_RARE_BONUS = 2
 ```
 
 Add `score_versus` right after `score_foresight` (after line ~92):
@@ -180,7 +207,7 @@ def score_versus(
 **Step 4: Run tests to verify they pass**
 
 Run: `cd api && uv run pytest tests/test_versus.py -q`
-Expected: PASS (7 passed).
+Expected: PASS (9 passed).
 
 **Step 5: Commit**
 
@@ -225,6 +252,27 @@ bracket and entering songs. The test must:
 
 Keep it a real integration test through `score_live_show`, not a re-test of the
 pure function (Task 1 covers that).
+
+Also add a focused unit test on `_surprise_weights` (the service helper Task 1
+does not cover), seeding `setlist_songs` so the bustout > deep-cut > common
+tiering is actually exercised:
+
+```python
+def test_surprise_weights_tiers_bustout_then_rare_then_common(seeded_read_db):
+    # Adapt to the real fixture: seed a bustout-placeholder song, a rare song
+    # (< VS_RARE_PLAYS_MAX historical plays), and a common song (>= that many
+    # setlist_songs rows), then:
+    from phishpicker.scoring_service import _surprise_weights
+    actual = [
+        {"song_id": BUSTOUT_ID, "set_number": "1", "position": 1},
+        {"song_id": RARE_ID, "set_number": "1", "position": 2},
+        {"song_id": COMMON_ID, "set_number": "1", "position": 3},
+    ]
+    w = _surprise_weights(read_conn, actual, bustout_song_ids={BUSTOUT_ID})
+    assert w[BUSTOUT_ID] == (VS_BAND_BUSTOUT_BONUS, "absent-bustout")
+    assert w[RARE_ID] == (VS_BAND_RARE_BONUS, "absent-rare")
+    assert w[COMMON_ID] == (0, "absent")
+```
 
 **Step 2: Run test to verify it fails**
 
@@ -282,12 +330,23 @@ def _surprise_weights(
 In `score_live_show`, right after `result = score_show(...)` finishes and the
 `_name` helper is defined (~line 94), add:
 ```python
-    versus = score_versus(bracket, actual, _surprise_weights(
-        read_conn, actual, bustout_song_ids))
-    for ps in versus["per_song"]:
-        ps["name"] = _name(ps["song_id"])
-    result["versus"] = versus
+    # Only attach the vs-game when a bracket was actually frozen. An empty
+    # bracket makes score_foresight claim nothing, so every song would fall to
+    # the band and the board would read "Phish 100%" pre-freeze. Gating here lets
+    # the frontend's `score.frozen` / `score?.versus` checks hide it cleanly.
+    if bracket:
+        versus = score_versus(bracket, actual, _surprise_weights(
+            read_conn, actual, bustout_song_ids))
+        for ps in versus["per_song"]:
+            ps["name"] = _name(ps["song_id"])
+        result["versus"] = versus
 ```
+
+Note: `finalize_scorecard` persists `json.dumps(result)` as the scorecard
+payload, so a finalized card now carries a frozen `versus` block too — harmless
+and additive (readers ignore unknown keys; `versus` is optional in the type), and
+a free foundation for a future VS recap. The `if bracket:` gate also keeps
+unfrozen finalized cards from storing a garbage `versus`.
 
 **Step 4: Run tests to verify they pass**
 
@@ -379,8 +438,13 @@ And add to `ScoreResponse`:
 
 Create `web/src/components/VersusBoard.tsx`. Match the visual language of the
 existing dark-theme components (see `ScoreHero.tsx` / `ScoreFeed.tsx` for the
-Tailwind palette — `bg-neutral-950`, indigo accents). A tug-of-war bar (two
-proportional widths) over a per-song list:
+Tailwind palette — `bg-neutral-950`, indigo accents). Note: `emerald` for the
+Phish side is a new accent pairing with the app's indigo (only `SyncStatus.tsx`
+uses emerald today) — fine to keep, just deliberate. The per-song `reason` is
+printed raw (`"absent-bustout"`, `"exact"`); the repo's `reasonLabel()`
+(`score.ts`) doesn't map the vs-tags, so raw is acceptable for v1 — extend that
+map later for polish. A tug-of-war bar (two proportional widths) over a per-song
+list:
 
 ```tsx
 import type { Versus } from "@/lib/score";
@@ -520,8 +584,11 @@ export function useLiveView(): [LiveView, (v: LiveView) => void] {
   const [view, setView] = useState<LiveView>("picks");
 
   // Read persisted choice after mount (SSR-safe — no localStorage on server).
+  // Mirrors the useLiveShow hydration pattern (web/src/lib/liveShow.ts:39); the
+  // set-state-in-effect lint rule must be suppressed exactly as the siblings do.
   useEffect(() => {
     const saved = localStorage.getItem(KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot SSR-safe localStorage hydration
     if (saved === "vs" || saved === "picks") setView(saved);
   }, []);
 
@@ -582,14 +649,17 @@ git commit -m "feat(web): persisted live-view toggle (Picks | VS)"
 
 ## Task 5: Wire the toggle + board into the live page
 
-Swap only the main display region on toggle; keep `PlayedStrip` and
-`AddSongSheet` shared. Toggle sits just above `AddSongSheet` (thumb zone).
+Two whole-view branches (Picks | VS), each with its own `PlayedStrip` and recap
+link so the Picks branch stays byte-identical to today's code (design: "Picks
+view untouched") while `PlayedStrip` still appears in both. The toggle is a
+**fixed** bottom bar, because `AddSongSheet` is not an in-flow element — its
+control is `fixed bottom-6 right-6` (`AddSongSheet.tsx:26`). An in-flow toggle
+would scroll off-screen on a tall setlist and sit *under* the floating + button.
 
 **Files:**
-- Modify: `web/src/app/page.tsx` (imports; add `useLiveView`; conditionally
-  render `VersusBoard` vs the existing Picks block inside `<main>` ~lines
-  318–332; render `<LiveViewToggle>` immediately before `<AddSongSheet>` ~line
-  344)
+- Modify: `web/src/app/page.tsx` (imports; add `useLiveView`; branch the
+  `<main>` content ~lines 318–340; add the fixed toggle bar near `<AddSongSheet>`
+  ~line 344; bump `<main>` bottom padding ~line 307)
 
 **Step 1: Write the change**
 
@@ -606,31 +676,43 @@ Inside the component, add near the other hooks:
 ```
 
 In the `<main>` render, replace the current Picks block (the `<>` containing
-`ScoreTeaser`, `PlayedStrip`, `FullPreview`, and the recap link) so that
-`PlayedStrip` and the recap link stay shared but the scoreboard region switches:
+`ScoreTeaser`, `PlayedStrip`, `FullPreview`, and the recap link) with a two-way
+branch. The Picks branch is copied verbatim from the current code — do not
+reorder it. `score?.versus` is only present once a bracket is frozen (backend
+Task 2 gates on `if bracket:`), so it doubles as the "is the matchup live yet"
+signal; when it's absent the VS branch shows an empty state, never "Phish 100%".
 
 ```tsx
-        ) : (
+        ) : liveView === "vs" ? (
           <>
-            {liveView === "vs" && score?.versus ? (
+            {score?.versus ? (
               <VersusBoard versus={score.versus} />
             ) : (
-              <>
-                {score && score.attributions.length > 0 && (
-                  <ScoreTeaser totals={score.totals} />
-                )}
-                <FullPreview
-                  slots={slots}
-                  currentSet={currentSet}
-                  loading={!preview}
-                  onSlotClick={setActiveSlot}
-                  onSetChange={handleSetChange}
-                />
-              </>
+              <p className="text-neutral-400 text-sm py-8 text-center">
+                Freeze your bracket to start the matchup.
+              </p>
             )}
-
             <PlayedStrip songs={playedSongs} onUndo={handleUndo} />
-
+            <a
+              href={`/recap?show=${showId}`}
+              className="text-xs text-neutral-600 hover:text-indigo-400 self-start mt-2"
+            >
+              End show → recap
+            </a>
+          </>
+        ) : (
+          <>
+            {score && score.attributions.length > 0 && (
+              <ScoreTeaser totals={score.totals} />
+            )}
+            <PlayedStrip songs={playedSongs} onUndo={handleUndo} />
+            <FullPreview
+              slots={slots}
+              currentSet={currentSet}
+              loading={!preview}
+              onSlotClick={setActiveSlot}
+              onSetChange={handleSetChange}
+            />
             <a
               href={`/recap?show=${showId}`}
               className="text-xs text-neutral-600 hover:text-indigo-400 self-start mt-2"
@@ -640,34 +722,44 @@ In the `<main>` render, replace the current Picks block (the `<>` containing
           </>
         )}
 ```
-(`PlayedStrip` is shared across both views; only the scoreboard region swaps.)
 
-Render the toggle just before the add-song sheet:
+Add the toggle as a fixed bottom bar that reserves right-side room for the FAB
+(`right-24` clears the `right-6` + 56px button; the existing footer uses `pr-24`
+for the same reason). Place it near `<AddSongSheet>`:
 ```tsx
       {showId && (
-        <div className="px-4 pb-2">
+        <div className="fixed bottom-6 left-4 right-24 z-40">
           <LiveViewToggle value={liveView} onChange={setLiveView} />
         </div>
       )}
       {showId && <AddSongSheet songs={songs} onAdd={handleAdd} />}
 ```
 
+Bump `<main>`'s bottom padding so content clears the fixed toggle bar: change
+`pb-24` to `pb-28` on the `<main className="... pb-24">` (~line 307).
+
 **Step 2: Typecheck + build**
 
 Run: `cd web && npm run lint && npm run build`
-Expected: passes (no type errors).
+Expected: passes (no lint or type errors — confirms the `react-hooks/set-state-in-effect`
+suppression from Task 4 and the JSX branch are clean).
 
 **Step 3: Manual verification with the run skill**
 
 `page.tsx` is integration-heavy; verify by driving the real app rather than a
 unit test. Use the `verify` / `run` skill (or `npm run dev`), then:
 1. Start/attach a live show, enter a few songs (mix of bracket hits and misses).
-2. Confirm the toggle appears above the add-song control.
-3. Tap **VS** → the tug-of-war board replaces the Picks/preview area; totals and
-   per-song sides render; `PlayedStrip` and the add-song control stay put.
-4. Add another song in VS view → the board updates without switching back.
-5. Reload mid-show → it reopens on **VS** (localStorage persistence).
-6. Tap **Picks** → the original view returns unchanged.
+2. Confirm the toggle bar sits at the bottom, is thumb-reachable, and does NOT
+   overlap the floating + button (that's what `right-24` is for).
+3. Before a bracket is frozen, tap **VS** → the "Freeze your bracket to start the
+   matchup" empty state shows (never "Phish 100%").
+4. With a frozen bracket, tap **VS** → the tug-of-war board replaces the
+   Picks/preview area; totals and per-song sides render; `PlayedStrip` and the
+   add-song control stay put.
+5. Add another song in VS view → the board updates without switching back.
+6. Scroll a long setlist → the toggle bar stays pinned at the bottom.
+7. Reload mid-show → it reopens on **VS** (localStorage persistence).
+8. Tap **Picks** → the original view returns byte-identical (order unchanged).
 
 **Step 4: Commit**
 
@@ -690,12 +782,50 @@ Expected: all green.
 Run: `cd web && npm run lint && npm test && npm run build`
 Expected: all green.
 
-**Step 3: End-to-end sanity (optional but recommended)**
+**Step 3: Real-data calibration test (REQUIRED — the actual contract)**
 
-Reproduce the design's golden claim against real data: with the tour setlists
-available, confirm a Jul-12-shaped show comes out PhishPicker-leaning and a
-Jul-14-shaped show comes out Phish-leaning in the actual `versus` payload
-(Task 1's direction tests already assert this at the unit level).
+Task 1's synthetic direction tests only guard against a picker/phish sign-flip;
+they'd pass under almost any constants, including badly miscalibrated ones. The
+real safeguard is a test on the ACTUAL brackets. **The fixture already exists** —
+`api/tests/fixtures/versus_calibration.json` was captured from prod's real
+`live_score_state.frozen_bracket` + canonical `setlist_songs` for Jul 12 (magic)
+and Jul 14 (weird), each with `{bracket, actual, surprise}` (the surprise map
+already carries the calibrated `[bonus, tag]` per song). Verified: under the
+Task-1 constants it yields Jul 12 = 112–19 (picker) and Jul 14 = 24–35 (phish).
+
+Create `api/tests/test_versus_calibration.py`:
+```python
+import json
+from pathlib import Path
+
+from phishpicker.scoring import score_versus
+
+FIX = json.loads(
+    (Path(__file__).parent / "fixtures" / "versus_calibration.json").read_text()
+)
+
+
+def _run(date):
+    d = FIX[date]
+    surprise = {int(k): tuple(v) for k, v in d["surprise"].items()}
+    return score_versus(d["bracket"], d["actual"], surprise)
+
+
+def test_magic_night_the_picker_wins():
+    out = _run("2026-07-12")
+    assert out["leader"] == "picker"
+    assert out["picker_total"] == 112 and out["phish_total"] == 19
+
+
+def test_weird_night_the_band_wins():
+    out = _run("2026-07-14")
+    assert out["leader"] == "phish"
+    assert out["picker_total"] == 24 and out["phish_total"] == 35
+```
+
+This test FAILS if anyone retunes the constants and breaks the magic-vs-weird arc
+— the whole point of the game. Not optional; it is the calibration contract.
+Run: `cd api && uv run pytest tests/test_versus_calibration.py -q` → PASS.
 
 **Step 4: Finish the branch**
 
@@ -709,9 +839,12 @@ David choose whether/when to deploy. Fold the parked
 
 ## Notes for the implementer
 
-- **Calibration is intentionally rough for v1.** The point constants in Task 1
-  are starting guesses; the direction tests (Jul-12 picker, Jul-14 band) are the
-  real contract. David will tune magnitudes after watching a few live shows.
+- **Calibration is real, not a guess.** The Task-1 constants were fit against the
+  8 real tour brackets (0.87 band:picker, model wins 3/8 — a mild underdog with
+  rare blowout nights). The **calibration test in Task 6 Step 3** (real Jul-12/14
+  brackets, exact 112–19 / 24–35 assertions) is the contract; the synthetic
+  direction tests in Task 1 only catch a sign-flip. David may still retune after
+  live shows — if so, update the calibration test's expected totals deliberately.
 - **Do not touch the existing scoring engine or Picks view.** `score_show`,
   foresight/live ledgers, `FullPreview`, `ScoreTeaser` all stay as-is. This is
   purely additive.

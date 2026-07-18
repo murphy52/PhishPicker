@@ -1,0 +1,468 @@
+{
+  "2026-07-12": {
+    "bracket": [
+      {
+        "song_id": 96,
+        "set_number": "1",
+        "position": 1
+      },
+      {
+        "song_id": 2743,
+        "set_number": "1",
+        "position": 2
+      },
+      {
+        "song_id": 462,
+        "set_number": "1",
+        "position": 3
+      },
+      {
+        "song_id": 48,
+        "set_number": "1",
+        "position": 4
+      },
+      {
+        "song_id": 2944,
+        "set_number": "1",
+        "position": 5
+      },
+      {
+        "song_id": 538,
+        "set_number": "1",
+        "position": 6
+      },
+      {
+        "song_id": 3078,
+        "set_number": "1",
+        "position": 7
+      },
+      {
+        "song_id": 364,
+        "set_number": "1",
+        "position": 8
+      },
+      {
+        "song_id": 2932,
+        "set_number": "1",
+        "position": 9
+      },
+      {
+        "song_id": 508,
+        "set_number": "2",
+        "position": 1
+      },
+      {
+        "song_id": 339,
+        "set_number": "2",
+        "position": 2
+      },
+      {
+        "song_id": 3080,
+        "set_number": "2",
+        "position": 3
+      },
+      {
+        "song_id": 21,
+        "set_number": "2",
+        "position": 4
+      },
+      {
+        "song_id": 2829,
+        "set_number": "2",
+        "position": 5
+      },
+      {
+        "song_id": 657,
+        "set_number": "2",
+        "position": 6
+      },
+      {
+        "song_id": 2639,
+        "set_number": "2",
+        "position": 7
+      },
+      {
+        "song_id": 900,
+        "set_number": "E",
+        "position": 1
+      },
+      {
+        "song_id": 653,
+        "set_number": "E",
+        "position": 2
+      }
+    ],
+    "actual": [
+      {
+        "song_id": 2,
+        "set_number": "1",
+        "position": 1
+      },
+      {
+        "song_id": 2944,
+        "set_number": "1",
+        "position": 2
+      },
+      {
+        "song_id": 462,
+        "set_number": "1",
+        "position": 3
+      },
+      {
+        "song_id": 48,
+        "set_number": "1",
+        "position": 4
+      },
+      {
+        "song_id": 364,
+        "set_number": "1",
+        "position": 5
+      },
+      {
+        "song_id": 393,
+        "set_number": "1",
+        "position": 6
+      },
+      {
+        "song_id": 538,
+        "set_number": "1",
+        "position": 7
+      },
+      {
+        "song_id": 508,
+        "set_number": "2",
+        "position": 8
+      },
+      {
+        "song_id": 3080,
+        "set_number": "2",
+        "position": 9
+      },
+      {
+        "song_id": 339,
+        "set_number": "2",
+        "position": 10
+      },
+      {
+        "song_id": 3209,
+        "set_number": "2",
+        "position": 11
+      },
+      {
+        "song_id": 21,
+        "set_number": "2",
+        "position": 12
+      },
+      {
+        "song_id": 2639,
+        "set_number": "2",
+        "position": 13
+      },
+      {
+        "song_id": 679,
+        "set_number": "E",
+        "position": 14
+      },
+      {
+        "song_id": 208,
+        "set_number": "E",
+        "position": 15
+      }
+    ],
+    "surprise": {
+      "2": [
+        0,
+        "absent"
+      ],
+      "2944": [
+        2,
+        "absent-rare"
+      ],
+      "462": [
+        0,
+        "absent"
+      ],
+      "48": [
+        0,
+        "absent"
+      ],
+      "364": [
+        0,
+        "absent"
+      ],
+      "393": [
+        2,
+        "absent-rare"
+      ],
+      "538": [
+        0,
+        "absent"
+      ],
+      "508": [
+        0,
+        "absent"
+      ],
+      "3080": [
+        2,
+        "absent-rare"
+      ],
+      "339": [
+        0,
+        "absent"
+      ],
+      "3209": [
+        2,
+        "absent-rare"
+      ],
+      "21": [
+        0,
+        "absent"
+      ],
+      "2639": [
+        0,
+        "absent"
+      ],
+      "679": [
+        0,
+        "absent"
+      ],
+      "208": [
+        0,
+        "absent"
+      ]
+    }
+  },
+  "2026-07-14": {
+    "bracket": [
+      {
+        "song_id": 96,
+        "set_number": "1",
+        "position": 1
+      },
+      {
+        "song_id": 2743,
+        "set_number": "1",
+        "position": 2
+      },
+      {
+        "song_id": 220,
+        "set_number": "1",
+        "position": 3
+      },
+      {
+        "song_id": 161,
+        "set_number": "1",
+        "position": 4
+      },
+      {
+        "song_id": 3078,
+        "set_number": "1",
+        "position": 5
+      },
+      {
+        "song_id": 307,
+        "set_number": "1",
+        "position": 6
+      },
+      {
+        "song_id": 2831,
+        "set_number": "1",
+        "position": 7
+      },
+      {
+        "song_id": 529,
+        "set_number": "1",
+        "position": 8
+      },
+      {
+        "song_id": 686,
+        "set_number": "1",
+        "position": 9
+      },
+      {
+        "song_id": 3100,
+        "set_number": "2",
+        "position": 1
+      },
+      {
+        "song_id": 1355,
+        "set_number": "2",
+        "position": 2
+      },
+      {
+        "song_id": 365,
+        "set_number": "2",
+        "position": 3
+      },
+      {
+        "song_id": 381,
+        "set_number": "2",
+        "position": 4
+      },
+      {
+        "song_id": 273,
+        "set_number": "2",
+        "position": 5
+      },
+      {
+        "song_id": 653,
+        "set_number": "2",
+        "position": 6
+      },
+      {
+        "song_id": 2860,
+        "set_number": "2",
+        "position": 7
+      },
+      {
+        "song_id": 369,
+        "set_number": "E",
+        "position": 1
+      },
+      {
+        "song_id": 94,
+        "set_number": "E",
+        "position": 2
+      }
+    ],
+    "actual": [
+      {
+        "song_id": 148,
+        "set_number": "1",
+        "position": 1
+      },
+      {
+        "song_id": 240,
+        "set_number": "1",
+        "position": 2
+      },
+      {
+        "song_id": 65,
+        "set_number": "1",
+        "position": 3
+      },
+      {
+        "song_id": 593,
+        "set_number": "1",
+        "position": 4
+      },
+      {
+        "song_id": 1355,
+        "set_number": "1",
+        "position": 5
+      },
+      {
+        "song_id": 576,
+        "set_number": "1",
+        "position": 6
+      },
+      {
+        "song_id": 269,
+        "set_number": "1",
+        "position": 7
+      },
+      {
+        "song_id": 529,
+        "set_number": "2",
+        "position": 8
+      },
+      {
+        "song_id": 485,
+        "set_number": "2",
+        "position": 9
+      },
+      {
+        "song_id": 307,
+        "set_number": "2",
+        "position": 10
+      },
+      {
+        "song_id": 2831,
+        "set_number": "2",
+        "position": 11
+      },
+      {
+        "song_id": 437,
+        "set_number": "2",
+        "position": 12
+      },
+      {
+        "song_id": 648,
+        "set_number": "2",
+        "position": 13
+      },
+      {
+        "song_id": 603,
+        "set_number": "E",
+        "position": 14
+      },
+      {
+        "song_id": 199,
+        "set_number": "E",
+        "position": 15
+      }
+    ],
+    "surprise": {
+      "148": [
+        0,
+        "absent"
+      ],
+      "240": [
+        0,
+        "absent"
+      ],
+      "65": [
+        0,
+        "absent"
+      ],
+      "593": [
+        0,
+        "absent"
+      ],
+      "1355": [
+        0,
+        "absent"
+      ],
+      "576": [
+        2,
+        "absent-rare"
+      ],
+      "269": [
+        0,
+        "absent"
+      ],
+      "529": [
+        0,
+        "absent"
+      ],
+      "485": [
+        0,
+        "absent"
+      ],
+      "307": [
+        0,
+        "absent"
+      ],
+      "2831": [
+        2,
+        "absent-rare"
+      ],
+      "437": [
+        0,
+        "absent"
+      ],
+      "648": [
+        0,
+        "absent"
+      ],
+      "603": [
+        0,
+        "absent"
+      ],
+      "199": [
+        0,
+        "absent"
+      ]
+    }
+  }
+}

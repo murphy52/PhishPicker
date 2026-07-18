@@ -54,14 +54,31 @@ Not two forecasters competing — one forecaster (the model) vs. reality (what t
 band plays), like scoring a weather forecaster against the weather. Every played
 song sits on a single axis (how well the frozen bracket placed it) and scores for
 exactly one side. Fairness comes from **calibration, not symmetry of activity**:
-raw, the band wins ~68% of song-events tour-wide, so per-hit magnitudes are
-weighted so an *average* night nets roughly even, and the real spread (33% → 83%)
-supplies the drama.
+raw, the band wins ~68% of song-events tour-wide, so per-hit magnitudes must be
+weighted to compensate — otherwise the band runs away every night.
 
-The resulting personality, straight from the data: **the PhishPicker is an
-underdog that usually loses but occasionally stuns everyone.** That rare-magic
-feel is the point. We ship starting constants and tune after watching a few
-shows.
+**We calibrated against the 8 real tour brackets** rather than guessing. The
+shipped constants (see Scoring model) produce a points ratio of 0.87 band:picker
+and the model winning **3 of 8 nights** — a genuine coin, with the model a *mild
+underdog*: it loses slightly more often than it wins, but not by much, and it has
+rare blowout nights (Jul 12: 112–19). The per-show arc under these constants:
+
+| Show | PhishPicker | Phish | leader |
+|------|-------------|-------|--------|
+| Jul 7  | 22 | 47 | Phish |
+| Jul 8  | 42 | 37 | Picker |
+| Jul 10 | 42 | 35 | Picker |
+| Jul 11 | 42 | 42 | tie |
+| Jul 12 | 112 | 19 | **Picker (blowout)** |
+| Jul 14 | 24 | 35 | Phish |
+| Jul 15 | 36 | 40 | Phish |
+| Jul 17 | 26 | 46 | Phish |
+
+So the personality — reconciling what earlier drafts stated inconsistently — is
+**a fair coin in which the model is a mild underdog with rare magic nights.** Not
+"usually loses" (that was the mis-tuned version where the band won 7 of 8); a real
+back-and-forth. Constants stay tunable after live use, but they *start* calibrated,
+not backwards.
 
 ## Scoring model
 
@@ -69,17 +86,25 @@ Per played song, from the frozen bracket's placement (the existing foresight
 tiers via `score_foresight` — each actual song is claimed by at most one bracket
 pick, consume-once):
 
-- **PhishPicker points** (song was placed): reuse the foresight tier bases —
-  exact/opener large, right-set medium, somewhere small.
-- **Phish points** (song absent from the bracket): a base plus a **rarity/
-  surprise bonus** — a bustout or deep cut the model would never predict is a
-  bigger flex than a common song that just missed the 18-slot cut. Uses existing
-  rarity stats / bustout detection.
-- **Calibration constant(s)** scale the two curves so tour-average ≈ even. Seeded
-  from the tour data (band ~68% of events), tunable.
+- **PhishPicker points** (song was placed), calibrated tiers:
+  `opener 20 · exact 16 · right-set 10 · somewhere 6`.
+- **Phish points** (song absent from the bracket): `base 3` plus a rarity bonus:
+  `+6` for a bustout placeholder (a song not in the local catalog, inserted at
+  ingest), `+2` for a deep cut (fewer than 50 all-time plays). Note: a genuine
+  catalog bustout — a known song unplayed for years — has a normal id and lands
+  in the deep-cut (+2) branch, not the +6 branch; that's a coverage nuance, not a
+  bug, and can be refined later.
 
-Starting magnitudes are guesses, explicitly not gospel; the first tuning pass
-happens after a few live shows.
+These magnitudes come from calibrating against the 8 real tour brackets (ratio
+0.87, model wins 3/8 — see the arc above), not from guesses. They remain tunable
+after live use.
+
+**Repeated songs:** `score_foresight` is consume-once, so a song played twice
+against a single bracket pick scores PICKER for the first occurrence and PHISH
+(with its rarity bonus) for the second. The model can thus be both credited and
+debited for the same song — defensible ("each play is an event"), but it will
+read oddly for Tweezer → Tweezer Reprise (related: the unresolved reprise-
+dependency issue). Accepted for v1; flagged so it's a decision, not an accident.
 
 ## Data flow
 
