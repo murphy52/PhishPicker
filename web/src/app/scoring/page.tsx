@@ -4,8 +4,16 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "How scoring works — Phishpicker",
   description:
-    "The rules of the prediction game: Foresight vs Live ledgers, the point ladder, combos, bustouts, and PPPS.",
+    "The rules of the prediction game: Foresight vs Live ledgers, the point ladder, combos, bustouts, PPPS, and the Phish vs PhishPicker matchup.",
 };
+
+const LADDER_ACCENT = {
+  foresight: "text-foresight",
+  live: "text-live",
+  // The vs-game sides, matching the VersusBoard's colors.
+  phish: "text-emerald-400",
+  picker: "text-indigo-400",
+} as const;
 
 /** One row of a point ladder table. */
 function LadderRow({
@@ -17,7 +25,7 @@ function LadderRow({
   event: string;
   points: string;
   note?: string;
-  accent: "foresight" | "live";
+  accent: keyof typeof LADDER_ACCENT;
 }) {
   return (
     <li className="flex items-baseline justify-between gap-3 border-b border-neutral-900 py-2 last:border-b-0">
@@ -26,9 +34,7 @@ function LadderRow({
         {note && <span className="block text-xs text-neutral-500">{note}</span>}
       </span>
       <span
-        className={`font-score shrink-0 text-lg font-extrabold ${
-          accent === "foresight" ? "text-foresight" : "text-live"
-        }`}
+        className={`font-score shrink-0 text-lg font-extrabold ${LADDER_ACCENT[accent]}`}
       >
         {points}
       </span>
@@ -231,6 +237,69 @@ export default function ScoringPage() {
               </dd>
             </div>
           </dl>
+        </Section>
+
+        <Section title="🥊 Phish vs PhishPicker">
+          <p className="mb-3 text-sm text-neutral-400">
+            A second scoreboard over the same night, framed as a duel:{" "}
+            <span className="font-semibold text-indigo-400">PhishPicker</span>{" "}
+            banks every played song its frozen bracket claimed (the same
+            consume-once matching as Foresight), and{" "}
+            <span className="font-semibold text-emerald-400">Phish</span> banks
+            every song the bracket never saw coming. Each song scores for
+            exactly one side; more points when the lights come up wins the
+            night.
+          </p>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-indigo-400">
+            PhishPicker&apos;s ladder
+          </p>
+          <ul className="mb-4">
+            <LadderRow
+              accent="picker"
+              event="Opener called exactly"
+              points="+20"
+            />
+            <LadderRow accent="picker" event="Exact slot" points="+16" />
+            <LadderRow
+              accent="picker"
+              event="Right set, wrong position"
+              points="+10"
+            />
+            <LadderRow
+              accent="picker"
+              event="Played somewhere"
+              note="right song, wrong set"
+              points="+6"
+            />
+          </ul>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-emerald-400">
+            Phish&apos;s ladder
+          </p>
+          <ul>
+            <LadderRow
+              accent="phish"
+              event="Any song the bracket didn't claim"
+              points="+3"
+            />
+            <LadderRow
+              accent="phish"
+              event="…and it's a rarity"
+              note="under 50 career plays — a deep cut the app should fear"
+              points="+5"
+            />
+            <LadderRow
+              accent="phish"
+              event="…and it's a true bustout or debut"
+              points="+9"
+            />
+          </ul>
+          <p className="mt-3 text-xs text-neutral-500">
+            Only the frozen bracket plays for PhishPicker — live next-song
+            calls sit this game out, and the matchup doesn&apos;t start until a
+            bracket freezes. The flatter ladder is the handicap: the app&apos;s
+            best call is worth about two of the band&apos;s surprises, so a
+            weird setlist genuinely swings the night to Phish.
+          </p>
         </Section>
 
         <Section title="Corrections & fine print">
