@@ -133,6 +133,38 @@ def create_app() -> FastAPI:
                 log.exception("failed to load inclusion scorer; Likely Tonight disabled")
         app.state.phishnet_client = PhishNetClient(api_key=settings.phishnet_api_key)
         app.state.pollers = PollerRegistry()
+        # Resume reconciler pollers orphaned by a restart. The registry is
+        # in-memory, so a container restart (deploy, NAS reboot) mid-show
+        # used to kill sync silently: live_show_meta still said enabled, the
+        # UI still showed enabled, but no poller ran until a manual /sync/now.
+        # Scoped to recent, sync-enabled shows without a finalized scorecard.
+        from datetime import timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=3)).strftime("%Y-%m-%d")
+        with closing(open_db(settings.live_db_path)) as live_db:
+            resumable = live_db.execute(
+                "SELECT s.show_id, s.show_date FROM live_show s "
+                "JOIN live_show_meta m ON m.show_id = s.show_id "
+                "WHERE m.sync_enabled = 1 AND s.show_date >= ? "
+                "AND NOT EXISTS "
+                "(SELECT 1 FROM scorecards c WHERE c.show_id = s.show_id)",
+                (cutoff,),
+            ).fetchall()
+        for r in resumable:
+            log.info(
+                "resuming sync poller for %s (%s)", r["show_id"], r["show_date"]
+            )
+            await app.state.pollers.start(
+                r["show_id"],
+                show_date=r["show_date"],
+                interval=60.0,
+                db_path=settings.db_path,
+                live_db_path=settings.live_db_path,
+                api_key=settings.phishnet_api_key,
+                scorer=app.state.scorer,
+                vapid_private_key=settings.vapid_private_key,
+                vapid_subject=settings.vapid_subject,
+            )
         try:
             yield
         finally:

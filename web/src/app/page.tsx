@@ -22,7 +22,7 @@ import {
 } from "@/lib/preview";
 import { getCachedSongs, setCachedSongs, type Song } from "@/lib/songs";
 import { useServiceWorkerSyncMessage } from "@/lib/syncMessage";
-import { useSyncPoll } from "@/lib/syncPoll";
+import { shouldKickSync, useSyncPoll, type SyncStatusLite } from "@/lib/syncPoll";
 
 interface Meta {
   shows_count: number;
@@ -69,7 +69,7 @@ export default function Home() {
 
   // Sync state — shares its SWR key with SyncStatus, so this doesn't add a
   // second poll. Gates the foreground reconciler poll below.
-  const { data: syncStatus } = useSWR<{ sync_enabled: boolean } | null>(
+  const { data: syncStatus } = useSWR<SyncStatusLite | null>(
     showId ? `/api/live/show/${showId}/sync/status` : null,
     (url: string) => fetch(url).then((r) => r.json()),
     { refreshInterval: 5_000, revalidateOnFocus: false },
@@ -245,32 +245,65 @@ export default function Home() {
     startShow(upcoming.show_date).then(() => mutatePreview());
   }, [showId, upcoming, startShow, mutatePreview]);
 
-  // When the PWA returns to the foreground, skip the 60s poller wait:
-  // kick an immediate sync pass (backend skips if sync is disabled), then
-  // re-hydrate the played list and the preview so the UI shows the latest
-  // phish.net state without the user having to wait for the next tick.
+  // On resume, skip the 60s poller wait: kick an immediate sync pass
+  // (backend skips if sync is disabled), then re-hydrate the played list and
+  // the preview so the UI shows the latest phish.net state without the user
+  // having to wait for the next tick. The network is often still waking up
+  // right at resume, so a failed re-hydrate retries once — otherwise a
+  // restored page keeps showing its pre-suspend state (stale "user" entries
+  // in the strip) until the next successful poll.
+  const resync = useCallback(async () => {
+    if (!showId || !upcoming) return;
+    try {
+      await fetch(`/api/live/show/${showId}/sync/now`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ show_date: upcoming.show_date }),
+      });
+    } catch {
+      // Network hiccup on resume — fall through and still re-hydrate
+      // from whatever the server already has.
+    }
+    try {
+      await refresh(songs);
+    } catch {
+      setTimeout(() => {
+        refresh(songs).catch(() => {});
+      }, 2_500);
+    }
+    mutatePreview();
+  }, [showId, upcoming, refresh, songs, mutatePreview]);
+
   useEffect(() => {
     if (!showId || !upcoming) return;
     function onVisible() {
       if (document.visibilityState !== "visible") return;
-      (async () => {
-        try {
-          await fetch(`/api/live/show/${showId}/sync/now`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ show_date: upcoming!.show_date }),
-          });
-        } catch {
-          // Network hiccup on resume — fall through and still re-hydrate
-          // from whatever the server already has.
-        }
-        await refresh(songs);
-        mutatePreview();
-      })();
+      resync();
+    }
+    // pageshow(persisted) covers the restored-from-bfcache path (a suspended
+    // PWA coming back with hours-old React state) where visibilitychange may
+    // not fire.
+    function onPageShow(e: PageTransitionEvent) {
+      if (e.persisted) resync();
     }
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [showId, upcoming, refresh, songs, mutatePreview]);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [showId, upcoming, resync]);
+
+  // Watchdog: the server-side reconciler can stall (in-memory poller lost to
+  // a restart, error loop). When /sync/status reports stale/dead while sync
+  // is enabled, the open app kicks a /sync/now itself — cooldown-throttled —
+  // instead of waiting for a manual pull-to-refresh.
+  const lastKick = useRef(0);
+  useEffect(() => {
+    if (!shouldKickSync(syncStatus, lastKick.current, Date.now())) return;
+    lastKick.current = Date.now();
+    resync();
+  }, [syncStatus, resync]);
 
   // A phish.net sync push means a new song landed server-side. The service
   // worker relays it here so the open list updates at once, instead of the
