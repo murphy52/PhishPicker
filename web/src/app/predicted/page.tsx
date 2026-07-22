@@ -10,15 +10,18 @@ import { useScore } from "@/lib/score";
 
 function PredictedContent() {
   const params = useSearchParams();
+  const paramShow = params.get("show");
   const { showId: currentShowId } = useLiveShow();
-  const showId = params.get("show") ?? currentShowId;
+  const showId = paramShow ?? currentShowId;
   const { data: score } = useScore(showId);
 
   return (
     <div className="flex min-h-dvh flex-col bg-neutral-950 text-neutral-100">
       <header className="flex items-center justify-between px-4 pt-6">
         <Link
-          href="/score"
+          // Keep the historical show in the URL so the scoreboard we return
+          // to is the one we came from, not tonight's.
+          href={paramShow ? `/score?show=${paramShow}` : "/score"}
           className="text-sm text-neutral-500 hover:text-neutral-300"
         >
           ← scoreboard
