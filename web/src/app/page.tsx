@@ -380,7 +380,13 @@ export default function Home() {
         />
       )}
 
-      <footer className="px-4 py-3 pr-24 text-xs text-neutral-600 border-t border-neutral-900 flex flex-col gap-1 items-end">
+      <footer
+        // pb clears the fixed Picks/VS toggle (bottom-6 + ~46px tall) so the
+        // links stay clickable at the end of the scroll; normal pb otherwise.
+        className={`px-4 pt-3 pr-24 text-xs text-neutral-600 border-t border-neutral-900 flex flex-col gap-1 items-end ${
+          showId ? "pb-24" : "pb-3"
+        }`}
+      >
         <span>
           {meta
             ? `${meta.shows_count} shows · ${meta.songs_count} songs · web ${
