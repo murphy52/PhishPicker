@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   sortScorecards,
   useSortPreference,
+  versusSummary,
   type Scorecard,
 } from "./scoreHistory";
 
@@ -15,6 +16,9 @@ const card = (show_date: string, combined: number): Scorecard => ({
   live_total: combined,
   ppps: 0,
   max_streak: 0,
+  versus_phish: null,
+  versus_picker: null,
+  versus_leader: null,
 });
 
 const rows = [
@@ -99,5 +103,43 @@ describe("useSortPreference", () => {
     );
     const { result } = renderHook(() => useSortPreference());
     expect(result.current[0]).toEqual({ key: "date", dir: "desc" });
+  });
+});
+
+describe("versusSummary", () => {
+  const vs = (
+    phish: number | null,
+    picker: number | null,
+    leader: Scorecard["versus_leader"],
+  ): Scorecard => ({
+    ...card("2026-07-21", 143),
+    versus_phish: phish,
+    versus_picker: picker,
+    versus_leader: leader,
+  });
+
+  it("returns null for shows without a vs-game (pre-feature or never frozen)", () => {
+    expect(versusSummary(vs(null, null, null))).toBeNull();
+  });
+
+  it("names Phish the winner", () => {
+    expect(versusSummary(vs(41, 38, "phish"))).toEqual({
+      winner: "phish",
+      label: "Phish wins 41–38",
+    });
+  });
+
+  it("names PhishPicker the winner", () => {
+    expect(versusSummary(vs(20, 46, "picker"))).toEqual({
+      winner: "picker",
+      label: "Picker wins 46–20",
+    });
+  });
+
+  it("calls a tie", () => {
+    expect(versusSummary(vs(33, 33, "tie"))).toEqual({
+      winner: "tie",
+      label: "Tie 33–33",
+    });
   });
 });

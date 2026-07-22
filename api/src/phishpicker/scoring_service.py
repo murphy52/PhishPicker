@@ -217,8 +217,15 @@ def finalize_scorecard(
 
 
 def list_scorecards(live_conn: sqlite3.Connection) -> list[dict]:
+    # The vs-game totals live only inside the payload JSON (score_live_show
+    # attaches "versus" iff a bracket was frozen), so extract them here rather
+    # than duplicating columns. NULL for pre-vs-game and never-frozen shows.
     rows = live_conn.execute(
         "SELECT show_id, show_date, finalized_at, combined, foresight_total, "
-        "live_total, ppps, max_streak FROM scorecards ORDER BY show_date DESC"
+        "live_total, ppps, max_streak, "
+        "json_extract(payload, '$.versus.phish_total') AS versus_phish, "
+        "json_extract(payload, '$.versus.picker_total') AS versus_picker, "
+        "json_extract(payload, '$.versus.leader') AS versus_leader "
+        "FROM scorecards ORDER BY show_date DESC"
     ).fetchall()
     return [dict(r) for r in rows]

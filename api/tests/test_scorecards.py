@@ -93,3 +93,24 @@ def test_scorecard_endpoints(seeded_client, live_show_id):
     assert len(lst.json()["scorecards"]) == 1
 
     assert seeded_client.post("/live/show/nope/scorecard").status_code == 404
+
+
+def test_list_scorecards_surfaces_versus(seeded_read_db, live_conn):
+    show_id = _seed_show(
+        live_conn, "2026-04-23", [100, 101], bracket=BRACKET, snapshots=SNAPS
+    )
+    out = finalize_scorecard(seeded_read_db, live_conn, show_id)
+    versus = out["result"]["versus"]
+    card = next(c for c in list_scorecards(live_conn) if c["show_id"] == show_id)
+    assert card["versus_phish"] == versus["phish_total"]
+    assert card["versus_picker"] == versus["picker_total"]
+    assert card["versus_leader"] == versus["leader"]
+
+
+def test_list_scorecards_versus_null_when_never_frozen(seeded_read_db, live_conn):
+    show_id = _seed_show(live_conn, "2026-04-24", [102])  # bracket never froze
+    finalize_scorecard(seeded_read_db, live_conn, show_id)
+    card = next(c for c in list_scorecards(live_conn) if c["show_id"] == show_id)
+    assert card["versus_phish"] is None
+    assert card["versus_picker"] is None
+    assert card["versus_leader"] is None

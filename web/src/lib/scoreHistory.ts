@@ -11,6 +11,30 @@ export interface Scorecard {
   live_total: number;
   ppps: number;
   max_streak: number;
+  /** Phish vs PhishPicker result; null when the show predates the vs-game
+   * or the bracket never froze. */
+  versus_phish: number | null;
+  versus_picker: number | null;
+  versus_leader: "phish" | "picker" | "tie" | null;
+}
+
+export interface VersusSummary {
+  winner: NonNullable<Scorecard["versus_leader"]>;
+  label: string;
+}
+
+/** Compact history-row line for the vs-game, winner-first ("Picker wins
+ * 46–20", "Tie 33–33"). Null when the show has no vs result to show. */
+export function versusSummary(c: Scorecard): VersusSummary | null {
+  if (c.versus_leader === null || c.versus_phish === null || c.versus_picker === null)
+    return null;
+  const label =
+    c.versus_leader === "tie"
+      ? `Tie ${c.versus_phish}–${c.versus_picker}`
+      : c.versus_leader === "phish"
+        ? `Phish wins ${c.versus_phish}–${c.versus_picker}`
+        : `Picker wins ${c.versus_picker}–${c.versus_phish}`;
+  return { winner: c.versus_leader, label };
 }
 
 export type SortKey = "date" | "score";

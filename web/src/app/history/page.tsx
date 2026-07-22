@@ -5,8 +5,15 @@ import {
   sortScorecards,
   useScorecards,
   useSortPreference,
+  versusSummary,
   type SortKey,
 } from "@/lib/scoreHistory";
+
+const VS_COLOR = {
+  phish: "text-emerald-400",
+  picker: "text-indigo-400",
+  tie: "text-neutral-400",
+} as const;
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -74,27 +81,38 @@ export default function HistoryPage() {
               </button>
             </div>
             <ol>
-              {rows.map((c) => (
-                <li key={c.show_id} data-testid="history-row">
-                  <Link
-                    href={`/score?show=${c.show_id}`}
-                    className="flex items-center justify-between border-b border-neutral-900 px-1 py-3 hover:bg-neutral-900/40"
-                  >
-                    <span className="flex flex-col">
-                      <span className="text-sm text-neutral-100">
-                        {formatShowDate(c.show_date)}
+              {rows.map((c) => {
+                const vs = versusSummary(c);
+                return (
+                  <li key={c.show_id} data-testid="history-row">
+                    <Link
+                      href={`/score?show=${c.show_id}`}
+                      className="flex items-center justify-between border-b border-neutral-900 px-1 py-3 hover:bg-neutral-900/40"
+                    >
+                      <span className="flex flex-col">
+                        <span className="text-sm text-neutral-100">
+                          {formatShowDate(c.show_date)}
+                        </span>
+                        <span className="text-[11px] text-neutral-600">
+                          {c.foresight_total} foresight · {c.live_total} live · streak{" "}
+                          {c.max_streak}
+                        </span>
+                        {vs && (
+                          <span
+                            data-testid="history-versus"
+                            className={`text-[11px] font-semibold tabular-nums ${VS_COLOR[vs.winner]}`}
+                          >
+                            {vs.label}
+                          </span>
+                        )}
                       </span>
-                      <span className="text-[11px] text-neutral-600">
-                        {c.foresight_total} foresight · {c.live_total} live · streak{" "}
-                        {c.max_streak}
+                      <span className="font-score text-xl font-extrabold tabular-nums text-neutral-100">
+                        {Math.round(c.combined)}
                       </span>
-                    </span>
-                    <span className="font-score text-xl font-extrabold tabular-nums text-neutral-100">
-                      {Math.round(c.combined)}
-                    </span>
-                  </Link>
-                </li>
-              ))}
+                    </Link>
+                  </li>
+                );
+              })}
             </ol>
           </>
         )}
