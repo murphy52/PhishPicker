@@ -25,3 +25,28 @@ test("lists each played song on its scoring side", () => {
   const icculus = screen.getByText("Icculus").closest("[data-side]");
   expect(icculus).toHaveAttribute("data-side", "phish");
 });
+
+test("final board says who won, not who leads", () => {
+  render(<VersusBoard versus={versus} final />);
+  expect(screen.getByTestId("vs-leader")).toHaveTextContent("Phish wins");
+});
+
+test("final board calls a tie", () => {
+  render(
+    <VersusBoard
+      versus={{ ...versus, picker_total: 40, leader: "tie" }}
+      final
+    />,
+  );
+  expect(screen.getByTestId("vs-leader")).toHaveTextContent("Tie");
+});
+
+test("final board names PhishPicker the winner", () => {
+  render(
+    <VersusBoard
+      versus={{ ...versus, picker_total: 44, leader: "picker" }}
+      final
+    />,
+  );
+  expect(screen.getByTestId("vs-leader")).toHaveTextContent("PhishPicker wins");
+});

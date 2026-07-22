@@ -8,6 +8,7 @@ import { NextCallCard, type PendingCall } from "@/components/NextCallCard";
 import { ScoreFeed } from "@/components/ScoreFeed";
 import { ScoreHero } from "@/components/ScoreHero";
 import { ShowMetaBar } from "@/components/ShowMetaBar";
+import { VersusBoard } from "@/components/VersusBoard";
 import { useLiveShow } from "@/lib/liveShow";
 import { usePreview } from "@/lib/preview";
 import { buildFeedEvents, useScore, type Attribution } from "@/lib/score";
@@ -130,6 +131,14 @@ function ScoreContent() {
             )}
             <ComboMeter streak={streak} closed={showClosed} />
             <ScoreFeed events={events} />
+            {isHistorical && score.versus && (
+              <section className="mt-2 flex flex-col gap-2">
+                <h2 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">
+                  Phish vs PhishPicker
+                </h2>
+                <VersusBoard versus={score.versus} final />
+              </section>
+            )}
             <footer className="mt-4 flex items-center justify-between text-[10px] text-neutral-700">
               <span>
                 {score.totals.ppps > 0

@@ -1,11 +1,28 @@
 import { reasonLabel, type Versus } from "@/lib/score";
 
-export function VersusBoard({ versus }: { versus: Versus }) {
+export function VersusBoard({
+  versus,
+  final = false,
+}: {
+  versus: Versus;
+  /** Finalized show: the header declares a winner instead of a leader. */
+  final?: boolean;
+}) {
   const { picker_total, phish_total, leader, per_song } = versus;
   const total = picker_total + phish_total || 1;
   const phishPct = Math.round((phish_total / total) * 100);
   const leaderLabel =
-    leader === "tie" ? "Dead even" : leader === "phish" ? "Phish leads" : "PhishPicker leads";
+    leader === "tie"
+      ? final
+        ? "Tie"
+        : "Dead even"
+      : leader === "phish"
+        ? final
+          ? "Phish wins"
+          : "Phish leads"
+        : final
+          ? "PhishPicker wins"
+          : "PhishPicker leads";
 
   return (
     <section className="flex flex-col gap-3">
