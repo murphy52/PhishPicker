@@ -1,20 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { FeedEvent } from "@/lib/score";
+import { KIND_EMOJI, type FeedEvent } from "@/lib/score";
 
 const COACH_KEY = "phishpicker:score_coach_seen";
 
 interface Props {
   events: FeedEvent[];
 }
-
-const KIND_EMOJI: Record<FeedEvent["kind"], string> = {
-  foresight: "🔮",
-  live: "⚡",
-  bustout: "🎸",
-  miss: "·",
-};
 
 /**
  * The beat-by-beat story of the night, newest first. Every scoring event

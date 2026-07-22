@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { PlayedStrip } from "@/components/PlayedStrip";
 import { AddSongSheet } from "@/components/AddSongSheet";
@@ -13,7 +13,7 @@ import { VersusBoard } from "@/components/VersusBoard";
 import { LiveViewToggle } from "@/components/LiveViewToggle";
 import { useLiveView } from "@/lib/liveView";
 import { useLiveShow, isStaleLiveShow } from "@/lib/liveShow";
-import { useScore } from "@/lib/score";
+import { badgesBySlot, useScore } from "@/lib/score";
 import {
   applyPendingMutation,
   usePreview,
@@ -58,6 +58,12 @@ export default function Home() {
   );
 
   const { data: score } = useScore(showId, playedSongs.length);
+  // Same icons as the score feed, on the picks view's entered slots — the
+  // drama unfolds without leaving the main screen.
+  const scoreBadges = useMemo(
+    () => (score ? badgesBySlot(score.attributions) : undefined),
+    [score],
+  );
 
   const [liveView, setLiveView] = useLiveView();
 
@@ -351,6 +357,7 @@ export default function Home() {
               loading={!preview}
               onSlotClick={setActiveSlot}
               onSetChange={handleSetChange}
+              scoreBadges={scoreBadges}
             />
 
             <a

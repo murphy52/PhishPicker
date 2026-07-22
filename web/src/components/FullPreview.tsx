@@ -1,6 +1,7 @@
 "use client";
 
 import type { PreviewSlot } from "@/lib/preview";
+import { KIND_EMOJI, type SlotScoreBadge } from "@/lib/score";
 
 interface Props {
   slots: PreviewSlot[];
@@ -8,6 +9,9 @@ interface Props {
   onSlotClick: (slotIdx: number) => void;
   onSetChange: (setKey: string) => void;
   loading?: boolean;
+  /** Scoring badges keyed "set:position" (badgesBySlot). When a slot has one,
+   * it replaces the hit-rank indicator so entered rows read like the feed. */
+  scoreBadges?: Map<string, SlotScoreBadge>;
 }
 
 const SET_ORDER: { key: string; label: string }[] = [
@@ -28,6 +32,7 @@ export function FullPreview({
   onSlotClick,
   onSetChange,
   loading,
+  scoreBadges,
 }: Props) {
   if (loading && slots.length === 0) {
     return <FullPreviewSkeleton currentSet={currentSet} />;
@@ -58,6 +63,7 @@ export function FullPreview({
                     key={slot.slot_idx}
                     slot={slot}
                     onSlotClick={onSlotClick}
+                    badge={scoreBadges?.get(`${slot.set_number}:${slot.position}`)}
                   />
                 ))}
               </ul>
@@ -169,12 +175,50 @@ function HitRankIndicator({ hitRank }: { hitRank: number | null | undefined }) {
   );
 }
 
+function ScoreBadge({ badge }: { badge: SlotScoreBadge }) {
+  if (badge.kind === "miss") {
+    return (
+      <span
+        data-testid="slot-score-badge"
+        aria-label="No points banked"
+        className="text-xs text-neutral-700 shrink-0"
+      >
+        {KIND_EMOJI.miss}
+      </span>
+    );
+  }
+  const color =
+    badge.kind === "foresight"
+      ? "text-foresight"
+      : badge.kind === "live"
+        ? "text-live"
+        : "text-bustout";
+  return (
+    <span
+      data-testid="slot-score-badge"
+      className="flex items-baseline gap-1 shrink-0 text-xs"
+    >
+      <span aria-hidden="true">{KIND_EMOJI[badge.kind]}</span>
+      {badge.points > 0 && (
+        <span className={`font-score font-bold tabular-nums ${color}`}>
+          +{badge.points}
+          {badge.mult != null && badge.mult > 1 ? (
+            <span className="ml-0.5 font-semibold opacity-80">×{badge.mult}</span>
+          ) : null}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function SlotRow({
   slot,
   onSlotClick,
+  badge,
 }: {
   slot: PreviewSlot;
   onSlotClick: (slotIdx: number) => void;
+  badge?: SlotScoreBadge;
 }) {
   if (slot.state === "entered" && slot.entered_song) {
     // An undo reverts the slot to a predicted placeholder (handled below), so
@@ -200,7 +244,12 @@ function SlotRow({
             className="inline-block w-3 h-3 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin shrink-0"
           />
         )}
-        {slot.pending !== "adding" && <HitRankIndicator hitRank={slot.hit_rank} />}
+        {slot.pending !== "adding" &&
+          (badge ? (
+            <ScoreBadge badge={badge} />
+          ) : (
+            <HitRankIndicator hitRank={slot.hit_rank} />
+          ))}
       </li>
     );
   }

@@ -29,6 +29,7 @@ function renderPreview(props: Partial<React.ComponentProps<typeof FullPreview>> 
       onSlotClick={props.onSlotClick ?? (() => {})}
       onSetChange={props.onSetChange ?? (() => {})}
       loading={props.loading}
+      scoreBadges={props.scoreBadges}
     />,
   );
 }
@@ -218,4 +219,68 @@ test("phishnet-verified slot without a slug falls back to plain text", () => {
 test("optimistic 'adding' slot does not link even if source is phishnet", () => {
   renderPreview({ slots: [verifiedSlot({ pending: "adding" })] });
   expect(screen.queryByTestId("phishnet-link")).not.toBeInTheDocument();
+});
+
+test("entered slot shows the score-feed badge when a score is available", () => {
+  const slots: PreviewSlot[] = [
+    slot(1, "1", 1, {
+      state: "entered",
+      entered_song: { song_id: 5, name: "Tweezer" },
+      hit_rank: 1,
+    }),
+  ];
+  const badges = new Map([
+    ["1:1", { kind: "foresight" as const, points: 100, mult: null }],
+  ]);
+  renderPreview({ slots, scoreBadges: badges });
+  const badge = screen.getByTestId("slot-score-badge");
+  expect(badge).toHaveTextContent("🔮");
+  expect(badge).toHaveTextContent("+100");
+  // Replaces the hit-rank indicator — one drama language on the main view.
+  expect(screen.queryByTestId("hit-rank-bullseye")).not.toBeInTheDocument();
+});
+
+test("live badge shows the multiplier like the feed", () => {
+  const slots: PreviewSlot[] = [
+    slot(1, "1", 2, {
+      state: "entered",
+      entered_song: { song_id: 6, name: "Sand" },
+      hit_rank: 3,
+    }),
+  ];
+  const badges = new Map([
+    ["1:2", { kind: "live" as const, points: 45, mult: 1.5 }],
+  ]);
+  renderPreview({ slots, scoreBadges: badges });
+  const badge = screen.getByTestId("slot-score-badge");
+  expect(badge).toHaveTextContent("⚡");
+  expect(badge).toHaveTextContent("+45");
+  expect(badge).toHaveTextContent("×1.5");
+});
+
+test("missed song shows the feed's dim miss mark", () => {
+  const slots: PreviewSlot[] = [
+    slot(1, "1", 1, {
+      state: "entered",
+      entered_song: { song_id: 7, name: "Fuego" },
+      hit_rank: null,
+    }),
+  ];
+  const badges = new Map([
+    ["1:1", { kind: "miss" as const, points: 0, mult: null }],
+  ]);
+  renderPreview({ slots, scoreBadges: badges });
+  expect(screen.getByTestId("slot-score-badge")).toHaveTextContent("·");
+});
+
+test("entered slot falls back to hit-rank indicator without a badge", () => {
+  const slots: PreviewSlot[] = [
+    slot(1, "1", 1, {
+      state: "entered",
+      entered_song: { song_id: 5, name: "Tweezer" },
+      hit_rank: 1,
+    }),
+  ];
+  renderPreview({ slots });
+  expect(screen.getByTestId("hit-rank-bullseye")).toBeInTheDocument();
 });

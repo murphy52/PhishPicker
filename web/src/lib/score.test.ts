@@ -1,4 +1,5 @@
 import {
+  badgesBySlot,
   buildFeedEvents,
   groupBracketBySet,
   nextMultiplier,
@@ -209,4 +210,27 @@ test("reason labels", () => {
   expect(reasonLabel("right_set")).toBe("RIGHT SET");
   expect(reasonLabel("somewhere")).toBe("ON THE BOARD");
   expect(reasonLabel("next_song")).toBe("NEXT-SONG ✓");
+});
+
+describe("badgesBySlot", () => {
+  it("keys badges by set:position with the feed's kind rule", () => {
+    const map = badgesBySlot([
+      att({ set_number: "1", position: 1, ledger: "foresight", final: 100 }),
+      att({ index: 1, set_number: "1", position: 2, ledger: "live", final: 30, mult: 1.5 }),
+      att({ index: 2, set_number: "2", position: 1, bustout: true, ledger: null }),
+      att({ index: 3, set_number: "2", position: 2, ledger: null, missed: true }),
+    ]);
+    expect(map.get("1:1")).toEqual({ kind: "foresight", points: 100, mult: null });
+    expect(map.get("1:2")).toEqual({ kind: "live", points: 30, mult: 1.5 });
+    expect(map.get("2:1")?.kind).toBe("bustout");
+    expect(map.get("2:2")?.kind).toBe("miss");
+    expect(map.size).toBe(4);
+  });
+
+  it("carries the foresight sequence mult on foresight rows", () => {
+    const map = badgesBySlot([
+      att({ set_number: "1", position: 3, ledger: "foresight", final: 80, fs_mult: 2 }),
+    ]);
+    expect(map.get("1:3")).toEqual({ kind: "foresight", points: 80, mult: 2 });
+  });
 });

@@ -154,6 +154,39 @@ export function nextMultiplier(streak: number): number {
   return 1;
 }
 
+/** One icon language for scoring everywhere — feed rows and picks-view slots. */
+export const KIND_EMOJI: Record<FeedEvent["kind"], string> = {
+  foresight: "🔮",
+  live: "⚡",
+  bustout: "🎸",
+  miss: "·",
+};
+
+export interface SlotScoreBadge {
+  kind: FeedEvent["kind"];
+  points: number;
+  mult: number | null;
+}
+
+/**
+ * Attributions keyed "set:position" with the same kind/points/mult their rows
+ * show on the score feed — lets the picks view decorate entered slots so the
+ * night's drama reads without leaving the main screen.
+ */
+export function badgesBySlot(
+  attributions: Attribution[],
+): Map<string, SlotScoreBadge> {
+  const map = new Map<string, SlotScoreBadge>();
+  for (const a of attributions) {
+    map.set(`${a.set_number}:${a.position}`, {
+      kind: a.bustout ? "bustout" : a.ledger ?? "miss",
+      points: a.final,
+      mult: a.ledger === "live" ? a.mult : a.fs_mult,
+    });
+  }
+  return map;
+}
+
 export interface FeedEvent {
   index: number;
   name: string;
