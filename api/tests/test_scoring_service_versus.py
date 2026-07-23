@@ -90,3 +90,88 @@ def test_surprise_weights_tiers_bustout_then_rare_then_common(seeded_read_db):
     assert w[bustout_id] == (VS_BAND_BUSTOUT_BONUS, "absent-bustout")
     assert w[rare_id] == (VS_BAND_RARE_BONUS, "absent-rare")
     assert w[common_id] == (0, "absent")
+
+
+def test_classify_surprise_gap_tier():
+    """A decades-dormant workhorse (hundreds of career plays, huge gap) is a
+    bustout, not a common song — issue #33, found on the 2026-07-22 MSG
+    90s-theme night where Love You / Cold as Ice scored only the +3 base."""
+    from phishpicker.scoring import (
+        VS_BAND_GAP_BUSTOUT_MIN,
+        classify_surprise,
+    )
+
+    # Gap alone earns bustout credit, regardless of career play count.
+    assert classify_surprise(300, False, gap_shows=VS_BAND_GAP_BUSTOUT_MIN) == (
+        VS_BAND_BUSTOUT_BONUS,
+        "absent-bustout",
+    )
+    # Below the gap threshold, career count still rules.
+    assert classify_surprise(300, False, gap_shows=5) == (0, "absent")
+    assert classify_surprise(3, False, gap_shows=5) == (
+        VS_BAND_RARE_BONUS,
+        "absent-rare",
+    )
+    # Unknown gap (None) keeps the old behavior exactly.
+    assert classify_surprise(300, False, gap_shows=None) == (0, "absent")
+    assert classify_surprise(300, True, gap_shows=None) == (
+        VS_BAND_BUSTOUT_BONUS,
+        "absent-bustout",
+    )
+
+
+def test_surprise_weights_gap_bustout(seeded_read_db):
+    """With show_date supplied, _surprise_weights computes each song's gap
+    (shows since last played, strictly before the live show) and credits
+    dormant songs and true debuts as bustouts."""
+    conn = seeded_read_db
+    dormant_id, recent_id, debut_id = 300, 301, 302
+    conn.executemany(
+        "INSERT INTO songs (song_id, name, first_seen_at, is_bustout_placeholder) "
+        "VALUES (?, ?, '1990-01-01', 0)",
+        [
+            (dormant_id, "Dormant Workhorse"),
+            (recent_id, "Recent Common"),
+            (debut_id, "Never Played"),
+        ],
+    )
+    # One ancient show where the dormant song was played a LOT (common by
+    # career count), then 100 intervening shows it sat out; the recent song
+    # played in the newest one.
+    conn.execute(
+        "INSERT INTO shows (show_id, show_date, fetched_at) "
+        "VALUES (910000, '1994-01-01', '1994-01-01')"
+    )
+    conn.executemany(
+        "INSERT INTO setlist_songs (show_id, set_number, position, song_id) "
+        "VALUES (910000, '1', ?, ?)",
+        [(p, dormant_id) for p in range(1, 61)],
+    )
+    conn.executemany(
+        "INSERT INTO shows (show_id, show_date, fetched_at) VALUES (?, ?, ?)",
+        [
+            (910001 + i, f"2025-01-{i % 28 + 1:02d}", "2025-01-01")
+            for i in range(100)
+        ],
+    )
+    # Recent song: 60 career plays, latest on the newest synthetic show
+    # (2025-01-28) so its gap stays well under the bustout threshold even
+    # counting the fixture's own seeded shows.
+    conn.executemany(
+        "INSERT INTO setlist_songs (show_id, set_number, position, song_id) "
+        "VALUES (910028, '1', ?, ?)",
+        [(p, recent_id) for p in range(1, 61)],
+    )
+    conn.commit()
+
+    actual = [
+        {"song_id": dormant_id, "set_number": "1", "position": 1},
+        {"song_id": recent_id, "set_number": "1", "position": 2},
+        {"song_id": debut_id, "set_number": "1", "position": 3},
+    ]
+    w = _surprise_weights(
+        conn, actual, bustout_song_ids=set(), show_date="2026-07-22"
+    )
+    assert w[dormant_id] == (VS_BAND_BUSTOUT_BONUS, "absent-bustout")
+    assert w[recent_id] == (0, "absent")
+    assert w[debut_id] == (VS_BAND_BUSTOUT_BONUS, "absent-bustout")

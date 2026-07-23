@@ -72,12 +72,17 @@ def _surprise_weights(
     read_conn: sqlite3.Connection,
     actual: list[dict],
     bustout_song_ids: set[int],
+    show_date: str | None = None,
 ) -> dict[int, tuple[int, str]]:
     """Band bonus per absent song. This layer does only what needs the DB —
-    one grouped play-count query — and hands the raw facts to the engine's
-    classify_surprise, which owns the tier thresholds and magnitudes."""
+    play counts and each song's gap (shows since it was last played, strictly
+    before `show_date` so a re-finalize after tonight's canonical ingest
+    doesn't see the song as "just played") — and hands the raw facts to the
+    engine's classify_surprise, which owns the tier thresholds and magnitudes.
+    Without show_date, gaps are unknown and only the play-count tiers apply."""
     ids = [r["song_id"] for r in actual]
     plays: dict[int, int] = dict.fromkeys(ids, 0)
+    gaps: dict[int, int | None] = dict.fromkeys(ids, None)
     if ids:
         ph = ",".join("?" * len(ids))
         for sid, c in read_conn.execute(
@@ -85,8 +90,35 @@ def _surprise_weights(
             f"WHERE song_id IN ({ph}) GROUP BY song_id", ids
         ).fetchall():
             plays[sid] = c
+        if show_date:
+            last_played: dict[int, str | None] = dict.fromkeys(ids, None)
+            for sid, last in read_conn.execute(
+                f"SELECT ss.song_id, MAX(s.show_date) FROM setlist_songs ss "
+                f"JOIN shows s ON s.show_id = ss.show_id "
+                f"WHERE ss.song_id IN ({ph}) AND s.show_date < ? "
+                f"GROUP BY ss.song_id",
+                [*ids, show_date],
+            ).fetchall():
+                last_played[sid] = last
+            # Shows strictly between last play and this show — one COUNT per
+            # distinct last-played date (a handful per setlist).
+            gap_by_date: dict[str, int] = {}
+            for sid in ids:
+                last = last_played[sid]
+                if last is None:
+                    # Never played before this show: a true debut.
+                    gaps[sid] = 10**6
+                    continue
+                if last not in gap_by_date:
+                    gap_by_date[last] = read_conn.execute(
+                        "SELECT COUNT(*) FROM shows "
+                        "WHERE show_date > ? AND show_date < ?",
+                        (last, show_date),
+                    ).fetchone()[0]
+                gaps[sid] = gap_by_date[last]
     return {
-        sid: classify_surprise(plays[sid], sid in bustout_song_ids) for sid in ids
+        sid: classify_surprise(plays[sid], sid in bustout_song_ids, gaps[sid])
+        for sid in ids
     }
 
 
@@ -129,23 +161,25 @@ def score_live_show(
         att["name"] = _name(att["song_id"])
     for outcome in result["pick_outcomes"]:
         outcome["name"] = _name(outcome["pick"]["song_id"])
+    # Venue/date/city/run for the scoreboard + bracket header — fetched before
+    # the vs-game so the surprise weights can compute per-song gaps against
+    # this show's date. Degrades to empty fields, never errors.
+    show_row = live_conn.execute(
+        "SELECT show_date, venue_id FROM live_show WHERE show_id = ?", (show_id,)
+    ).fetchone()
     # Only attach the vs-game when a bracket was actually frozen. An empty
     # bracket makes score_foresight claim nothing, so every song would fall to
     # the band and the board would read "Phish 100%" pre-freeze. Gating here lets
     # the frontend's score.frozen / score?.versus checks hide it cleanly.
     if bracket:
         versus = score_versus(bracket, actual, _surprise_weights(
-            read_conn, actual, bustout_song_ids))
+            read_conn, actual, bustout_song_ids,
+            show_date=show_row["show_date"] if show_row else None))
         for ps in versus["per_song"]:
             ps["name"] = _name(ps["song_id"])
         result["versus"] = versus
     result["model_sha"] = state.get("model_sha")
     result["frozen"] = bool(bracket)
-    # Venue/date/city/run for the scoreboard + bracket header. Resolved from
-    # the live_show's (date, venue_id); degrades to empty fields, never errors.
-    show_row = live_conn.execute(
-        "SELECT show_date, venue_id FROM live_show WHERE show_id = ?", (show_id,)
-    ).fetchone()
     result["show"] = (
         resolve_show_meta(read_conn, show_row["show_date"], show_row["venue_id"])
         if show_row

@@ -290,6 +290,7 @@ export default function ScoringPage() {
             <LadderRow
               accent="phish"
               event="…and it's a true bustout or debut"
+              note="never played before, or dormant 100+ shows since its last appearance"
               points="+9"
             />
           </ul>

@@ -34,6 +34,12 @@ VS_BAND_BUSTOUT_BONUS = 6
 VS_BAND_RARE_BONUS = 2
 # Below this many all-time plays, a missed song counts as a "deep cut".
 VS_BAND_RARE_PLAYS_MAX = 50
+# At/above this many shows since a song's last appearance, playing it is a
+# bustout no matter its career play count — an era workhorse dormant for
+# decades (Love You, Cold as Ice on the 2026-07-22 MSG 90s-theme night) is a
+# bigger surprise than a low-play-count song from last tour. Matches
+# phish.net's informal 100-show bustout convention. See issue #33.
+VS_BAND_GAP_BUSTOUT_MIN = 100
 
 # Classification tiers, weakest -> strongest.
 _TIER_BASE = {"somewhere": PTS_SOMEWHERE, "right_set": PTS_RIGHT_SET, "exact": PTS_EXACT}
@@ -102,11 +108,16 @@ def score_foresight(
     return claims, outcomes
 
 
-def classify_surprise(play_count: int, is_bustout: bool) -> tuple[int, str]:
+def classify_surprise(
+    play_count: int, is_bustout: bool, gap_shows: int | None = None
+) -> tuple[int, str]:
     """Band-side surprise bonus + tag for a song the bracket missed: bustout >
     deep cut > common. The whole vs ladder (both sides) lives in this engine;
-    the caller supplies only the raw play count and bustout flag (no DB here)."""
-    if is_bustout:
+    the caller supplies only the raw facts (play count, bustout flag, and shows
+    since last played — None when unknown; no DB here). A song is a bustout by
+    placeholder flag (never seen in the DB), by gap (dormant era workhorse or
+    a true debut), whichever fires."""
+    if is_bustout or (gap_shows is not None and gap_shows >= VS_BAND_GAP_BUSTOUT_MIN):
         return VS_BAND_BUSTOUT_BONUS, "absent-bustout"
     if play_count < VS_BAND_RARE_PLAYS_MAX:
         return VS_BAND_RARE_BONUS, "absent-rare"
