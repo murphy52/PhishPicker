@@ -349,3 +349,101 @@ def test_sync_never_moves_current_set_backward(httpx_mock: HTTPXMock, live_setup
             (live_setup.show_id,),
         ).fetchone()["current_set"]
     assert current_set == "2"
+
+
+def _song(songid, name, setn, pos):
+    return {"songid": songid, "song": name, "set": setn,
+            "position": pos, "artist_name": "Phish"}
+
+
+def test_late_song_after_finalize_refinalizes_scorecard(
+    httpx_mock: HTTPXMock, live_setup
+):
+    """Issue: an encore that lands after close-out finalized the scorecard
+    was stranded — the score page (recompute-on-read) showed it, but
+    /scorecards history kept the stale pre-encore finalize forever, because
+    the backstop skips finalized shows. A late reconcile that changes a
+    finalized show must re-finalize so history matches the live recompute.
+    """
+    import json as _json
+
+    from phishpicker.scoring_service import finalize_scorecard
+
+    url = "https://api.phish.net/v5/setlists/showdate/2026-04-23.json?apikey=k"
+
+    # Set-2 close: sync a 2-song setlist, then finalize (mirrors close-out).
+    httpx_mock.add_response(
+        url=url, json={"data": [_song(100, "Chalk Dust Torture", "1", 1),
+                                _song(101, "Tweezer", "1", 2)]}
+    )
+    sync_show_with_phishnet(
+        db_path=live_setup.db_path, live_db_path=live_setup.live_db_path,
+        api_key="k", show_id=live_setup.show_id, show_date="2026-04-23",
+    )
+    with open_db(live_setup.db_path, read_only=True) as read, open_db(
+        live_setup.live_db_path
+    ) as live:
+        finalize_scorecard(read, live, live_setup.show_id)
+        before = live.execute(
+            "SELECT payload FROM scorecards WHERE show_id = ?",
+            (live_setup.show_id,),
+        ).fetchone()
+    assert len(_json.loads(before["payload"])["attributions"]) == 2
+
+    # The encore lands after close-out; a later sync pass appends it.
+    httpx_mock.add_response(
+        url=url, json={"data": [_song(100, "Chalk Dust Torture", "1", 1),
+                                _song(101, "Tweezer", "1", 2),
+                                _song(102, "Silent in the Morning", "E", 1)]}
+    )
+    result = sync_show_with_phishnet(
+        db_path=live_setup.db_path, live_db_path=live_setup.live_db_path,
+        api_key="k", show_id=live_setup.show_id, show_date="2026-04-23",
+    )
+    assert result["appended"] == 1
+
+    with open_db(live_setup.live_db_path) as live:
+        after = live.execute(
+            "SELECT payload FROM scorecards WHERE show_id = ?",
+            (live_setup.show_id,),
+        ).fetchone()
+    # Re-finalized: the persisted scorecard now includes the encore.
+    assert len(_json.loads(after["payload"])["attributions"]) == 3
+
+
+def test_stable_reconcile_does_not_refinalize_unchanged_show(
+    httpx_mock: HTTPXMock, live_setup
+):
+    """A poll that finds no new songs must NOT re-finalize (no needless
+    writes on a stable, already-scored show)."""
+    from phishpicker.scoring_service import finalize_scorecard
+
+    url = "https://api.phish.net/v5/setlists/showdate/2026-04-23.json?apikey=k"
+    data = {"data": [_song(100, "Chalk Dust Torture", "1", 1),
+                     _song(101, "Tweezer", "1", 2)]}
+    httpx_mock.add_response(url=url, json=data)
+    sync_show_with_phishnet(
+        db_path=live_setup.db_path, live_db_path=live_setup.live_db_path,
+        api_key="k", show_id=live_setup.show_id, show_date="2026-04-23",
+    )
+    with open_db(live_setup.db_path, read_only=True) as read, open_db(
+        live_setup.live_db_path
+    ) as live:
+        finalize_scorecard(read, live, live_setup.show_id)
+        original = live.execute(
+            "SELECT finalized_at FROM scorecards WHERE show_id = ?",
+            (live_setup.show_id,),
+        ).fetchone()["finalized_at"]
+
+    httpx_mock.add_response(url=url, json=data)  # identical setlist
+    result = sync_show_with_phishnet(
+        db_path=live_setup.db_path, live_db_path=live_setup.live_db_path,
+        api_key="k", show_id=live_setup.show_id, show_date="2026-04-23",
+    )
+    assert result["appended"] == 0 and result["overrides"] == 0
+    with open_db(live_setup.live_db_path) as live:
+        after = live.execute(
+            "SELECT finalized_at FROM scorecards WHERE show_id = ?",
+            (live_setup.show_id,),
+        ).fetchone()["finalized_at"]
+    assert after == original  # untouched

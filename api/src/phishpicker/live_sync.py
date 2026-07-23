@@ -393,6 +393,30 @@ def sync_show_with_phishnet(
         )
         live.commit()
 
+        # Self-heal the persisted scorecard. If this reconcile changed a show
+        # that was ALREADY finalized — the classic case is an encore that
+        # lands after close-out declared the show quiescent and finalized it —
+        # re-finalize so /scorecards history matches the live recompute. The
+        # daily backstop can't do this: it skips finalized shows, so a late
+        # song is stranded in the stale card forever. Gated on real changes so
+        # a steady-state poll of a stable show never rewrites the card. The
+        # summary push lives in close_out_show, not here, so this won't
+        # re-notify.
+        if appended or overrides:
+            already_finalized = live.execute(
+                "SELECT 1 FROM scorecards WHERE show_id = ?", (show_id,)
+            ).fetchone()
+            if already_finalized:
+                try:
+                    from phishpicker.scoring_service import finalize_scorecard
+
+                    finalize_scorecard(read_rw, live, show_id)
+                except Exception:
+                    log.warning(
+                        "re-finalize after late reconcile failed for %s",
+                        show_id, exc_info=True,
+                    )
+
         # Enrich each push with the points the song scored (issue #22). One
         # scoring pass over the now-committed setlist; match by (set, position).
         att_by_slot: dict[tuple[str, int], dict] = {}
