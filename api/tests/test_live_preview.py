@@ -769,3 +769,30 @@ def test_hit_rank_cache_key_includes_played_prefix(
     )
     seeded_client.get(f"/live/show/{sid}/preview")
     assert len(_hit_rank_cache) > before, "new entered slot must add a fresh key"
+
+
+def test_preview_survives_song_added_after_cache_warm(
+    seeded_client, live_show_id, tmp_path
+):
+    """The daily ingest can add a song to the read DB while the API process is
+    still up. The per-show feature cache is keyed on (db, show_date, venue_id,
+    scorer) — not on the song set — so a warmed entry predates the new song and
+    build_feature_rows would KeyError on it. Regression for the prod 500 on
+    2026-08-31 (song 3272 'Disco Set' ingested after the 2026-09-04 cache warm).
+    """
+    from phishpicker.db.connection import open_db
+
+    # Warm the cache for this show_date/venue.
+    assert seeded_client.get(f"/live/show/{live_show_id}/preview").status_code == 200
+
+    # Simulate the ingest landing a brand-new song mid-process.
+    db = open_db(tmp_path / "phishpicker.db")
+    db.execute(
+        "INSERT INTO songs (song_id, name, slug, first_seen_at) VALUES (?, ?, ?, ?)",
+        (999_001, "Disco Set", "disco-set", "2026-08-30"),
+    )
+    db.commit()
+    db.close()
+
+    r = seeded_client.get(f"/live/show/{live_show_id}/preview")
+    assert r.status_code == 200, r.text
