@@ -52,6 +52,24 @@ def clear_feature_cache() -> None:
     _hit_rank_cache.clear()
 
 
+def _data_fingerprint(conn: sqlite3.Connection, song_ids: list[int]) -> tuple:
+    """Cheap stand-in for "the read DB the caches were built from".
+
+    The API process outlives the daily ingest, so a cache entry warmed for an
+    upcoming show_date can predate songs and setlists that landed since. A song
+    added after the warm is the crashing case — build_feature_rows indexes
+    stats[sid] directly and KeyErrors (prod 500, 2026-08-31: song 3272 "Disco
+    Set" ingested after the 2026-09-04 entry warmed). New setlist rows are the
+    quiet case: no crash, just features computed from stale play history.
+
+    frozenset over song_ids is order-independent (the songs SELECT has no ORDER
+    BY) and matches exactly what stats/ext are keyed on; the setlist count
+    catches an ingest that adds plays without adding songs.
+    """
+    setlist_rows = conn.execute("SELECT COUNT(*) FROM setlist_songs").fetchone()[0]
+    return (hash(frozenset(song_ids)), len(song_ids), setlist_rows)
+
+
 def _show_feature_caches(
     read_conn: sqlite3.Connection,
     show_date: str,
@@ -60,7 +78,13 @@ def _show_feature_caches(
     scorer_name: str,
 ) -> tuple:
     """(stats_cache, ext_cache, bigram_cache) for a show, memoized across calls."""
-    key = (_db_path(read_conn), show_date, venue_id, scorer_name)
+    key = (
+        _db_path(read_conn),
+        show_date,
+        venue_id,
+        scorer_name,
+        _data_fingerprint(read_conn, song_ids),
+    )
     cached = _feature_cache.get(key)
     if cached is not None:
         _feature_cache.move_to_end(key)
