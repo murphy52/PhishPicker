@@ -804,6 +804,64 @@ def create_app() -> FastAPI:
         endpoint: str
         keys: dict  # {"p256dh": "...", "auth": "..."}
 
+    class PushTestBody(BaseModel):
+        """A synthetic song event, so notification wording can be reviewed on
+        a real device without waiting for a show. Defaults describe a scored
+        song; override any field to preview a miss, a bustout, an unranked
+        call, or a custom icon (iOS may ignore per-notification icons — this
+        is how we find out)."""
+
+        song_name: str = "Tube"
+        set_number: str = "1"
+        position_in_set: int = 5
+        show_date: str = "2026-09-05"
+        song_id: int = 622
+        rank: int | None = 2
+        probability: float | None = 0.18
+        attribution: dict | None = {
+            "reason": "exact",
+            "final": 80,
+            "ledger": "foresight",
+        }
+        versus: dict | None = {
+            "picker_total": 86,
+            "phish_total": 40,
+            "leader": "picker",
+        }
+        icon: str | None = None
+        dry_run: bool = False
+
+    @app.post("/push/test")
+    def push_test(
+        body: PushTestBody,
+        x_admin_token: str = Header(None),  # noqa: B008
+        live: sqlite3.Connection = Depends(get_live),  # noqa: B008
+        request: Request = None,
+    ):
+        """Fire a sample notification at every stored subscription.
+
+        Admin-gated: this pushes to David's real devices. dry_run returns the
+        composed payload without sending, for checking wording in a terminal.
+        """
+        from phishpicker.push import send_push
+        from phishpicker.push_payload import build_song_push
+
+        expected = request.app.state.settings.admin_token
+        if not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
+            raise HTTPException(status_code=401, detail="invalid admin token")
+
+        payload = build_song_push(**body.model_dump(exclude={"dry_run"}))
+        if body.dry_run:
+            return {"payload": payload, "sent": 0, "dry_run": True}
+        s = request.app.state.settings
+        result = send_push(
+            live,
+            payload,
+            vapid_private_key=s.vapid_private_key,
+            vapid_subject=s.vapid_subject,
+        )
+        return {"payload": payload, **result}
+
     @app.get("/push/vapid-key")
     def push_vapid_key(request: Request):
         """Return the VAPID public key the client uses in pushManager.subscribe().
