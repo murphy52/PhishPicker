@@ -202,7 +202,20 @@ def capture_snapshot(
             else []
         )
         append_snapshot(
-            live_conn, show_id, {"after_count": after_count, "remaining": remaining}
+            live_conn,
+            show_id,
+            {
+                "after_count": after_count,
+                "remaining": remaining,
+                # Wall-clock instant of the capture. Duplicate after_counts are
+                # expected (corrections and set advances don't change the
+                # count) and the reader takes the last, which is only right if
+                # that last capture predates the reveal it is being scored
+                # against. Pair with live_songs.entered_at to tell a mid-show
+                # re-call from a post-hoc correction. Diagnostic only — no
+                # reader requires it, and pre-existing snapshots lack it.
+                "captured_at": datetime.now(UTC).isoformat(),
+            },
         )
     log.info(
         "captured snapshot for %s (after_count=%d) in %.2fs",
