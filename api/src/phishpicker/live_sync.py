@@ -22,7 +22,6 @@ from phishpicker.push import send_push
 from phishpicker.push_payload import (
     build_song_push,
     points_suffix,
-    rank_emoji,
     set_label,
 )
 from phishpicker.scoring_service import score_live_show
@@ -174,7 +173,6 @@ def _resolve_or_insert_song(read_conn, net_row: dict) -> tuple[int, bool]:
 # Notification wording lives in push_payload (pure, unit-tested, reusable by
 # POST /push/test). Re-exported under the old private names so existing
 # importers keep working.
-_rank_emoji = rank_emoji
 _set_label = set_label
 _points_suffix = points_suffix
 
