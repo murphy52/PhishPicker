@@ -169,3 +169,49 @@ def test_sync_freezes_and_captures(httpx_mock: HTTPXMock, live_setup):
     slots = {(b["set_number"], b["position"]) for b in st["frozen_bracket"]}
     assert ("1", 1) in slots
     assert [s["after_count"] for s in st["snapshots"]] == [1, 2]
+
+
+def test_snapshot_records_captured_at(seeded_read_db, live_conn, seeded_live_show):
+    """Each snapshot carries the wall-clock instant it was taken, so a
+    duplicate after_count can be placed against live_songs.entered_at.
+
+    Without it there is no way to tell a mid-show change of mind (the model
+    genuinely re-called the slot before the song dropped, so last-wins is
+    right) from a post-hoc phish.net correction re-capturing after the reveal
+    (which retroactively erases a call that was correct on screen). Dick's
+    2026-09-04 hit exactly this: after_count 4 held two snapshots, the first
+    calling Tube, which is what played.
+    """
+    from datetime import datetime
+
+    from phishpicker.live import append_song
+
+    scorer = HeuristicScorer()
+    upsert_score_state(
+        live_conn, seeded_live_show, model_sha=scorer.sha, frozen_bracket=[]
+    )
+    append_song(live_conn, seeded_live_show, song_id=100, set_number="1")
+    assert capture_snapshot(seeded_read_db, live_conn, seeded_live_show, scorer=scorer)
+
+    snap = get_score_state(live_conn, seeded_live_show)["snapshots"][0]
+    assert "captured_at" in snap, snap
+    # Parseable, tz-aware UTC — comparable against live_songs.entered_at.
+    ts = datetime.fromisoformat(snap["captured_at"])
+    assert ts.tzinfo is not None
+
+    entered_at = live_conn.execute(
+        "SELECT entered_at FROM live_songs WHERE show_id = ?", (seeded_live_show,)
+    ).fetchone()[0]
+    assert ts >= datetime.fromisoformat(entered_at)
+
+
+def test_scoring_tolerates_snapshots_without_captured_at(seeded_read_db, live_conn):
+    """Snapshots written before captured_at existed must still score — the
+    field is diagnostic, never required by the readers."""
+    from phishpicker.scoring_service import _next_call_by_index
+
+    legacy = [
+        {"after_count": 1, "remaining": [{"set_number": "1", "position": 2, "song_id": 7}]},
+        {"after_count": 2, "remaining": []},
+    ]
+    assert _next_call_by_index(legacy, 3) == {1: 7}
