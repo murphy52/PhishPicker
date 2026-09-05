@@ -120,3 +120,78 @@ def test_push_test_accepts_icon_override(seeded_client):
         headers={"X-Admin-Token": "test-admin-token"},
     )
     assert r.json()["payload"]["icon"] == "/globe.svg"
+
+
+# --- Outcome-driven title emoji -------------------------------------------
+# iOS ignores the per-notification icon (confirmed on David's devices
+# 2026-09-05 — it renders the installed PWA icon instead), so the title is the
+# only place a "did PhishPicker score?" signal survives. The emoji therefore
+# reports the SCORING OUTCOME, not the model's confidence; confidence stays in
+# the body as "called #2 (18%)".
+
+
+def _title_emoji(**over):
+    return _payload(**over)["title"].split(" ")[0]
+
+
+def test_opener_jackpot_gets_the_crown():
+    assert _title_emoji(
+        attribution={"reason": "opener", "final": 100, "ledger": "foresight"}
+    ) == "👑"
+
+
+def test_exact_slot_gets_the_bullseye():
+    assert _title_emoji(
+        attribution={"reason": "exact", "final": 80, "ledger": "foresight"}
+    ) == "🎯"
+
+
+def test_live_next_song_call_gets_the_bolt():
+    assert _title_emoji(
+        attribution={"reason": "next_song", "final": 30, "ledger": "live"}
+    ) == "⚡"
+
+
+def test_partial_credit_gets_the_note():
+    for reason, pts in (("right_set", 15), ("somewhere", 5)):
+        assert _title_emoji(
+            attribution={"reason": reason, "final": pts, "ledger": "foresight"}
+        ) == "🎵"
+
+
+def test_plain_miss_gets_the_muted_mark():
+    assert _title_emoji(
+        attribution={"reason": "absent", "final": 0, "ledger": None}
+    ) == "⚪"
+
+
+def test_bustout_shows_the_guitar_when_it_banked_nothing():
+    assert _title_emoji(attribution={"reason": "absent", "final": 0, "bustout": True}) == "🎸"
+
+
+def test_scoring_outranks_bustout_in_the_title():
+    """A bustout that also scored leads with the points — that's the headline."""
+    assert _title_emoji(
+        attribution={"reason": "exact", "final": 80, "ledger": "foresight", "bustout": True}
+    ) == "🎯"
+
+
+def test_a_scoring_bustout_still_reports_its_points():
+    """points_suffix used to return only 'Bustout!', dropping the score from a
+    notification whose whole job is reporting points."""
+    from phishpicker.push_payload import points_suffix
+
+    s = points_suffix({"reason": "exact", "final": 80, "ledger": "foresight", "bustout": True})
+    assert "+80" in s and "Bustout" in s
+
+
+def test_high_confidence_miss_is_not_dressed_up_as_a_hit():
+    """The old title emoji keyed on model rank, so a #1-ranked song that never
+    made the bracket still showed a bullseye."""
+    assert _title_emoji(
+        rank=1, probability=0.42, attribution={"reason": "absent", "final": 0}
+    ) == "⚪"
+
+
+def test_missing_attribution_falls_back_to_the_miss_mark():
+    assert _title_emoji(attribution=None) == "⚪"

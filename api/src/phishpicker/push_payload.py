@@ -34,16 +34,32 @@ def set_label(set_number: str) -> str:
     return "Encore" if set_number == "E" else f"Set {set_number}"
 
 
-def rank_emoji(rank: int | None) -> str:
-    if rank is None:
-        return "🚨"
-    if rank <= 3:
-        return "🎯"
-    if rank <= 10:
-        return "🎵"
-    if rank <= 20:
-        return "🔍"
-    return "🚨"
+# Outcome emoji for the title. iOS ignores the per-notification icon (confirmed
+# on David's devices 2026-09-05 — it renders the installed PWA icon), so the
+# title is the ONLY place a "did PhishPicker score?" signal survives. This keys
+# on what was banked, not on model confidence: a #1-ranked song that never made
+# the bracket is a miss, and dressing it as a bullseye misreports the night.
+# Confidence still rides in the body as "called #2 (18%)".
+_OUTCOME_EMOJI = {
+    "opener": "👑",
+    "exact": "🎯",
+    "next_song": "⚡",
+    "right_set": "🎵",
+    "somewhere": "🎵",
+}
+EMOJI_BUSTOUT = "🎸"
+EMOJI_MISS = "⚪"
+
+
+def outcome_emoji(att: dict | None) -> str:
+    """Scoring first — the points are the headline — then bustout as the
+    consolation signal, then a muted mark for a plain miss."""
+    att = att or {}
+    if (att.get("final") or 0) > 0:
+        return _OUTCOME_EMOJI.get(att.get("reason"), "🎵")
+    if att.get("bustout"):
+        return EMOJI_BUSTOUT
+    return EMOJI_MISS
 
 
 def points_suffix(att: dict) -> str:
@@ -53,17 +69,20 @@ def points_suffix(att: dict) -> str:
     A bustout is celebrated (0 pts, but a fun rare song); a plain miss is
     silent so the notification isn't cluttered with '+0'.
     """
-    if att.get("bustout"):
-        return "🎸 Bustout!"
+    bustout = "🎸 Bustout!" if att.get("bustout") else ""
     final = att.get("final") or 0
     if final <= 0:
-        return ""
+        return bustout
     pts = int(final)
     if att.get("ledger") == "live":
         mult = att.get("mult")
         combo = f" ×{mult:g}" if mult and mult > 1 else ""
-        return f"⚡ +{pts}{combo}"
-    return f"🔮 +{pts}"
+        scored = f"⚡ +{pts}{combo}"
+    else:
+        scored = f"🔮 +{pts}"
+    # A bustout that also scored reports both — the points are why the
+    # notification exists, the bustout is why the song was fun.
+    return f"{scored} · {bustout}" if bustout else scored
 
 
 def _call_text(rank: int | None, probability: float | None) -> str:
@@ -130,7 +149,7 @@ def build_song_push(
         lines.append(f"Phish {phish} — Picker {picker}")
 
     return {
-        "title": f"{rank_emoji(rank)} {song_name}",
+        "title": f"{outcome_emoji(attribution)} {song_name}",
         "body": "\n".join(lines),
         "icon": icon or _icon_for(attribution),
         "badge": "/icon-192.png",
