@@ -122,3 +122,31 @@ def test_get_vapid_key(seeded_client):
     assert r.status_code == 200
     # tests don't set VAPID_PUBLIC_KEY, so expect empty string.
     assert "key" in r.json()
+
+
+def test_send_push_sets_a_ttl_so_a_sleeping_phone_still_gets_it():
+    """pywebpush defaults ttl=0, which tells the push service "deliver this
+    instant or discard". A locked or briefly-offline phone then never sees the
+    notification — the exact case the push exists for. Send with a real TTL so
+    the service queues it. Regression: the 2026-09-05 test push was accepted
+    (201) by Apple and never arrived.
+    """
+    conn = _conn()
+    save_subscription(conn, "https://push.example/abc", "p", "a")
+
+    seen = {}
+
+    def fake_webpush(**kwargs):
+        seen.update(kwargs)
+
+        class R:
+            status_code = 201
+
+        return R()
+
+    with patch("phishpicker.push.webpush", side_effect=fake_webpush):
+        send_push(
+            conn, {"title": "x"}, vapid_private_key="k", vapid_subject="mailto:a@b.c"
+        )
+
+    assert seen.get("ttl", 0) > 0, seen.get("ttl")

@@ -15,6 +15,14 @@ from pywebpush import WebPushException, webpush
 
 log = logging.getLogger(__name__)
 
+# pywebpush defaults to ttl=0, which means "deliver this instant or discard".
+# A phone that is locked, on a dead cell, or briefly offline then never sees
+# the push at all — and the push service still answers 201, so nothing looks
+# wrong from here. Four hours outlives a set break and a walk to the parking
+# lot without stacking up next-day noise: a song notification is worthless by
+# the following morning.
+PUSH_TTL_SECONDS = 4 * 60 * 60
+
 
 def save_subscription(
     conn: sqlite3.Connection,
@@ -80,6 +88,7 @@ def send_push(
                 data=body,
                 vapid_private_key=vapid_private_key,
                 vapid_claims={"sub": vapid_subject},
+                ttl=PUSH_TTL_SECONDS,
             )
             sent += 1
         except WebPushException as e:
