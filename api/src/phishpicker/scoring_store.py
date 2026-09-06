@@ -196,6 +196,10 @@ def capture_snapshot(
                     "set_number": current_set,
                     "position": pos_in_set,
                     "song_id": cands[0]["song_id"],
+                    # Carried so the push can say "Next up: Tweezer (18%)"
+                    # without re-running the model. Readers must tolerate its
+                    # absence — snapshots predating this lack it.
+                    "probability": cands[0].get("probability"),
                 }
             ]
             if cands

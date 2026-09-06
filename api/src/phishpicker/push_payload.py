@@ -125,14 +125,20 @@ def build_song_push(
     probability: float | None = None,
     attribution: dict | None = None,
     versus: dict | None = None,
+    next_call: dict | None = None,
     icon: str | None = None,
 ) -> dict:
     """Compose the Web Push payload for one song landing in the setlist.
 
     `attribution` is the scoring row for this slot (None before scoring has
     run); `versus` is the running Phish-vs-Picker total (None if scoring
-    failed — the notification degrades rather than being lost). `icon`
-    overrides the outcome-derived icon, for probing what a device honours.
+    failed — the notification degrades rather than being lost);
+    `next_call` is the model's pick for the NEXT slot, the forward-looking
+    half of the notification. `icon` overrides the outcome-derived icon,
+    for probing what a device honours.
+
+    Every enrichment is optional and omitted rather than rendered empty — a
+    push that reaches the phone missing a line beats one that doesn't send.
     """
     att = attribution or {}
     lines = []
@@ -147,6 +153,13 @@ def build_song_push(
         picker = versus.get("picker_total", 0)
         phish = versus.get("phish_total", 0)
         lines.append(f"Phish {phish} — Picker {picker}")
+
+    # Forward-looking half: what the model calls for the next slot. Last so a
+    # truncated notification still shows what just happened first.
+    if next_call and next_call.get("name"):
+        prob = next_call.get("probability")
+        pct = f" ({prob * 100:.0f}%)" if prob else ""
+        lines.append(f"Next up: {next_call['name']}{pct}")
 
     return {
         "title": f"{outcome_emoji(attribution)} {song_name}",
