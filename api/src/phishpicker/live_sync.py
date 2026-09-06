@@ -25,7 +25,7 @@ from phishpicker.push_payload import (
     set_label,
 )
 from phishpicker.scoring_service import score_live_show
-from phishpicker.scoring_store import capture_snapshot, ensure_frozen
+from phishpicker.scoring_store import capture_snapshot, ensure_frozen, get_score_state
 from phishpicker.slot_ranks import _SET_ORDER
 
 log = logging.getLogger(__name__)
@@ -316,6 +316,9 @@ def sync_show_with_phishnet(
                             "song_id": a.song_id,
                             "rank": rank,
                             "probability": prob,
+                            # Snapshot key: the capture taken right after this
+                            # append holds the model's call for the NEXT slot.
+                            "_after_count": len(virtual_played),
                         }
                     )
             else:
@@ -402,7 +405,31 @@ def sync_show_with_phishnet(
             except Exception:
                 log.warning("push points enrichment failed", exc_info=True)
 
+        # The model's next-slot call, straight from the snapshot captured after
+        # each append — no second inference. Last-wins per after_count, matching
+        # how scoring reads them (scoring_service._next_call_by_index).
+        next_by_count: dict[int, dict] = {}
+        try:
+            state = get_score_state(live, show_id)
+            for snap in (state or {}).get("snapshots") or []:
+                rem = snap.get("remaining") or []
+                if rem:
+                    next_by_count[snap["after_count"]] = rem[0]
+        except Exception:
+            log.warning("next-call lookup failed for %s", show_id, exc_info=True)
+
         for facts in pending_pushes:
+            call = next_by_count.get(facts.pop("_after_count"))
+            next_call = None
+            if call:
+                row = read_rw.execute(
+                    "SELECT name FROM songs WHERE song_id = ?", (call["song_id"],)
+                ).fetchone()
+                if row:
+                    next_call = {
+                        "name": row["name"],
+                        "probability": call.get("probability"),
+                    }
             send_push(
                 live,
                 build_song_push(
@@ -411,6 +438,7 @@ def sync_show_with_phishnet(
                         (facts["set_number"], facts["position_in_set"])
                     ),
                     versus=versus,
+                    next_call=next_call,
                 ),
                 vapid_private_key=vapid_private_key,
                 vapid_subject=vapid_subject,

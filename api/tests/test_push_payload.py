@@ -195,3 +195,28 @@ def test_high_confidence_miss_is_not_dressed_up_as_a_hit():
 
 def test_missing_attribution_falls_back_to_the_miss_mark():
     assert _title_emoji(attribution=None) == "⚪"
+
+
+# --- Next-song prediction line --------------------------------------------
+
+
+def test_next_call_is_rendered_when_known():
+    """After a song lands, the most useful thing on screen is what the model
+    thinks comes next — that's the reason to look at the phone at all."""
+    body = _payload(
+        next_call={"name": "Tweezer", "probability": 0.18, "set_number": "1", "position": 6}
+    )["body"]
+    assert "Tweezer" in body
+    assert "18%" in body
+
+
+def test_next_call_omitted_when_unknown():
+    """End of show, or a failed capture — say nothing rather than 'Next: None'."""
+    body = _payload(next_call=None)["body"]
+    assert "Next" not in body
+
+
+def test_next_call_without_probability_still_names_the_song():
+    body = _payload(next_call={"name": "Tweezer", "probability": None})["body"]
+    assert "Tweezer" in body
+    assert "%" not in body.split("Tweezer")[-1]

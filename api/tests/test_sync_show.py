@@ -447,3 +447,59 @@ def test_stable_reconcile_does_not_refinalize_unchanged_show(
             (live_setup.show_id,),
         ).fetchone()["finalized_at"]
     assert after == original  # untouched
+
+
+def test_sync_push_body_includes_next_song_prediction(
+    httpx_mock: HTTPXMock, live_setup
+):
+    """The push should also look FORWARD: after a song lands, say what the
+    model calls next. Read from the snapshot captured on append, so no second
+    inference runs on the notification path."""
+    with open_db(live_setup.live_db_path) as live:
+        save_subscription(live, "https://push/x", "p", "a")
+
+    httpx_mock.add_response(
+        url="https://api.phish.net/v5/setlists/showdate/2026-04-23.json?apikey=k",
+        json={
+            "data": [
+                {"songid": 100, "song": "Chalk Dust Torture", "set": "1",
+                 "position": 1, "artist_name": "Phish"},
+            ]
+        },
+    )
+
+    scorer = MagicMock()
+    scorer.name = "stub"
+    scorer.sha = "stub-sha"
+
+    scored = {"attributions": [], "versus": {"picker_total": 10, "phish_total": 3}}
+
+    with patch("phishpicker.live_sync.predict_next_stateless") as pred, patch(
+        "phishpicker.live_sync.score_live_show", return_value=scored
+    ), patch("phishpicker.predict.predict_next") as cap_pred, patch(
+        "phishpicker.push.webpush"
+    ) as wp:
+        pred.return_value = [
+            {"song_id": 100, "name": "Chalk Dust Torture", "score": 10.0,
+             "probability": 0.25},
+        ]
+        # What capture_snapshot records as the next-slot call.
+        cap_pred.return_value = [
+            {"song_id": 101, "name": "Tweezer", "score": 9.0, "probability": 0.18},
+        ]
+        sync_show_with_phishnet(
+            db_path=live_setup.db_path,
+            live_db_path=live_setup.live_db_path,
+            api_key="k",
+            show_id=live_setup.show_id,
+            show_date="2026-04-23",
+            scorer=scorer,
+            vapid_private_key="fake-priv",
+            vapid_subject="mailto:x@y.z",
+        )
+
+    assert wp.called
+    body = wp.call_args.kwargs["data"]
+    assert "Next up" in body
+    assert "Tweezer" in body
+    assert "18%" in body
