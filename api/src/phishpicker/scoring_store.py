@@ -13,6 +13,10 @@ from datetime import UTC, datetime
 
 log = logging.getLogger(__name__)
 
+# Candidate-slice width for the stored next-song call. Matches the /predict
+# endpoint default so a probability shown in a push equals the one in the app.
+NEXT_CALL_TOP_N = 20
+
 # Serializes snapshot captures across the whole process. Each capture runs a
 # LightGBM inference (predict_next) then a short live.db write. Left
 # unserialized, a burst of song entries (manual + the sync poller) would run
@@ -189,7 +193,15 @@ def capture_snapshot(
             ).fetchone()[0]
             + 1
         )
-        cands = predict_next(read_conn, live_conn, show_id, top_n=1, scorer=scorer)
+        # top_n is NOT just a slice: predict_next normalizes probability over
+        # the rows it returns, so top_n=1 hands back 1.0 every time and the
+        # push reads "Next up: X (100%)" for every song. Ask for the same
+        # slice the app's own candidate list uses (/predict defaults to 20) so
+        # the percentage in the notification matches the one on screen. Cost is
+        # unchanged — the model already scores every candidate either way.
+        cands = predict_next(
+            read_conn, live_conn, show_id, top_n=NEXT_CALL_TOP_N, scorer=scorer
+        )
         remaining = (
             [
                 {

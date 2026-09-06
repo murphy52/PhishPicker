@@ -215,3 +215,34 @@ def test_scoring_tolerates_snapshots_without_captured_at(seeded_read_db, live_co
         {"after_count": 2, "remaining": []},
     ]
     assert _next_call_by_index(legacy, 3) == {1: 7}
+
+
+def test_snapshot_asks_for_a_candidate_slice_wider_than_one(
+    seeded_read_db, live_conn, seeded_live_show
+):
+    """predict_next normalizes probability over the RETURNED slice, so
+    top_n=1 makes the single candidate 100% by construction. The push then
+    reported "Next up: X (100%)" for every song — shipped 2026-09-05, caught
+    at Dick's night 2 during set break.
+
+    Pin the slice width: with top_n=1 the percentage is meaningless no matter
+    what the model thinks. (A value-based assertion can't live on the seed
+    fixture — it yields a single scoring candidate, where 1.0 is correct.)
+    """
+    from unittest.mock import patch
+
+    from phishpicker.live import append_song
+    from phishpicker.scoring_store import NEXT_CALL_TOP_N
+
+    assert NEXT_CALL_TOP_N > 1
+
+    scorer = HeuristicScorer()
+    upsert_score_state(
+        live_conn, seeded_live_show, model_sha=scorer.sha, frozen_bracket=[]
+    )
+    append_song(live_conn, seeded_live_show, song_id=100, set_number="1")
+
+    with patch("phishpicker.predict.predict_next", return_value=[]) as pn:
+        capture_snapshot(seeded_read_db, live_conn, seeded_live_show, scorer=scorer)
+
+    assert pn.call_args.kwargs["top_n"] == NEXT_CALL_TOP_N
