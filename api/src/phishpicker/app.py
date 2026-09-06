@@ -828,6 +828,7 @@ def create_app() -> FastAPI:
             "phish_total": 40,
             "leader": "picker",
         }
+        next_call: dict | None = {"name": "Tweezer", "probability": 0.18}
         icon: str | None = None
         dry_run: bool = False
 

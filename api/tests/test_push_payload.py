@@ -220,3 +220,16 @@ def test_next_call_without_probability_still_names_the_song():
     body = _payload(next_call={"name": "Tweezer", "probability": None})["body"]
     assert "Tweezer" in body
     assert "%" not in body.split("Tweezer")[-1]
+
+
+def test_push_test_endpoint_previews_the_next_song_line(seeded_client):
+    """The trigger must be able to show every field the real push sends —
+    a field missing from its schema is silently dropped, so the preview
+    would quietly disagree with production."""
+    r = seeded_client.post(
+        "/push/test",
+        json={"dry_run": True, "next_call": {"name": "Llama", "probability": 0.31}},
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    body = r.json()["payload"]["body"]
+    assert "Next up: Llama (31%)" in body
