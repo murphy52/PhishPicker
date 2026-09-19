@@ -4,7 +4,9 @@ phishvs (the public bracket game) needs tonight's show metadata, the bracket
 structure, the model's per-slot top-k (fans auto-fill from these), the model's
 own top-1 bracket, and a catalog snapshot with rarity stats. The NAS is not
 reachable from the cloud, so phishpicker POSTs an HMAC-signed JSON bundle the
-morning of a show and then hourly until lock (see ingest_cron).
+morning of a show and then hourly until lock (see ingest_cron). Nothing goes
+out until the day's ingest has succeeded. The 11:00 ingest is the only
+scheduled one; retries happen only after a failed attempt that day.
 
 Signature contract (mirrored by the phishvs verifier — do not deviate):
     canonical = f"{schema_version}\\n{key_id}\\n{timestamp}\\n{nonce}\\n{sha256(body).hexdigest()}"
@@ -345,15 +347,22 @@ def _today(now: datetime) -> str:
     return rollover_today(now.astimezone(UTC))
 
 
-def ingest_retry_due(settings: Settings, state: dict, now: datetime) -> bool:
-    """True on a show day when today's ingest hasn't succeeded and the last
-    attempt (if any) is at least INGEST_RETRY old. Never on a non-show day —
-    there is nothing to publish, so the 11am schedule is enough."""
-    today = _today(now)
-    if state.get("ingested_date") == today:
-        return False
+def _attempted_today(state: dict, today: str) -> bool:
+    """An ingest attempt was made on the current rollover date. Same rollover
+    function as `today`, so a 02:00 startup attempt counts as yesterday."""
     last = state.get("last_ingest_attempt_at")
-    if last is not None and now - last < INGEST_RETRY:
+    return last is not None and _today(last) == today
+
+
+def ingest_retry_due(settings: Settings, state: dict, now: datetime) -> bool:
+    """True on a show day when an ingest attempt was made today, none has
+    succeeded, and the last attempt is at least INGEST_RETRY old. No attempt
+    today means the 11:00 schedule hasn't fired yet — not a retry. Never on a
+    non-show day — there is nothing to publish."""
+    today = _today(now)
+    if state.get("ingested_date") == today or not _attempted_today(state, today):
+        return False
+    if now - state["last_ingest_attempt_at"] < INGEST_RETRY:
         return False
     return _show_today(settings, today) is not None
 
@@ -371,7 +380,9 @@ def publish_due(
     if show is None:
         return None
     if state.get("ingested_date") != today:
-        if state.get("held_date") != today:
+        # Holding before the 11:00 ingest is every show morning; only a failed
+        # attempt today is worth a (single) warning.
+        if _attempted_today(state, today) and state.get("held_date") != today:
             log.warning("publish: show on %s but no successful ingest yet; holding", today)
             state["held_date"] = today
         return None

@@ -178,16 +178,21 @@ def test_publish_tick_survives_a_failed_publish(publish_calls, monkeypatch):
     assert "last_published_at" not in state
 
 
-def test_publish_warns_once_per_day_while_holding_for_ingest(publish_calls, caplog):
+def test_publish_warns_once_per_day_after_a_failed_attempt(publish_calls, caplog):
+    """Holding before the 11:00 ingest is the normal morning, not a warning;
+    only a failed attempt today warns, and then once."""
     from phishpicker.publish import publish_tick
 
     state: dict = {}
+    held = lambda: [r.message for r in caplog.records if "no successful ingest" in r.message]  # noqa: E731
     with caplog.at_level("WARNING", logger="phishpicker.publish"):
         for h in (8, 9, 10):
             publish_tick(_Settings(), _no_scorer, state, datetime(2026, 4, 23, h, 0, tzinfo=EDT))
-    assert [r.message for r in caplog.records if "no successful ingest" in r.message] == [
-        "publish: show on 2026-04-23 but no successful ingest yet; holding"
-    ]
+        assert held() == []
+        state["last_ingest_attempt_at"] = datetime(2026, 4, 23, 11, 0, tzinfo=EDT)
+        for m in (0, 10, 20):
+            publish_tick(_Settings(), _no_scorer, state, datetime(2026, 4, 23, 11, m, tzinfo=EDT))
+    assert held() == ["publish: show on 2026-04-23 but no successful ingest yet; holding"]
 
 
 def test_configured_does_not_log():
@@ -206,8 +211,14 @@ def test_ingest_retry_due_only_on_show_days_after_a_failed_attempt(publish_calls
     from phishpicker.publish import ingest_retry_due
 
     show_day = datetime(2026, 4, 23, 11, 0, tzinfo=EDT)
-    # Nothing attempted yet (startup ingest hasn't run) -> due.
-    assert ingest_retry_due(_Settings(), {}, show_day)
+    # Nothing attempted today -> not due: the 11:00 schedule is the only
+    # scheduled ingest; a retry needs a failed attempt TODAY.
+    assert not ingest_retry_due(_Settings(), {}, show_day)
+    # Yesterday's (02:00, pre-rollover) startup attempt is not "today" either,
+    # however stale — the first 6am tick must not ingest + freeze early.
+    stale = {"last_ingest_attempt_at": datetime(2026, 4, 23, 2, 0, tzinfo=EDT)}
+    assert not ingest_retry_due(_Settings(), stale, datetime(2026, 4, 23, 6, 10, tzinfo=EDT))
+    # A failed 11:00 attempt makes 11:30 due (but not 11:20).
     state = {"last_ingest_attempt_at": show_day}
     assert not ingest_retry_due(_Settings(), state, show_day + timedelta(minutes=20))
     assert ingest_retry_due(_Settings(), state, show_day + timedelta(minutes=30))
