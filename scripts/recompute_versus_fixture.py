@@ -11,10 +11,10 @@ which the asserted totals in tests/test_versus_calibration.py must match.
 """
 
 import json
-import sqlite3
 import sys
 from pathlib import Path
 
+from phishpicker.db.connection import open_db
 from phishpicker.scoring import score_versus
 from phishpicker.scoring_service import _surprise_weights
 
@@ -23,10 +23,15 @@ FIX_PATH = REPO / "api" / "tests" / "fixtures" / "versus_calibration.json"
 DB_PATH = REPO / "api" / "data" / "phishpicker.db"
 
 
-def main() -> None:
+def main() -> int:
+    if not DB_PATH.exists():
+        print(
+            f"ERROR: DB not found at {DB_PATH}. Run `phishpicker ingest` first.",
+            file=sys.stderr,
+        )
+        return 2
     fix = json.loads(FIX_PATH.read_text())
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = open_db(DB_PATH, read_only=True)
     for date, d in fix.items():
         w = _surprise_weights(conn, d["actual"], bustout_song_ids=set(), show_date=date)
         d["surprise"] = {str(k): list(v) for k, v in w.items()}
@@ -34,7 +39,8 @@ def main() -> None:
         print(date, out["picker_total"], out["phish_total"], out["leader"])
     if "--write" in sys.argv:
         FIX_PATH.write_text(json.dumps(fix, indent=2) + "\n")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

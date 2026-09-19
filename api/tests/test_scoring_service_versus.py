@@ -64,9 +64,10 @@ def test_surprise_weights_tiers_bustout_then_rare_then_common(seeded_read_db):
             (common_id, "Common Rotation", 0),
         ],
     )
-    # One old show where the rare song was last played, then 50 intervening
-    # shows it sat out (>= VS_BAND_GAP_RARE_MIN, < VS_BAND_GAP_BUSTOUT_MIN);
-    # the common song played in the newest one.
+    # One old show where the rare song was last played, then 51 intervening
+    # shows it sat out — 50 seeded here plus the base fixture's 2024-07-21
+    # show (>= VS_BAND_GAP_RARE_MIN, < VS_BAND_GAP_BUSTOUT_MIN); the common
+    # song played in the newest one.
     conn.execute(
         "INSERT INTO shows (show_id, show_date, fetched_at) "
         "VALUES (900000, '2020-02-01', '2020-02-01')"
@@ -84,6 +85,17 @@ def test_surprise_weights_tiers_bustout_then_rare_then_common(seeded_read_db):
         "INSERT INTO setlist_songs (show_id, set_number, position, song_id) "
         "VALUES (900028, '1', 1, ?)",
         (common_id,),
+    )
+    # Tonight's own canonical row (same date as the scored show) must not
+    # count as a prior play — the gap query is strictly before show_date.
+    conn.execute(
+        "INSERT INTO shows (show_id, show_date, fetched_at) "
+        "VALUES (900100, '2026-07-22', '2026-07-22')"
+    )
+    conn.execute(
+        "INSERT INTO setlist_songs (show_id, set_number, position, song_id) "
+        "VALUES (900100, '1', 2, ?)",
+        (rare_id,),
     )
     conn.commit()
 
@@ -107,23 +119,28 @@ def test_classify_surprise_gap_tiers():
         classify_surprise,
     )
 
-    # bustout: placeholder flag OR gap >= 100, regardless of play count
-    assert classify_surprise(300, True, gap_shows=None) == (
+    # bustout: placeholder flag OR gap >= 100
+    assert classify_surprise(True, gap_shows=None) == (
         VS_BAND_BUSTOUT_BONUS,
         "absent-bustout",
     )
-    assert classify_surprise(300, False, gap_shows=VS_BAND_GAP_BUSTOUT_MIN) == (
+    assert classify_surprise(False, gap_shows=VS_BAND_GAP_BUSTOUT_MIN) == (
         VS_BAND_BUSTOUT_BONUS,
         "absent-bustout",
     )
-    # rare: gap >= 50 (play count no longer matters)
-    assert classify_surprise(300, False, gap_shows=VS_BAND_GAP_RARE_MIN) == (
+    assert classify_surprise(False, gap_shows=VS_BAND_GAP_BUSTOUT_MIN - 1) == (
         VS_BAND_RARE_BONUS,
         "absent-rare",
     )
-    assert classify_surprise(3, False, gap_shows=5) == (0, "absent")
+    # rare: gap >= 50
+    assert classify_surprise(False, gap_shows=VS_BAND_GAP_RARE_MIN) == (
+        VS_BAND_RARE_BONUS,
+        "absent-rare",
+    )
+    assert classify_surprise(False, gap_shows=VS_BAND_GAP_RARE_MIN - 1) == (0, "absent")
+    assert classify_surprise(False, gap_shows=5) == (0, "absent")
     # unknown gap -> common (no DB facts, no bonus)
-    assert classify_surprise(3, False, gap_shows=None) == (0, "absent")
+    assert classify_surprise(False, gap_shows=None) == (0, "absent")
 
 
 def test_surprise_weights_gap_bustout(seeded_read_db):

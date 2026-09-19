@@ -111,13 +111,11 @@ def score_foresight(
     return claims, outcomes
 
 
-def classify_surprise(
-    play_count: int, is_bustout: bool, gap_shows: int | None = None
-) -> tuple[int, str]:
+def classify_surprise(is_bustout: bool, gap_shows: int | None = None) -> tuple[int, str]:
     """Band-side surprise bonus + tag for a song the bracket missed: bustout >
-    deep cut > common. Both tiers are gap-based (shows since last played);
-    play_count is kept in the signature for callers but no longer decides a
-    tier. Placeholder songs (never seen in the DB) are bustouts by flag."""
+    deep cut > common. Both tiers are gap-based (shows since last played;
+    None when unknown — no DB here). Placeholder songs (never seen in the DB)
+    are bustouts by flag. The phishvs scorer ports this exact signature."""
     if is_bustout or (gap_shows is not None and gap_shows >= VS_BAND_GAP_BUSTOUT_MIN):
         return VS_BAND_BUSTOUT_BONUS, "absent-bustout"
     if gap_shows is not None and gap_shows >= VS_BAND_GAP_RARE_MIN:
