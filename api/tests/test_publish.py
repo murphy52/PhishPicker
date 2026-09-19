@@ -259,6 +259,42 @@ def test_build_bundle_catalog_gap_and_plays(read_conn, live_conn, scorer, seeded
     assert {c["song_id"] for s in b["slots"] for c in s["top_k"]} <= set(cat)
 
 
+def test_build_bundle_uses_frozen_bracket_when_present(
+    read_conn, live_conn, scorer, seeded_live_show
+):
+    """picker_bracket is what phishpicker itself scores against — the frozen
+    bracket — not a fresh top-1 rebuild, which can drift once ingest lands."""
+    from phishpicker.scoring_store import upsert_score_state
+
+    fresh = build_bundle(
+        read_conn=read_conn,
+        live_conn=live_conn,
+        show_id=seeded_live_show,
+        scorer=scorer,
+        bundle_seq=1,
+    )
+    # A deliberately different bracket: the fresh top-1 picks in reverse slot order.
+    reversed_ids = [p["song_id"] for p in reversed(fresh["picker_bracket"])]
+    frozen = [
+        {"set_number": p["set"], "position": p["position"], "song_id": sid}
+        for p, sid in zip(fresh["picker_bracket"], reversed_ids, strict=True)
+    ]
+    assert [f["song_id"] for f in frozen] != [p["song_id"] for p in fresh["picker_bracket"]]
+    upsert_score_state(live_conn, seeded_live_show, model_sha="x", frozen_bracket=frozen)
+
+    b = build_bundle(
+        read_conn=read_conn,
+        live_conn=live_conn,
+        show_id=seeded_live_show,
+        scorer=scorer,
+        bundle_seq=2,
+    )
+    assert b["picker_bracket"] == [
+        {"song_id": f["song_id"], "set": f["set_number"], "position": f["position"]} for f in frozen
+    ]
+    assert b["slots"] == fresh["slots"]  # top_k is still the live model view
+
+
 def test_build_bundle_is_json_serializable(read_conn, live_conn, scorer, seeded_live_show):
     b = build_bundle(
         read_conn=read_conn,

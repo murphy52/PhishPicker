@@ -89,6 +89,17 @@ def _watch_tick(state: dict) -> None:
         log.exception("ingest-cron: watcher tick failed")
 
 
+def _ingest_and_pass(publish_state: dict) -> None:
+    """Daily ingest + close-out pass. A successful ingest unlocks the phishvs
+    publish for today (publish_tick refuses to build a bracket that predates
+    last night's setlist); a failed one leaves the previous bundle standing."""
+    from phishpicker.publish import mark_ingested
+
+    if _run_ingest() == 0:
+        mark_ingested(publish_state, datetime.now(UTC))
+    _daily_pass()
+
+
 def _publish_tick(state: dict) -> None:
     from phishpicker.publish import DEFAULT_LOCK_LOCAL, publish_tick
 
@@ -118,24 +129,22 @@ def main() -> None:
     # Run once at startup so a fresh deploy refreshes the DB without waiting
     # up to 24h. Tolerates phish.net being briefly unavailable; the next
     # scheduled run will pick up whatever was missed.
-    _run_ingest()
-    _daily_pass()
+    #
+    # `state` (show_date -> fingerprints seen) lives here so quiescence is
+    # measured across ticks. `publish_state` (ingested date, last publish
+    # time) gates the phishvs publish on this process's own ingest — a restart
+    # after 11am re-ingests here before it publishes anything.
+    state: dict = {}
+    publish_state: dict = {}
+    _ingest_and_pass(publish_state)
     next_ingest = next_run_at(datetime.now(tz), hour=hour, tz=tz)
 
     # Tick loop rather than sleeping straight through to the next ingest: the
     # close-out watcher has to poll on show nights, which is nowhere near 11am.
-    # `state` (show_date -> fingerprints seen) lives here so quiescence is
-    # measured across ticks. `publish_state` holds the last phishvs publish
-    # time; clearing it after an ingest makes the next tick publish at once,
-    # so the cloud sees a bundle built on fresh data.
-    state: dict = {}
-    publish_state: dict = {}
     while True:
         now = datetime.now(tz)
         if now >= next_ingest:
-            _run_ingest()
-            _daily_pass()
-            publish_state.clear()
+            _ingest_and_pass(publish_state)
             next_ingest = next_run_at(datetime.now(tz), hour=hour, tz=tz)
         _watch_tick(state)
         _publish_tick(publish_state)

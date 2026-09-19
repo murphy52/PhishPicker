@@ -84,48 +84,75 @@ def publish_calls(monkeypatch):
     monkeypatch.setattr(
         mod,
         "show_on",
-        lambda _read, date: {"show_date": date, "venue_id": 1, "venue": "x", "tz": EDT}
-        if date == "2026-04-23"
-        else None,
+        lambda _read, date: (
+            {"show_date": date, "venue_id": 1, "venue": "x", "tz": EDT}
+            if date == "2026-04-23"
+            else None
+        ),
     )
-    monkeypatch.setattr(
-        mod, "publish_show", lambda _s, _sc, date, **_k: calls.append(date) or {}
-    )
+    monkeypatch.setattr(mod, "publish_show", lambda _s, _sc, date, **_k: calls.append(date) or {})
     return calls
 
 
-def test_publish_tick_hourly_before_lock_then_silent(publish_calls):
-    from phishpicker.publish import publish_tick
+def _ingested(now: datetime) -> dict:
+    from phishpicker.publish import mark_ingested
+
+    state: dict = {}
+    mark_ingested(state, now)
+    return state
+
+
+def test_publish_tick_waits_for_ingest_then_hourly_until_lock(publish_calls):
+    """No bundle before the day's ingest (the bracket would predate last
+    night's setlist); first publish on the tick right after it; then hourly;
+    nothing at or after the 19:30 lock."""
+    from phishpicker.publish import mark_ingested, publish_tick
 
     state: dict = {}
     settings, scorer = _Settings(), object()
+    ingest_at = datetime(2026, 4, 23, 11, 0, tzinfo=EDT)
     # 10-minute ticks from 08:00 ET on show day through the 19:30 lock and past it.
     start = datetime(2026, 4, 23, 8, 0, tzinfo=EDT)
-    ticks = [start + timedelta(minutes=10 * i) for i in range(6 * 14)]  # -> 21:50
-    sent = [t for t in ticks if publish_tick(settings, scorer, state, t)]
-    assert sent[0] == start
+    sent = []
+    for i in range(6 * 14):  # -> 21:50
+        t = start + timedelta(minutes=10 * i)
+        if t == ingest_at:
+            mark_ingested(state, t)
+        if publish_tick(settings, scorer, state, t):
+            sent.append(t)
+    assert sent[0] == ingest_at
     assert all(b - a == timedelta(hours=1) for a, b in zip(sent, sent[1:], strict=False))
     assert sent[-1] == datetime(2026, 4, 23, 19, 0, tzinfo=EDT)
-    assert all(t < datetime(2026, 4, 23, 19, 30, tzinfo=EDT) for t in sent)
     assert publish_calls == ["2026-04-23"] * len(sent)
+
+
+def test_publish_tick_ignores_yesterdays_ingest(publish_calls):
+    """A startup ingest before the 6am rollover marks yesterday, not today."""
+    from phishpicker.publish import publish_tick
+
+    state = _ingested(datetime(2026, 4, 23, 2, 0, tzinfo=EDT))
+    assert not publish_tick(_Settings(), object(), state, datetime(2026, 4, 23, 12, 0, tzinfo=EDT))
+    assert publish_calls == []
 
 
 def test_publish_tick_respects_lock_override(publish_calls):
     from phishpicker.publish import publish_tick
 
     now = datetime(2026, 4, 23, 12, 0, tzinfo=EDT)
-    assert not publish_tick(_Settings(), object(), {}, now, lock_local="11:00")
-    assert publish_tick(_Settings(), object(), {}, now, lock_local="12:01")
+    assert not publish_tick(_Settings(), object(), _ingested(now), now, lock_local="11:00")
+    assert publish_tick(_Settings(), object(), _ingested(now), now, lock_local="12:01")
 
 
 def test_publish_tick_noop_without_show_or_settings(publish_calls):
     from phishpicker.publish import publish_tick
 
     # No canonical show on the (rollover-adjusted) date.
-    assert not publish_tick(_Settings(), object(), {}, datetime(2026, 4, 22, 12, 0, tzinfo=EDT))
+    now = datetime(2026, 4, 22, 12, 0, tzinfo=EDT)
+    assert not publish_tick(_Settings(), object(), _ingested(now), now)
 
     class Unset(_Settings):
         phishvs_publish_secret = ""
 
-    assert not publish_tick(Unset(), object(), {}, datetime(2026, 4, 23, 12, 0, tzinfo=EDT))
+    now = datetime(2026, 4, 23, 12, 0, tzinfo=EDT)
+    assert not publish_tick(Unset(), object(), _ingested(now), now)
     assert publish_calls == []

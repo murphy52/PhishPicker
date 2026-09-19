@@ -79,7 +79,8 @@ def main() -> int:
     p_publish.add_argument(
         "--dry-run",
         action="store_true",
-        help="build the bundle and print its size; no POST, no publish_log row",
+        help="build the bundle and print its size; no POST, no publish_log row "
+        "(still creates + freezes today's live show if missing — the preview needs it)",
     )
 
     p_train = sub.add_parser("train", help="training commands")

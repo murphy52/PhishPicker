@@ -41,6 +41,7 @@ from phishpicker.config import Settings
 from phishpicker.db.connection import open_db
 from phishpicker.last_show import rollover_today
 from phishpicker.live_preview import build_preview
+from phishpicker.scoring_store import get_score_state
 from phishpicker.show_meta import resolve_show_meta
 from phishpicker.venue_tz import tz_for_state
 
@@ -208,6 +209,16 @@ def build_bundle(
                 {"song_id": cands[0]["song_id"], "set": set_number, "position": position}
             )
 
+    # picker_bracket is the bracket phishpicker itself scores against: the one
+    # frozen in live_score_state (freeze_show runs before every publish). The
+    # top-1 rebuild above is only the fallback for a show nothing has frozen.
+    state = get_score_state(live_conn, show_id)
+    if state and state["frozen_bracket"]:
+        picker_bracket = [
+            {"song_id": f["song_id"], "set": f["set_number"], "position": f["position"]}
+            for f in state["frozen_bracket"]
+        ]
+
     return {
         "schema_version": SCHEMA_VERSION,
         "bundle_seq": bundle_seq,
@@ -307,6 +318,18 @@ def lock_at(show_date: str, tz: ZoneInfo, lock_local: str = DEFAULT_LOCK_LOCAL) 
     return datetime.fromisoformat(show_date).replace(hour=hour, minute=minute, tzinfo=tz)
 
 
+def mark_ingested(state: dict, now: datetime) -> None:
+    """Record that the daily ingest completed for the current rollover date.
+
+    publish_tick refuses to publish (or freeze) until this matches today: the
+    bracket must be built AFTER last night's setlist has landed, or on night
+    2+ of a run the model loses run-awareness (no-repeat filter, run stats).
+    Clearing the last-publish time makes the next tick publish at once.
+    """
+    state["ingested_date"] = rollover_today(now.astimezone(UTC))
+    state.pop("last_published_at", None)
+
+
 def publish_tick(
     settings: Settings,
     scorer,
@@ -316,14 +339,16 @@ def publish_tick(
     lock_local: str = DEFAULT_LOCK_LOCAL,
 ) -> bool:
     """One sidecar tick: publish today's show at most once per PUBLISH_INTERVAL,
-    never after lock. `state` holds the last publish time (in-process, so a
-    restart re-publishes at once — harmless, the seq just advances). Returns
-    True when a bundle was sent.
+    only after today's ingest (mark_ingested), never after lock. `state` is
+    in-process: a fresh sidecar counts as not-yet-ingested until its own
+    startup ingest marks it. Returns True when a bundle was sent.
     """
     if not configured(settings):
         return False
     # rollover_today does wall-clock arithmetic, so hand it UTC as app.py does.
     today = rollover_today(now.astimezone(UTC))
+    if state.get("ingested_date") != today:
+        return False
     with closing(open_db(settings.db_path, read_only=True)) as read:
         show = show_on(read, today)
     if show is None:
