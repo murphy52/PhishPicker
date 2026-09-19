@@ -1,9 +1,10 @@
 """Daily ingest sidecar.
 
 Runs `python -m phishpicker.cli ingest` at startup, then every day at the
-configured local-tz hour. Lives in its own Docker container next to the API
-so it can write to the shared phishpicker.db without depending on host
-crontab permissions (which Murphy52 doesn't have on the NAS).
+configured local-tz hour. Between ingests it ticks the close-out watcher and,
+on show days, the phishvs publish (hourly until lock). Lives in its own Docker
+container next to the API so it can write to the shared phishpicker.db without
+depending on host crontab permissions (which Murphy52 doesn't have on the NAS).
 
 The schedule function is a pure function isolated from the loop body for
 testing. Run as `python -m phishpicker.ingest_cron`.
@@ -88,6 +89,17 @@ def _watch_tick(state: dict) -> None:
         log.exception("ingest-cron: watcher tick failed")
 
 
+def _publish_tick(state: dict) -> None:
+    from phishpicker.publish import DEFAULT_LOCK_LOCAL, publish_tick
+
+    try:
+        settings, scorer = _load_scorer()
+        lock_local = os.environ.get("PHISHVS_LOCK_LOCAL", DEFAULT_LOCK_LOCAL)
+        publish_tick(settings, scorer, state, datetime.now(UTC), lock_local=lock_local)
+    except Exception:
+        log.exception("ingest-cron: publish tick failed")
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -98,7 +110,7 @@ def main() -> None:
     tick_s = int(os.environ.get("CLOSE_OUT_TICK_SECONDS", TICK_SECONDS))
     tz = ZoneInfo(tz_name)
     log.info(
-        "ingest-cron: daily ingest at %02d:00 %s; close-out watcher every %ds",
+        "ingest-cron: daily ingest at %02d:00 %s; close-out watcher and phishvs publish every %ds",
         hour,
         tz_name,
         tick_s,
@@ -113,15 +125,20 @@ def main() -> None:
     # Tick loop rather than sleeping straight through to the next ingest: the
     # close-out watcher has to poll on show nights, which is nowhere near 11am.
     # `state` (show_date -> fingerprints seen) lives here so quiescence is
-    # measured across ticks.
+    # measured across ticks. `publish_state` holds the last phishvs publish
+    # time; clearing it after an ingest makes the next tick publish at once,
+    # so the cloud sees a bundle built on fresh data.
     state: dict = {}
+    publish_state: dict = {}
     while True:
         now = datetime.now(tz)
         if now >= next_ingest:
             _run_ingest()
             _daily_pass()
+            publish_state.clear()
             next_ingest = next_run_at(datetime.now(tz), hour=hour, tz=tz)
         _watch_tick(state)
+        _publish_tick(publish_state)
         time.sleep(tick_s)
 
 

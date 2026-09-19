@@ -68,6 +68,20 @@ def main() -> int:
         help="re-run a date even if already recorded",
     )
 
+    p_publish = sub.add_parser(
+        "publish", help="POST the show bundle (bracket, top-k, catalog) to phishvs"
+    )
+    p_publish.add_argument(
+        "--date",
+        default=None,
+        help="show date YYYY-MM-DD (default: today's show, 6am-ET rollover)",
+    )
+    p_publish.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="build the bundle and print its size; no POST, no publish_log row",
+    )
+
     p_train = sub.add_parser("train", help="training commands")
     train_sub = p_train.add_subparsers(dest="train_cmd", required=True)
     p_run = train_sub.add_parser("run", help="train + eval + ship artifacts")
@@ -173,6 +187,29 @@ def main() -> int:
             )
             return 0
         print(result["summary"])
+        return 0
+
+    if args.cmd == "publish":
+        from datetime import UTC, date, datetime
+
+        from phishpicker.last_show import rollover_today
+        from phishpicker.model.scorer import load_runtime_scorer
+        from phishpicker.publish import configured, publish_show
+
+        if not args.dry_run and not configured(s):
+            return 0
+        show_date = args.date or rollover_today(datetime.now(UTC))
+        date.fromisoformat(show_date)
+        scorer = load_runtime_scorer(s.data_dir / "model.lgb")
+        result = publish_show(s, scorer, show_date, dry_run=args.dry_run)
+        if result is None:
+            print(f"publish: no show on {show_date}", file=sys.stderr)
+            return 2
+        print(
+            f"publish {show_date}: {'dry-run' if args.dry_run else 'posted'} "
+            f"seq={result['seq']} slots={result['slots']} "
+            f"catalog={result['catalog']} bytes={result['bytes']}"
+        )
         return 0
 
     if args.cmd == "train" and args.train_cmd == "ab-era":

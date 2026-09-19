@@ -71,6 +71,10 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      # phishvs publish (hourly bundle until lock). Optional — no-op if unset.
+      PHISHVS_PUBLISH_URL: ${PHISHVS_PUBLISH_URL:-}
+      PHISHVS_PUBLISH_KEY_ID: ${PHISHVS_PUBLISH_KEY_ID:-}
+      PHISHVS_PUBLISH_SECRET: ${PHISHVS_PUBLISH_SECRET:-}
     networks: [internal]
     restart: unless-stopped
     command: ["python", "-m", "phishpicker.ingest_cron"]

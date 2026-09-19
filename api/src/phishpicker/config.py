@@ -36,6 +36,21 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("VAPID_SUBJECT", "vapid_subject"),
     )
 
+    # phishvs publish. Optional — publish is a no-op when any is empty, so
+    # dev + test environments (and the api container) don't need them.
+    phishvs_publish_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("PHISHVS_PUBLISH_URL", "phishvs_publish_url"),
+    )
+    phishvs_publish_key_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("PHISHVS_PUBLISH_KEY_ID", "phishvs_publish_key_id"),
+    )
+    phishvs_publish_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("PHISHVS_PUBLISH_SECRET", "phishvs_publish_secret"),
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

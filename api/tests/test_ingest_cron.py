@@ -5,7 +5,7 @@ The sidecar runs in a Docker container next to the API and triggers
 here; the long-running loop wrapper is exercised by the sidecar itself.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -59,3 +59,73 @@ def test_next_run_returns_aware_datetime_at_requested_hour(hour: int):
     assert nxt.minute == 0
     assert nxt.second == 0
     assert nxt > now
+
+
+# --- phishvs publish cadence ------------------------------------------------
+
+
+class _Settings:
+    phishvs_publish_url = "https://phishvs.test/publish"
+    phishvs_publish_key_id = "k1"
+    phishvs_publish_secret = "s3cret"
+    db_path = "unused"
+
+
+@pytest.fixture
+def publish_calls(monkeypatch):
+    """Stub the DB lookup (a NJ show on 2026-04-23) and the publish itself;
+    returns the list of dates publish_show was called with."""
+    from unittest.mock import MagicMock
+
+    from phishpicker import publish as mod
+
+    calls: list[str] = []
+    monkeypatch.setattr(mod, "open_db", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(
+        mod,
+        "show_on",
+        lambda _read, date: {"show_date": date, "venue_id": 1, "venue": "x", "tz": EDT}
+        if date == "2026-04-23"
+        else None,
+    )
+    monkeypatch.setattr(
+        mod, "publish_show", lambda _s, _sc, date, **_k: calls.append(date) or {}
+    )
+    return calls
+
+
+def test_publish_tick_hourly_before_lock_then_silent(publish_calls):
+    from phishpicker.publish import publish_tick
+
+    state: dict = {}
+    settings, scorer = _Settings(), object()
+    # 10-minute ticks from 08:00 ET on show day through the 19:30 lock and past it.
+    start = datetime(2026, 4, 23, 8, 0, tzinfo=EDT)
+    ticks = [start + timedelta(minutes=10 * i) for i in range(6 * 14)]  # -> 21:50
+    sent = [t for t in ticks if publish_tick(settings, scorer, state, t)]
+    assert sent[0] == start
+    assert all(b - a == timedelta(hours=1) for a, b in zip(sent, sent[1:], strict=False))
+    assert sent[-1] == datetime(2026, 4, 23, 19, 0, tzinfo=EDT)
+    assert all(t < datetime(2026, 4, 23, 19, 30, tzinfo=EDT) for t in sent)
+    assert publish_calls == ["2026-04-23"] * len(sent)
+
+
+def test_publish_tick_respects_lock_override(publish_calls):
+    from phishpicker.publish import publish_tick
+
+    now = datetime(2026, 4, 23, 12, 0, tzinfo=EDT)
+    assert not publish_tick(_Settings(), object(), {}, now, lock_local="11:00")
+    assert publish_tick(_Settings(), object(), {}, now, lock_local="12:01")
+
+
+def test_publish_tick_noop_without_show_or_settings(publish_calls):
+    from phishpicker.publish import publish_tick
+
+    # No canonical show on the (rollover-adjusted) date.
+    assert not publish_tick(_Settings(), object(), {}, datetime(2026, 4, 22, 12, 0, tzinfo=EDT))
+
+    class Unset(_Settings):
+        phishvs_publish_secret = ""
+
+    assert not publish_tick(Unset(), object(), {}, datetime(2026, 4, 23, 12, 0, tzinfo=EDT))
+    assert publish_calls == []
