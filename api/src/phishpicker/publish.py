@@ -136,16 +136,20 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
     return catalog
 
 
-def _show_block(read_conn: sqlite3.Connection, show_date: str, venue_id: int | None) -> dict:
-    """Show metadata. The canonical `shows` row may not exist yet for a future
-    date; then the ids/tour degrade to None and the rest comes from the venue."""
-    meta = resolve_show_meta(read_conn, show_date, venue_id)
-    canon = read_conn.execute(
+def _canonical_show(read_conn: sqlite3.Connection, show_date: str) -> sqlite3.Row | None:
+    return read_conn.execute(
         "SELECT s.show_id, s.venue_id, s.tour_id, t.name AS tour_name "
         "FROM shows s LEFT JOIN tours t ON t.tour_id = s.tour_id "
         "WHERE s.show_date = ? LIMIT 1",
         (show_date,),
     ).fetchone()
+
+
+def _show_block(read_conn: sqlite3.Connection, show_date: str, venue_id: int | None) -> dict:
+    """Show metadata. The canonical `shows` row may not exist yet for a future
+    date; then the ids/tour degrade to None and the rest comes from the venue."""
+    meta = resolve_show_meta(read_conn, show_date, venue_id)
+    canon = _canonical_show(read_conn, show_date)
     if venue_id is None and canon:
         venue_id = canon["venue_id"]
     return {
@@ -287,8 +291,11 @@ def publish_show(
 
     Resolves the live show the same way the cron's daily pass does
     (close_out.freeze_show: canonical show on the date -> idempotent live_show
-    row, bracket frozen). Returns None when there is no show on `show_date`;
-    otherwise a summary dict {seq, slots, catalog, bytes}.
+    row, bracket frozen). Returns None when there is no show on `show_date`,
+    {"skipped": "no_canonical_show"} when the live show has no canonical
+    `shows` row (phishvs 400s a null showid, and the seq is reserved before
+    the POST, so trying would only burn seqs); otherwise a summary dict
+    {seq, slots, catalog, bytes}.
     """
     show_id = freeze_show(settings, scorer, show_date)
     if show_id is None:
@@ -297,6 +304,9 @@ def publish_show(
         closing(open_db(settings.db_path, read_only=True)) as read,
         closing(open_db(settings.live_db_path)) as live,
     ):
+        if _canonical_show(read, show_date) is None:
+            log.warning("publish: no canonical show row for %s; skipping", show_date)
+            return {"skipped": "no_canonical_show"}
         seq = next_bundle_seq(live, show_id)
         bundle = build_bundle(
             read_conn=read, live_conn=live, show_id=show_id, scorer=scorer, bundle_seq=seq
@@ -413,9 +423,11 @@ def publish_tick(
     if today is None:
         return False
     try:
-        publish_show(settings, load_scorer(), today)
+        result = publish_show(settings, load_scorer(), today)
     except Exception:
         log.exception("publish: failed for %s", today)
+        return False
+    if result is None or "skipped" in result:
         return False
     state["last_published_at"] = now
     return True

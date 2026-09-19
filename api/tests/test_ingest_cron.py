@@ -94,7 +94,9 @@ def publish_calls(monkeypatch):
             else None
         ),
     )
-    monkeypatch.setattr(mod, "publish_show", lambda _s, _sc, date, **_k: calls.append(date) or {})
+    monkeypatch.setattr(
+        mod, "publish_show", lambda _s, _sc, date, **_k: calls.append(date) or {"seq": 1}
+    )
     return calls
 
 

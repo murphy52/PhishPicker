@@ -424,6 +424,68 @@ def test_cli_publish_burns_seq_on_failed_post(cli_env, monkeypatch, httpx_mock: 
     assert json.loads(httpx_mock.get_requests()[-1].content)["bundle_seq"] == 2
 
 
+@pytest.fixture
+def live_show_without_canonical_row(cli_env, monkeypatch):
+    """A live show on a date with no `shows` row. freeze_show would refuse it,
+    so stub the resolver to hand the show back anyway — the guard under test
+    is the one after resolution, which keeps a null showid off the wire."""
+    from phishpicker import publish as mod
+    from phishpicker.live import create_live_show
+
+    live = open_db(cli_env / "live.db")
+    show_id = create_live_show(live, "2026-04-20", venue_id=VENUE_ID)
+    live.close()
+    monkeypatch.setattr(mod, "freeze_show", lambda _s, _sc, _date: show_id)
+    return show_id
+
+
+def test_publish_show_skips_without_canonical_row(
+    live_show_without_canonical_row, httpx_mock: HTTPXMock, caplog, cli_env
+):
+    """phishvs 400s a null showid, and the seq is reserved before the POST —
+    so a missing canonical row must skip before either happens."""
+    from phishpicker.config import Settings
+    from phishpicker.publish import publish_show
+
+    with caplog.at_level("WARNING", logger="phishpicker.publish"):
+        result = publish_show(Settings(), HeuristicScorer(), "2026-04-20")
+    assert result == {"skipped": "no_canonical_show"}
+    assert httpx_mock.get_requests() == []
+    assert "publish: no canonical show row for 2026-04-20; skipping" in caplog.text
+    live = open_db(cli_env / "live.db")
+    try:
+        assert live.execute("SELECT COUNT(*) FROM publish_log").fetchone()[0] == 0
+    finally:
+        live.close()
+
+
+@pytest.mark.parametrize("extra", [(), ("--dry-run",)])
+def test_cli_publish_skip_without_canonical_row_exits_zero(
+    live_show_without_canonical_row, monkeypatch, httpx_mock: HTTPXMock, capsys, extra
+):
+    assert _run_cli(monkeypatch, "publish", "--date", "2026-04-20", *extra) == 0
+    assert httpx_mock.get_requests() == []
+    assert "no canonical show row for 2026-04-20" in capsys.readouterr().out
+
+
+def test_publish_tick_treats_skip_as_not_published(live_show_without_canonical_row, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from phishpicker import publish as mod
+    from phishpicker.config import Settings
+
+    tz = ZoneInfo("America/New_York")
+    now = datetime(2026, 4, 20, 12, 0, tzinfo=tz)
+    state: dict = {}
+    mod.mark_ingested(state, now)
+    # publish_due's own canonical check would stop earlier; bypass it so the
+    # tick reaches publish_show and sees the skip.
+    monkeypatch.setattr(mod, "publish_due", lambda *_a, **_k: "2026-04-20")
+    assert not mod.publish_tick(Settings(), HeuristicScorer, state, now)
+    assert "last_published_at" not in state
+
+
 def test_cli_publish_rejects_malformed_date(cli_env, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         _run_cli(monkeypatch, "publish", "--date", "tomorrow")

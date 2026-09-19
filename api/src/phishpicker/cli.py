@@ -213,6 +213,9 @@ def main() -> int:
         if result is None:
             print(f"publish: no show on {show_date}", file=sys.stderr)
             return 2
+        if "skipped" in result:
+            print(f"publish {show_date}: skipped — no canonical show row for {show_date}")
+            return 0
         print(
             f"publish {show_date}: {'dry-run' if args.dry_run else 'posted'} "
             f"seq={result['seq']} slots={result['slots']} "
