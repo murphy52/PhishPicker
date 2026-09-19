@@ -32,7 +32,7 @@ PHISHNET_API_KEY=<paste from mac mini .env>
 PHISHPICKER_ADMIN_TOKEN=<paste from mac mini .env — same token>
 # phishvs publish (optional — leave unset to disable). Key id + shared HMAC
 # secret must match the key the phishvs Worker verifies with.
-PHISHVS_PUBLISH_URL=https://<phishvs-host>/ingest/bundle
+PHISHVS_PUBLISH_URL=https://phishpicker.com/ingest/bundle
 PHISHVS_PUBLISH_KEY_ID=<key id>
 PHISHVS_PUBLISH_SECRET=<shared secret>
 EOF
