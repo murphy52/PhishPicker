@@ -116,7 +116,9 @@ is what `scoring.py` already does via `VS_BAND_GAP_BUSTOUT_MIN`), **+2 rare
 all-time plays` (which flagged 39% of songs played since 2024 — a
 new-material bonus, not rarity). Changed in **both** scorers; phishpicker's
 Jul-12/14 contract test is re-run to confirm calibration still reads as a fair
-coin (re-derived 2026-09-19: Jul 12 = 112–15 picker, Jul 14 = 24–39 phish —
+coin (re-derived 2026-09-19: Jul 12 = 122–15 picker, Jul 14 = 24–39 phish; the
+exported fixture originally carried phish.net's show-monotonic positions, which
+undercounted S2/encore openers — fixed to within-set positions, matching prod —
 both leaders hold). Gap is taken from the first occurrence in a show (repeat
 rows report 0).
 
@@ -354,7 +356,7 @@ bust → outbox.
 
 **Scoring in TypeScript**, guarded by **golden fixtures exported from
 phishpicker** (`phishpicker export-fixtures`: Jul-12 and Jul-14 at minimum —
-under the gap-based rare rule 112–15 and 24–39 — plus the other tour brackets). Drift = red
+under the gap-based rare rule 122–15 and 24–39 — plus the other tour brackets). Drift = red
 test.
 
 ### Phishpicker-side changes (this repo)
