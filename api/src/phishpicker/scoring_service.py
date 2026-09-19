@@ -79,7 +79,8 @@ def _surprise_weights(
     before `show_date` so a re-finalize after tonight's canonical ingest
     doesn't see the song as "just played") — and hands the raw facts to the
     engine's classify_surprise, which owns the tier thresholds and magnitudes.
-    Without show_date, gaps are unknown and only the play-count tiers apply."""
+    Without show_date, gaps are unknown and only the placeholder flag can
+    earn a bonus."""
     ids = [r["song_id"] for r in actual]
     plays: dict[int, int] = dict.fromkeys(ids, 0)
     gaps: dict[int, int | None] = dict.fromkeys(ids, None)

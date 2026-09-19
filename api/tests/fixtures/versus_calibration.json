@@ -175,8 +175,8 @@
         "absent"
       ],
       "2944": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "462": [
         0,
@@ -191,8 +191,8 @@
         "absent"
       ],
       "393": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "538": [
         0,
@@ -203,16 +203,16 @@
         "absent"
       ],
       "3080": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "339": [
         0,
         "absent"
       ],
       "3209": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "21": [
         0,
@@ -424,8 +424,8 @@
         "absent"
       ],
       "576": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "269": [
         0,
@@ -444,8 +444,8 @@
         "absent"
       ],
       "2831": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "437": [
         0,
@@ -460,8 +460,8 @@
         "absent"
       ],
       "199": [
-        0,
-        "absent"
+        6,
+        "absent-bustout"
       ]
     }
   }

@@ -32,8 +32,11 @@ VS_PICKER = {"opener": 20, "exact": 16, "right_set": 10, "somewhere": 6}
 VS_BAND_BASE = 3
 VS_BAND_BUSTOUT_BONUS = 6
 VS_BAND_RARE_BONUS = 2
-# Below this many all-time plays, a missed song counts as a "deep cut".
-VS_BAND_RARE_PLAYS_MAX = 50
+# At/above this many shows since last played, a missed song is a "deep cut".
+# Gap-based (not career play count): <50 plays flagged 39% of songs played
+# since 2024 — a new-material bonus, not rarity. Decided 2026-09-19 for the
+# phishvs game; both scorers share this rule.
+VS_BAND_GAP_RARE_MIN = 50
 # At/above this many shows since a song's last appearance, playing it is a
 # bustout no matter its career play count — an era workhorse dormant for
 # decades (Love You, Cold as Ice on the 2026-07-22 MSG 90s-theme night) is a
@@ -112,14 +115,12 @@ def classify_surprise(
     play_count: int, is_bustout: bool, gap_shows: int | None = None
 ) -> tuple[int, str]:
     """Band-side surprise bonus + tag for a song the bracket missed: bustout >
-    deep cut > common. The whole vs ladder (both sides) lives in this engine;
-    the caller supplies only the raw facts (play count, bustout flag, and shows
-    since last played — None when unknown; no DB here). A song is a bustout by
-    placeholder flag (never seen in the DB), by gap (dormant era workhorse or
-    a true debut), whichever fires."""
+    deep cut > common. Both tiers are gap-based (shows since last played);
+    play_count is kept in the signature for callers but no longer decides a
+    tier. Placeholder songs (never seen in the DB) are bustouts by flag."""
     if is_bustout or (gap_shows is not None and gap_shows >= VS_BAND_GAP_BUSTOUT_MIN):
         return VS_BAND_BUSTOUT_BONUS, "absent-bustout"
-    if play_count < VS_BAND_RARE_PLAYS_MAX:
+    if gap_shows is not None and gap_shows >= VS_BAND_GAP_RARE_MIN:
         return VS_BAND_RARE_BONUS, "absent-rare"
     return 0, "absent"
 
