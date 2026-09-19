@@ -111,12 +111,12 @@ incremental.
 
 **Phish**, against a given bracket, scores every played song absent from it:
 **base 3**, **+6 bustout** (gap ≥ 100 shows, or debut / not in catalog — this
-is what `scoring.py` already does via `VS_BAND_GAP_BUSTOUT_MIN`), **+2 rare**.
-*Decision pending:* rare = `<50 all-time plays` (today's code; flags 39% of
-songs played since 2024, effectively a new-material bonus) vs `gap ≥ 50`
-(recommended; a real rarity bonus). Whichever is chosen is changed in
-**both** scorers and re-checked against the Jul-12/14 contract test. Gap is
-taken from the first occurrence in a show (repeat rows report 0).
+is what `scoring.py` already does via `VS_BAND_GAP_BUSTOUT_MIN`), **+2 rare
+(gap ≥ 50)**. *Decided 2026-09-19:* rare is gap-based, replacing `<50
+all-time plays` (which flagged 39% of songs played since 2024 — a
+new-material bonus, not rarity). Changed in **both** scorers; phishpicker's
+Jul-12/14 contract test is re-run to confirm calibration still reads as a fair
+coin. Gap is taken from the first occurrence in a show (repeat rows report 0).
 
 Phish's score is **relative to an opponent**. It is presented as **pairwise
 duels** — "Phish vs you," "Phish vs PhishPicker," later "Phish vs The Fans" —
@@ -294,7 +294,13 @@ and 100k DO requests/day die on the first show night from client polling alone
   share an origin hit. **No KV at launch** — it's eventually consistent (up to
   60s+ cross-colo) and boards would go backwards. Every live payload carries a
   monotonic `version`; the client discards anything older than shown. Clients
-  poll every 30s while live, with "updated Ns ago" + pull-to-refresh.
+  poll every **60s** while live (phish.net's data changes at most every ~2
+  min, so faster polling buys nothing), with "updated Ns ago" +
+  pull-to-refresh. ~270 requests per user per show; the paid plan's 10M/month
+  covers ~4,600 users polling every show of an 8-show month, and overage past
+  that is $0.30 per million. If scale ever demands it, hibernating WebSockets
+  on the show DO replace polling entirely (and are the same machinery league
+  chat wants).
 - **Live scores live in the DO** (one blob per show) and flush to D1 at set
   end and close-out — not per song (D1 row-write budget). Scoring CPU is a
   non-issue (100 brackets × 18 picks × 25 songs ≈ 45k comparisons).
@@ -353,8 +359,7 @@ test.
 
 - `publish <date>` (bundle schema, HMAC, `bundle_seq`), `export-fixtures`.
 - Ingest Oct shows; carry `tour_name`, `showid`, `venueid`, `gap` in bundles.
-- If rare-bonus definition changes (decision above): update `scoring.py`,
-  re-run the Jul-12/14 contract test.
+- Rare bonus → gap ≥ 50 in `scoring.py`; re-run the Jul-12/14 contract test.
 - Structure per show type (3-set nights) if not already emitted.
 
 ## Testing
@@ -409,11 +414,11 @@ full `feed_events` history (a correction toast suffices); Playwright; KV.
 - Streaks/combos; "beat the picker" points; avatar uploads; email;
   best-N-of-M seasons; generated share images.
 
-## Decisions to confirm
+## Decisions (confirmed 2026-09-19)
 
-1. **Workers Paid, $5/mo.** (Recommended: yes — the alternative is 60s polling
-   plus hoping fewer than ~120 people show up.)
-2. **Google-only sign-in at launch.** (Recommended: yes.)
-3. **Rare bonus = gap ≥ 50** instead of `<50 all-time plays`, changed in both
-   scorers. (Recommended: yes; re-verify calibration on the July contract
-   test.)
+1. **Workers Paid, $5/mo.** Free tier with 60s polling would survive ~350
+   users on a show night; not worth a 429 at 9pm on opening night.
+2. **Google-only sign-in at launch.** Apple after the tour ($99/yr program,
+   self-signed client-secret JWT rotated ≤ 6 mo, name-only-on-first-consent,
+   `form_post` cookie quirk).
+3. **Rare bonus = gap ≥ 50**, changed in both scorers.
