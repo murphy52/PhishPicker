@@ -73,6 +73,7 @@ def main() -> int:
     )
     p_publish.add_argument(
         "--date",
+        type=_iso_date,
         default=None,
         help="show date YYYY-MM-DD (default: today's show, 6am-ET rollover)",
     )
@@ -191,18 +192,24 @@ def main() -> int:
         return 0
 
     if args.cmd == "publish":
-        from datetime import UTC, date, datetime
+        from datetime import UTC, datetime
+
+        import httpx
 
         from phishpicker.last_show import rollover_today
         from phishpicker.model.scorer import load_runtime_scorer
         from phishpicker.publish import configured, publish_show
 
         if not args.dry_run and not configured(s):
+            print("publish: PHISHVS_PUBLISH_* not set; skipping", file=sys.stderr)
             return 0
         show_date = args.date or rollover_today(datetime.now(UTC))
-        date.fromisoformat(show_date)
         scorer = load_runtime_scorer(s.data_dir / "model.lgb")
-        result = publish_show(s, scorer, show_date, dry_run=args.dry_run)
+        try:
+            result = publish_show(s, scorer, show_date, dry_run=args.dry_run)
+        except httpx.HTTPError as exc:
+            print(f"publish failed: {exc}", file=sys.stderr)
+            return 1
         if result is None:
             print(f"publish: no show on {show_date}", file=sys.stderr)
             return 2
@@ -278,6 +285,16 @@ def main() -> int:
         return 0
 
     return 1
+
+
+def _iso_date(value: str) -> str:
+    """argparse type: YYYY-MM-DD, normalized; a bad value is a usage error."""
+    from datetime import date
+
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected YYYY-MM-DD, got {value!r}") from exc
 
 
 def _print_replay(result: dict) -> None:

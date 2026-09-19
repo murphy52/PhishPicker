@@ -391,12 +391,16 @@ def tick(settings: Settings, scorer, state: dict, now: datetime) -> list[str]:
     return closed
 
 
-def daily_pass(settings: Settings, scorer, now: datetime) -> dict:
+def daily_pass(settings: Settings, scorer, now: datetime, *, freeze_today: bool = True) -> dict:
     """Runs right after the 11am ingest.
 
     Backstop: close out any recent show the watcher never got to. Then freeze
     tonight's bracket — well before the downbeat, which is what makes the
     foresight claim defensible if any of this is ever published.
+
+    `freeze_today=False` when the ingest just failed: a bracket frozen without
+    last night's setlist loses run-awareness on night 2+, so the sidecar holds
+    the freeze (and the phishvs publish) until a retried ingest succeeds.
     """
     backstopped = []
     for show in pending_close_outs(settings, now):
@@ -411,5 +415,5 @@ def daily_pass(settings: Settings, scorer, now: datetime) -> dict:
             log.exception("close-out: backstop failed for %s", show["show_date"])
 
     today = now.astimezone(TZ).date().isoformat()
-    frozen = freeze_show(settings, scorer, today)
+    frozen = freeze_show(settings, scorer, today) if freeze_today else None
     return {"backstopped": backstopped, "frozen_today": frozen}

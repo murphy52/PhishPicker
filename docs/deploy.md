@@ -42,6 +42,10 @@ ssh nas-ssh 'chmod 600 /volume/phishpicker/app/.env'
 ssh nas-ssh 'cd /volume/phishpicker/app && docker compose up -d --build'
 ```
 
+The `api` container applies the live-DB schema on startup; `ingest-cron` only
+reads it. Start `api` before `ingest-cron` (or run `phishpicker init-db` once)
+so the `publish_log` table exists before the first phishvs publish.
+
 Verify: `curl http://127.0.0.1:3000/` from the NAS should return the app HTML.
 
 ---

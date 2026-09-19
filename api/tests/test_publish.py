@@ -295,6 +295,26 @@ def test_build_bundle_uses_frozen_bracket_when_present(
     assert b["slots"] == fresh["slots"]  # top_k is still the live model view
 
 
+def test_build_bundle_drops_placeholders_from_frozen_bracket(
+    read_conn, live_conn, scorer, seeded_live_show
+):
+    from phishpicker.scoring_store import upsert_score_state
+
+    frozen = [
+        {"set_number": "1", "position": 1, "song_id": 99},  # the placeholder
+        {"set_number": "1", "position": 2, "song_id": 3},
+    ]
+    upsert_score_state(live_conn, seeded_live_show, model_sha="x", frozen_bracket=frozen)
+    b = build_bundle(
+        read_conn=read_conn,
+        live_conn=live_conn,
+        show_id=seeded_live_show,
+        scorer=scorer,
+        bundle_seq=1,
+    )
+    assert b["picker_bracket"] == [{"song_id": 3, "set": "1", "position": 2}]
+
+
 def test_build_bundle_is_json_serializable(read_conn, live_conn, scorer, seeded_live_show):
     b = build_bundle(
         read_conn=read_conn,
@@ -384,6 +404,30 @@ def test_cli_publish_posts_and_records_seq(cli_env, monkeypatch, httpx_mock: HTT
     finally:
         live.close()
     assert "seq=1" in capsys.readouterr().out
+
+
+def test_cli_publish_burns_seq_on_failed_post(cli_env, monkeypatch, httpx_mock: HTTPXMock, capsys):
+    """The seq is reserved BEFORE the POST: a failed attempt leaves its row and
+    the next attempt uses seq+1 — phishvs 409s a reused seq, which would stall
+    the show forever."""
+    httpx_mock.add_response(url="https://phishvs.test/publish", status_code=502)
+    assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 1
+    assert "502" in capsys.readouterr().err
+    live = open_db(cli_env / "live.db")
+    try:
+        assert [r[0] for r in live.execute("SELECT bundle_seq FROM publish_log")] == [1]
+    finally:
+        live.close()
+
+    httpx_mock.add_response(url="https://phishvs.test/publish", status_code=200)
+    assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 0
+    assert json.loads(httpx_mock.get_requests()[-1].content)["bundle_seq"] == 2
+
+
+def test_cli_publish_rejects_malformed_date(cli_env, monkeypatch):
+    with pytest.raises(SystemExit) as exc:
+        _run_cli(monkeypatch, "publish", "--date", "tomorrow")
+    assert exc.value.code == 2
 
 
 def test_cli_publish_dry_run_does_not_post_or_record(

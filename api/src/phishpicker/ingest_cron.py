@@ -18,7 +18,11 @@ import subprocess
 import sys
 import time
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
+
+if TYPE_CHECKING:
+    from phishpicker.config import Settings
 
 log = logging.getLogger(__name__)
 
@@ -66,12 +70,12 @@ def _load_scorer():
     return settings, load_runtime_scorer(settings.data_dir / "model.lgb")
 
 
-def _daily_pass() -> None:
+def _daily_pass(*, freeze_today: bool = True) -> None:
     from phishpicker.close_out import daily_pass
 
     try:
         settings, scorer = _load_scorer()
-        result = daily_pass(settings, scorer, datetime.now(UTC))
+        result = daily_pass(settings, scorer, datetime.now(UTC), freeze_today=freeze_today)
         log.info("ingest-cron: daily pass %s", result)
     except Exception:
         log.exception("ingest-cron: daily pass failed")
@@ -89,29 +93,51 @@ def _watch_tick(state: dict) -> None:
         log.exception("ingest-cron: watcher tick failed")
 
 
-def _ingest_and_pass(publish_state: dict) -> None:
+def _ingest_and_pass(publish_state: dict, now: datetime) -> None:
     """Daily ingest + close-out pass. A successful ingest unlocks the phishvs
-    publish for today (publish_tick refuses to build a bracket that predates
-    last night's setlist); a failed one leaves the previous bundle standing."""
+    publish for today; a failed one also skips tonight's bracket freeze (it
+    would predate last night's setlist) and leaves the previous bundle
+    standing — on a show day the loop retries every INGEST_RETRY."""
     from phishpicker.publish import mark_ingested
 
-    if _run_ingest() == 0:
-        mark_ingested(publish_state, datetime.now(UTC))
-    _daily_pass()
+    ok = _run_ingest() == 0
+    publish_state["last_ingest_attempt_at"] = now
+    if ok:
+        mark_ingested(publish_state, now)
+    _daily_pass(freeze_today=ok)
 
 
-def _publish_tick(state: dict) -> None:
+def _publish_tick(settings: Settings, state: dict, now: datetime) -> None:
     from phishpicker.publish import DEFAULT_LOCK_LOCAL, publish_tick
 
+    def load_scorer():
+        return _load_scorer()[1]
+
     try:
-        settings, scorer = _load_scorer()
         lock_local = os.environ.get("PHISHVS_LOCK_LOCAL", DEFAULT_LOCK_LOCAL)
-        publish_tick(settings, scorer, state, datetime.now(UTC), lock_local=lock_local)
+        publish_tick(settings, load_scorer, state, now, lock_local=lock_local)
     except Exception:
         log.exception("ingest-cron: publish tick failed")
 
 
+def _loop_tick(settings: Settings, state: dict, publish_state: dict, now: datetime) -> None:
+    """Everything one iteration does besides the scheduled ingest."""
+    from phishpicker.publish import configured, ingest_retry_due
+
+    if not configured(settings):
+        _watch_tick(state)
+        return
+    if ingest_retry_due(settings, publish_state, now):
+        log.info("ingest-cron: show day, retrying the failed ingest")
+        _ingest_and_pass(publish_state, now)
+    _watch_tick(state)
+    _publish_tick(settings, publish_state, now)
+
+
 def main() -> None:
+    from phishpicker.config import Settings
+    from phishpicker.publish import configured
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -136,7 +162,10 @@ def main() -> None:
     # after 11am re-ingests here before it publishes anything.
     state: dict = {}
     publish_state: dict = {}
-    _ingest_and_pass(publish_state)
+    settings = Settings()
+    if not configured(settings):
+        log.info("ingest-cron: PHISHVS_PUBLISH_* not set; phishvs publish disabled")
+    _ingest_and_pass(publish_state, datetime.now(UTC))
     next_ingest = next_run_at(datetime.now(tz), hour=hour, tz=tz)
 
     # Tick loop rather than sleeping straight through to the next ingest: the
@@ -144,10 +173,9 @@ def main() -> None:
     while True:
         now = datetime.now(tz)
         if now >= next_ingest:
-            _ingest_and_pass(publish_state)
+            _ingest_and_pass(publish_state, datetime.now(UTC))
             next_ingest = next_run_at(datetime.now(tz), hour=hour, tz=tz)
-        _watch_tick(state)
-        _publish_tick(publish_state)
+        _loop_tick(settings, state, publish_state, datetime.now(UTC))
         time.sleep(tick_s)
 
 
