@@ -121,15 +121,36 @@ def _publish_tick(settings: Settings, state: dict, now: datetime) -> None:
 
 
 def _loop_tick(settings: Settings, state: dict, publish_state: dict, now: datetime) -> None:
-    """Everything one iteration does besides the scheduled ingest."""
+    """Everything one iteration does besides the scheduled ingest.
+
+    Every step guards itself, because the caller is a bare `while True`: an
+    exception escaping here kills the sidecar and takes the close-out watcher
+    with it. `ingest_retry_due` opens the database read-only, which raises
+    outright when the file does not exist yet — a fresh deploy whose first
+    ingest failed — so the most likely crash was also the least visible.
+
+    The watcher runs whatever else happened. Closing out a show is the one
+    thing here that cannot wait for the next tick.
+    """
     from phishpicker.publish import configured, ingest_retry_due
 
     if not configured(settings):
         _watch_tick(state)
         return
-    if ingest_retry_due(settings, publish_state, now):
+
+    try:
+        retry_due = ingest_retry_due(settings, publish_state, now)
+    except Exception:
+        log.exception("ingest-cron: ingest retry check failed")
+        retry_due = False
+
+    if retry_due:
         log.info("ingest-cron: show day, retrying the failed ingest")
-        _ingest_and_pass(publish_state, now)
+        try:
+            _ingest_and_pass(publish_state, now)
+        except Exception:
+            log.exception("ingest-cron: retry ingest failed")
+
     _watch_tick(state)
     _publish_tick(settings, publish_state, now)
 
@@ -173,8 +194,13 @@ def main() -> None:
     while True:
         now = datetime.now(tz)
         if now >= next_ingest:
-            _ingest_and_pass(publish_state, datetime.now(UTC))
-            next_ingest = next_run_at(datetime.now(tz), hour=hour, tz=tz)
+            # Advance the schedule first: an ingest that throws must not leave
+            # next_ingest in the past and re-run on every tick after it.
+            next_ingest = next_run_at(now, hour=hour, tz=tz)
+            try:
+                _ingest_and_pass(publish_state, datetime.now(UTC))
+            except Exception:
+                log.exception("ingest-cron: scheduled ingest failed")
         _loop_tick(settings, state, publish_state, datetime.now(UTC))
         time.sleep(tick_s)
 

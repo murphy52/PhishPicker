@@ -291,3 +291,107 @@ def test_loop_does_not_retry_on_a_non_show_day(cron_stubs, publish_calls):
     codes.append(0)
     _loop_tick(_Settings(), {}, {}, datetime(2026, 4, 22, 11, 30, tzinfo=EDT))
     assert codes == [0] and publish_calls == []
+
+
+def test_a_failed_publish_backs_off_instead_of_retrying_every_tick(publish_calls, monkeypatch):
+    """A phishvs outage must not mean an attempt every tick. Each attempt runs
+    the whole publish path — freeze, scorer load, an 18-slot preview, a ~1000
+    row catalog — and reserves a bundle_seq before the POST."""
+    from phishpicker import publish as mod
+    from phishpicker.publish import mark_ingested, publish_tick
+
+    attempts: list[datetime] = []
+
+    def boom(_s, _sc, _date, **_k):
+        attempts.append(now_holder[0])
+        raise RuntimeError("phishvs down")
+
+    now_holder = [datetime(2026, 4, 23, 11, 0, tzinfo=EDT)]
+    monkeypatch.setattr(mod, "publish_show", boom)
+
+    state: dict = {}
+    settings, load = _Settings(), lambda: object()
+    start = now_holder[0]
+    mark_ingested(state, start)
+
+    for i in range(6 * 8):  # 10-minute ticks, 11:00 -> 18:50
+        now_holder[0] = start + timedelta(minutes=10 * i)
+        publish_tick(settings, load, state, now_holder[0])
+
+    assert attempts[0] == start
+    gaps = {b - a for a, b in zip(attempts, attempts[1:], strict=False)}
+    assert gaps == {mod.PUBLISH_RETRY_INTERVAL}, gaps
+    # Every tick would be ~48 over this window.
+    assert len(attempts) <= 17, len(attempts)
+
+
+def test_a_success_after_a_failure_returns_to_the_hourly_clock(publish_calls, monkeypatch):
+    from phishpicker import publish as mod
+    from phishpicker.publish import mark_ingested, publish_tick
+
+    state: dict = {}
+    settings, load = _Settings(), lambda: object()
+    t0 = datetime(2026, 4, 23, 11, 0, tzinfo=EDT)
+    mark_ingested(state, t0)
+
+    monkeypatch.setattr(mod, "publish_show", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
+    assert publish_tick(settings, load, state, t0) is False
+
+    monkeypatch.setattr(mod, "publish_show", lambda _s, _sc, date, **_k: publish_calls.append(date) or {"seq": 2})
+    recovered = t0 + mod.PUBLISH_RETRY_INTERVAL
+    assert publish_tick(settings, load, state, recovered) is True
+    # Back to hourly: the retry clock must not keep it firing every 30 minutes.
+    assert publish_tick(settings, load, state, recovered + mod.PUBLISH_RETRY_INTERVAL) is False
+    assert publish_tick(settings, load, state, recovered + timedelta(hours=1)) is True
+
+
+def test_loop_tick_survives_a_retry_check_that_raises(cron_stubs, publish_calls, monkeypatch, caplog):
+    """ingest_retry_due opens the DB read-only, which raises when the file is
+    not there yet (a fresh deploy whose first ingest failed). The loop is
+    `while True` with no guard, so an exception here killed the sidecar and
+    took the close-out watcher with it."""
+    from phishpicker import ingest_cron as cron
+    from phishpicker import publish as mod
+
+    watched: list[int] = []
+    monkeypatch.setattr(cron, "_watch_tick", lambda _state: watched.append(1))
+    monkeypatch.setattr(mod, "ingest_retry_due", lambda *a, **k: (_ for _ in ()).throw(OSError("unable to open database file")))
+
+    cron._loop_tick(_Settings(), {}, {}, datetime(2026, 4, 23, 11, 30, tzinfo=EDT))
+
+    # The watcher is the critical path: close-out must still run.
+    assert watched == [1]
+
+
+def test_loop_tick_survives_a_retry_ingest_that_raises(cron_stubs, publish_calls, monkeypatch):
+    from phishpicker import ingest_cron as cron
+
+    watched: list[int] = []
+    monkeypatch.setattr(cron, "_watch_tick", lambda _state: watched.append(1))
+    monkeypatch.setattr(cron, "_ingest_and_pass", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    show_day = datetime(2026, 4, 23, 11, 0, tzinfo=EDT)
+    state = {"last_ingest_attempt_at": show_day}
+    cron._loop_tick(_Settings(), {}, state, show_day + timedelta(minutes=30))
+
+    assert watched == [1]
+
+
+def test_a_fresh_ingest_clears_the_failure_backoff(publish_calls, monkeypatch):
+    """New data is worth publishing now, not after the rest of a backoff earned
+    before the sidecar had it."""
+    from phishpicker import publish as mod
+    from phishpicker.publish import mark_ingested, publish_tick
+
+    state: dict = {}
+    settings, load = _Settings(), lambda: object()
+    t0 = datetime(2026, 4, 23, 11, 0, tzinfo=EDT)
+    mark_ingested(state, t0)
+
+    monkeypatch.setattr(mod, "publish_show", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
+    publish_tick(settings, load, state, t0)
+    assert "last_publish_failed_at" in state
+
+    monkeypatch.setattr(mod, "publish_show", lambda _s, _sc, date, **_k: publish_calls.append(date) or {"seq": 3})
+    mark_ingested(state, t0 + timedelta(minutes=10))
+    assert publish_tick(settings, load, state, t0 + timedelta(minutes=10)) is True

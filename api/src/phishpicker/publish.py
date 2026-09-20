@@ -55,6 +55,12 @@ SCHEMA_VERSION = 1
 # late start). Nothing is published after lock — the last bundle stands.
 DEFAULT_LOCK_LOCAL = "19:30"
 PUBLISH_INTERVAL = timedelta(hours=1)
+# After a failed attempt, sooner than the hourly cadence (the bundle is not up
+# yet) but nowhere near every tick. Each attempt runs the whole publish path —
+# freeze, scorer load, an 18-slot preview, a ~1000-row catalog — and reserves a
+# bundle_seq before the POST, so an outage that lasts all morning used to cost
+# ~50 of those instead of a handful.
+PUBLISH_RETRY_INTERVAL = timedelta(minutes=30)
 # On a show day with no successful ingest yet, the sidecar retries the ingest
 # this often (a failed 11am ingest would otherwise cost the whole day).
 INGEST_RETRY = timedelta(minutes=30)
@@ -341,10 +347,13 @@ def mark_ingested(state: dict, now: datetime) -> None:
     publish_tick refuses to publish (or freeze) until this matches today: the
     bracket must be built AFTER last night's setlist has landed, or on night
     2+ of a run the model loses run-awareness (no-repeat filter, run stats).
-    Clearing the last-publish time makes the next tick publish at once.
+    Clearing the last-publish time makes the next tick publish at once — and
+    the failure clock with it, so a fresh ingest is not made to sit out a
+    backoff earned before it had this data.
     """
     state["ingested_date"] = rollover_today(now.astimezone(UTC))
     state.pop("last_published_at", None)
+    state.pop("last_publish_failed_at", None)
 
 
 def _show_today(settings: Settings, today: str) -> dict | None:
@@ -401,6 +410,9 @@ def publish_due(
     last = state.get("last_published_at")
     if last is not None and now - last < PUBLISH_INTERVAL:
         return None
+    failed = state.get("last_publish_failed_at")
+    if failed is not None and now - failed < PUBLISH_RETRY_INTERVAL:
+        return None
     return today
 
 
@@ -415,9 +427,9 @@ def publish_tick(
     """One sidecar tick: publish today's show when publish_due says so.
     `load_scorer` is a zero-arg callable, invoked only when a bundle actually
     goes out. `state` is in-process: a fresh sidecar counts as not-yet-ingested
-    until its own startup ingest marks it. A failed publish is logged and the
-    hourly clock is left alone so the next tick retries. Returns True when a
-    bundle was sent.
+    until its own startup ingest marks it. A failed publish is logged and
+    stamped, so the next attempt waits PUBLISH_RETRY_INTERVAL rather than
+    coming round on the next tick. Returns True when a bundle was sent.
     """
     today = publish_due(settings, state, now, lock_local=lock_local)
     if today is None:
@@ -426,8 +438,11 @@ def publish_tick(
         result = publish_show(settings, load_scorer(), today)
     except Exception:
         log.exception("publish: failed for %s", today)
+        state["last_publish_failed_at"] = now
         return False
     if result is None or "skipped" in result:
+        state["last_publish_failed_at"] = now
         return False
     state["last_published_at"] = now
+    state.pop("last_publish_failed_at", None)
     return True
