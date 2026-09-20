@@ -284,7 +284,7 @@ export default function ScoringPage() {
             <LadderRow
               accent="phish"
               event="…and it's a rarity"
-              note="under 50 career plays — a deep cut the app should fear"
+              note="50+ shows since it was last played — a deep cut the app should fear"
               points="+5"
             />
             <LadderRow

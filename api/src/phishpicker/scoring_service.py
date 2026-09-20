@@ -75,51 +75,42 @@ def _surprise_weights(
     show_date: str | None = None,
 ) -> dict[int, tuple[int, str]]:
     """Band bonus per absent song. This layer does only what needs the DB —
-    play counts and each song's gap (shows since it was last played, strictly
-    before `show_date` so a re-finalize after tonight's canonical ingest
-    doesn't see the song as "just played") — and hands the raw facts to the
-    engine's classify_surprise, which owns the tier thresholds and magnitudes.
-    Without show_date, gaps are unknown and only the play-count tiers apply."""
+    each song's gap (shows since it was last played, strictly before
+    `show_date` so a re-finalize after tonight's canonical ingest doesn't see
+    the song as "just played") — and hands the raw facts to the engine's
+    classify_surprise, which owns the tier thresholds and magnitudes. Without
+    show_date, gaps are unknown and only the placeholder flag can earn a
+    bonus."""
     ids = [r["song_id"] for r in actual]
-    plays: dict[int, int] = dict.fromkeys(ids, 0)
     gaps: dict[int, int | None] = dict.fromkeys(ids, None)
-    if ids:
+    if ids and show_date:
         ph = ",".join("?" * len(ids))
-        for sid, c in read_conn.execute(
-            f"SELECT song_id, COUNT(*) FROM setlist_songs "
-            f"WHERE song_id IN ({ph}) GROUP BY song_id", ids
+        last_played: dict[int, str | None] = dict.fromkeys(ids, None)
+        for sid, last in read_conn.execute(
+            f"SELECT ss.song_id, MAX(s.show_date) FROM setlist_songs ss "
+            f"JOIN shows s ON s.show_id = ss.show_id "
+            f"WHERE ss.song_id IN ({ph}) AND s.show_date < ? "
+            f"GROUP BY ss.song_id",
+            [*ids, show_date],
         ).fetchall():
-            plays[sid] = c
-        if show_date:
-            last_played: dict[int, str | None] = dict.fromkeys(ids, None)
-            for sid, last in read_conn.execute(
-                f"SELECT ss.song_id, MAX(s.show_date) FROM setlist_songs ss "
-                f"JOIN shows s ON s.show_id = ss.show_id "
-                f"WHERE ss.song_id IN ({ph}) AND s.show_date < ? "
-                f"GROUP BY ss.song_id",
-                [*ids, show_date],
-            ).fetchall():
-                last_played[sid] = last
-            # Shows strictly between last play and this show — one COUNT per
-            # distinct last-played date (a handful per setlist).
-            gap_by_date: dict[str, int] = {}
-            for sid in ids:
-                last = last_played[sid]
-                if last is None:
-                    # Never played before this show: a true debut.
-                    gaps[sid] = 10**6
-                    continue
-                if last not in gap_by_date:
-                    gap_by_date[last] = read_conn.execute(
-                        "SELECT COUNT(*) FROM shows "
-                        "WHERE show_date > ? AND show_date < ?",
-                        (last, show_date),
-                    ).fetchone()[0]
-                gaps[sid] = gap_by_date[last]
-    return {
-        sid: classify_surprise(plays[sid], sid in bustout_song_ids, gaps[sid])
-        for sid in ids
-    }
+            last_played[sid] = last
+        # Shows strictly between last play and this show — one COUNT per
+        # distinct last-played date (a handful per setlist).
+        gap_by_date: dict[str, int] = {}
+        for sid in ids:
+            last = last_played[sid]
+            if last is None:
+                # Never played before this show: a true debut.
+                gaps[sid] = 10**6
+                continue
+            if last not in gap_by_date:
+                gap_by_date[last] = read_conn.execute(
+                    "SELECT COUNT(*) FROM shows "
+                    "WHERE show_date > ? AND show_date < ?",
+                    (last, show_date),
+                ).fetchone()[0]
+            gaps[sid] = gap_by_date[last]
+    return {sid: classify_surprise(sid in bustout_song_ids, gaps[sid]) for sid in ids}
 
 
 def score_live_show(
@@ -172,6 +163,7 @@ def score_live_show(
     # the band and the board would read "Phish 100%" pre-freeze. Gating here lets
     # the frontend's score.frozen / score?.versus checks hide it cleanly.
     if bracket:
+        # No show row -> no show_date -> no gap-based (rare/bustout) bonuses.
         versus = score_versus(bracket, actual, _surprise_weights(
             read_conn, actual, bustout_song_ids,
             show_date=show_row["show_date"] if show_row else None))

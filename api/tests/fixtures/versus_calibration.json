@@ -131,42 +131,42 @@
       {
         "song_id": 508,
         "set_number": "2",
-        "position": 8
+        "position": 1
       },
       {
         "song_id": 3080,
         "set_number": "2",
-        "position": 9
+        "position": 2
       },
       {
         "song_id": 339,
         "set_number": "2",
-        "position": 10
+        "position": 3
       },
       {
         "song_id": 3209,
         "set_number": "2",
-        "position": 11
+        "position": 4
       },
       {
         "song_id": 21,
         "set_number": "2",
-        "position": 12
+        "position": 5
       },
       {
         "song_id": 2639,
         "set_number": "2",
-        "position": 13
+        "position": 6
       },
       {
         "song_id": 679,
         "set_number": "E",
-        "position": 14
+        "position": 1
       },
       {
         "song_id": 208,
         "set_number": "E",
-        "position": 15
+        "position": 2
       }
     ],
     "surprise": {
@@ -175,8 +175,8 @@
         "absent"
       ],
       "2944": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "462": [
         0,
@@ -191,8 +191,8 @@
         "absent"
       ],
       "393": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "538": [
         0,
@@ -203,16 +203,16 @@
         "absent"
       ],
       "3080": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "339": [
         0,
         "absent"
       ],
       "3209": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "21": [
         0,
@@ -364,42 +364,42 @@
       {
         "song_id": 529,
         "set_number": "2",
-        "position": 8
+        "position": 1
       },
       {
         "song_id": 485,
         "set_number": "2",
-        "position": 9
+        "position": 2
       },
       {
         "song_id": 307,
         "set_number": "2",
-        "position": 10
+        "position": 3
       },
       {
         "song_id": 2831,
         "set_number": "2",
-        "position": 11
+        "position": 4
       },
       {
         "song_id": 437,
         "set_number": "2",
-        "position": 12
+        "position": 5
       },
       {
         "song_id": 648,
         "set_number": "2",
-        "position": 13
+        "position": 6
       },
       {
         "song_id": 603,
         "set_number": "E",
-        "position": 14
+        "position": 1
       },
       {
         "song_id": 199,
         "set_number": "E",
-        "position": 15
+        "position": 2
       }
     ],
     "surprise": {
@@ -424,8 +424,8 @@
         "absent"
       ],
       "576": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "269": [
         0,
@@ -444,8 +444,8 @@
         "absent"
       ],
       "2831": [
-        2,
-        "absent-rare"
+        0,
+        "absent"
       ],
       "437": [
         0,
@@ -460,8 +460,8 @@
         "absent"
       ],
       "199": [
-        0,
-        "absent"
+        6,
+        "absent-bustout"
       ]
     }
   }

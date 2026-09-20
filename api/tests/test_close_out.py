@@ -330,3 +330,21 @@ def test_refresh_canonical_setlist_ignores_an_empty_setlist(tmp_path):
     conn = open_db(tmp_path / "phishpicker.db", read_only=True)
     n = conn.execute("SELECT COUNT(*) FROM setlist_songs WHERE show_id = 99").fetchone()[0]
     assert n == 1, "an empty poll wiped the existing setlist"
+
+
+# --- daily pass: freeze only on a successful ingest ---
+
+
+@pytest.mark.parametrize("freeze_today", [True, False])
+def test_daily_pass_freezes_today_only_when_asked(monkeypatch, freeze_today):
+    """A failed 11am ingest must not freeze a bracket that predates last night's
+    setlist; the sidecar passes freeze_today=False and retries the ingest."""
+    from phishpicker import close_out
+
+    frozen: list[str] = []
+    monkeypatch.setattr(close_out, "pending_close_outs", lambda _s, _n: [])
+    monkeypatch.setattr(close_out, "freeze_show", lambda _s, _sc, date: frozen.append(date) or "id")
+    now = datetime(2026, 4, 23, 11, 0, tzinfo=TZ)
+    result = close_out.daily_pass(object(), object(), now, freeze_today=freeze_today)
+    assert frozen == (["2026-04-23"] if freeze_today else [])
+    assert result["frozen_today"] == ("id" if freeze_today else None)

@@ -30,12 +30,21 @@ ssh nas-ssh 'git clone <repo-url> /volume/phishpicker/app'
 ssh nas-ssh 'cat > /volume/phishpicker/app/.env' <<EOF
 PHISHNET_API_KEY=<paste from mac mini .env>
 PHISHPICKER_ADMIN_TOKEN=<paste from mac mini .env — same token>
+# phishvs publish (optional — leave unset to disable). Key id + shared HMAC
+# secret must match the key the phishvs Worker verifies with.
+PHISHVS_PUBLISH_URL=https://phishpicker.com/ingest/bundle
+PHISHVS_PUBLISH_KEY_ID=<key id>
+PHISHVS_PUBLISH_SECRET=<shared secret>
 EOF
 ssh nas-ssh 'chmod 600 /volume/phishpicker/app/.env'
 
 # Build images and start.
 ssh nas-ssh 'cd /volume/phishpicker/app && docker compose up -d --build'
 ```
+
+The `api` container applies the live-DB schema on startup; `ingest-cron` only
+reads it. Start `api` before `ingest-cron` (or run `phishpicker init-db` once)
+so the `publish_log` table exists before the first phishvs publish.
 
 Verify: `curl http://127.0.0.1:3000/` from the NAS should return the app HTML.
 

@@ -68,6 +68,22 @@ def main() -> int:
         help="re-run a date even if already recorded",
     )
 
+    p_publish = sub.add_parser(
+        "publish", help="POST the show bundle (bracket, top-k, catalog) to phishvs"
+    )
+    p_publish.add_argument(
+        "--date",
+        type=_iso_date,
+        default=None,
+        help="show date YYYY-MM-DD (default: today's show, 6am-ET rollover)",
+    )
+    p_publish.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="build the bundle and print its size; no POST, no publish_log row "
+        "(still creates + freezes today's live show if missing — the preview needs it)",
+    )
+
     p_train = sub.add_parser("train", help="training commands")
     train_sub = p_train.add_subparsers(dest="train_cmd", required=True)
     p_run = train_sub.add_parser("run", help="train + eval + ship artifacts")
@@ -175,6 +191,38 @@ def main() -> int:
         print(result["summary"])
         return 0
 
+    if args.cmd == "publish":
+        from datetime import UTC, datetime
+
+        import httpx
+
+        from phishpicker.last_show import rollover_today
+        from phishpicker.model.scorer import load_runtime_scorer
+        from phishpicker.publish import configured, publish_show
+
+        if not args.dry_run and not configured(s):
+            print("publish: PHISHVS_PUBLISH_* not set; skipping", file=sys.stderr)
+            return 0
+        show_date = args.date or rollover_today(datetime.now(UTC))
+        scorer = load_runtime_scorer(s.data_dir / "model.lgb")
+        try:
+            result = publish_show(s, scorer, show_date, dry_run=args.dry_run)
+        except httpx.HTTPError as exc:
+            print(f"publish failed: {exc}", file=sys.stderr)
+            return 1
+        if result is None:
+            print(f"publish: no show on {show_date}", file=sys.stderr)
+            return 2
+        if "skipped" in result:
+            print(f"publish {show_date}: skipped — no canonical show row for {show_date}")
+            return 0
+        print(
+            f"publish {show_date}: {'dry-run' if args.dry_run else 'posted'} "
+            f"seq={result['seq']} slots={result['slots']} "
+            f"catalog={result['catalog']} bytes={result['bytes']}"
+        )
+        return 0
+
     if args.cmd == "train" and args.train_cmd == "ab-era":
         import json
 
@@ -240,6 +288,16 @@ def main() -> int:
         return 0
 
     return 1
+
+
+def _iso_date(value: str) -> str:
+    """argparse type: YYYY-MM-DD, normalized; a bad value is a usage error."""
+    from datetime import date
+
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected YYYY-MM-DD, got {value!r}") from exc
 
 
 def _print_replay(result: dict) -> None:

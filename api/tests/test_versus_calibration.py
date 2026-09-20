@@ -17,10 +17,10 @@ def _run(date):
 def test_magic_night_the_picker_wins():
     out = _run("2026-07-12")
     assert out["leader"] == "picker"
-    assert out["picker_total"] == 112 and out["phish_total"] == 19
+    assert out["picker_total"] == 122 and out["phish_total"] == 15
 
 
 def test_weird_night_the_band_wins():
     out = _run("2026-07-14")
     assert out["leader"] == "phish"
-    assert out["picker_total"] == 24 and out["phish_total"] == 35
+    assert out["picker_total"] == 24 and out["phish_total"] == 39

@@ -67,3 +67,12 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     auth TEXT NOT NULL,
     subscribed_at TEXT NOT NULL
 );
+
+-- phishvs publish log: one row per bundle POSTed for a show. bundle_seq is
+-- monotonic per show (max+1) so the cloud side can drop out-of-order bundles.
+CREATE TABLE IF NOT EXISTS publish_log (
+    show_id TEXT NOT NULL REFERENCES live_show(show_id) ON DELETE CASCADE,
+    bundle_seq INTEGER NOT NULL,
+    published_at TEXT NOT NULL,
+    PRIMARY KEY (show_id, bundle_seq)
+);
