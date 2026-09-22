@@ -38,7 +38,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from phishpicker.close_out import freeze_show, show_on
+from phishpicker.close_out import freeze_show, resolve_live_show, show_on
 from phishpicker.config import Settings
 from phishpicker.db.connection import open_db
 from phishpicker.last_show import rollover_today
@@ -297,13 +297,20 @@ def publish_show(
 
     Resolves the live show the same way the cron's daily pass does
     (close_out.freeze_show: canonical show on the date -> idempotent live_show
-    row, bracket frozen). Returns None when there is no show on `show_date`,
+    row, bracket frozen) — except under `dry_run`, which resolves the row
+    without freezing, since a freeze is a one-shot nothing refreshes and the
+    bundle is built from the preview rather than the frozen bracket anyway.
+    Returns None when there is no show on `show_date`,
     {"skipped": "no_canonical_show"} when the live show has no canonical
     `shows` row (phishvs 400s a null showid, and the seq is reserved before
     the POST, so trying would only burn seqs); otherwise a summary dict
     {seq, slots, catalog, bytes}.
     """
-    show_id = freeze_show(settings, scorer, show_date)
+    show_id = (
+        resolve_live_show(settings, show_date)
+        if dry_run
+        else freeze_show(settings, scorer, show_date)
+    )
     if show_id is None:
         return None
     with (

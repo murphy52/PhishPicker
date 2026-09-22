@@ -201,6 +201,23 @@ def is_finalized(live_conn: sqlite3.Connection, show_id: str) -> bool:
     )
 
 
+def resolve_live_show(settings: Settings, show_date: str) -> str | None:
+    """The live_show row for `show_date`, created if it is not there yet, with
+    no bracket freeze. For readers that need a show_id but must not commit the
+    model to a night — a dry-run publish, above all.
+
+    Creating the row is harmless and idempotent: it is an empty container, and
+    a bundle built against one with no `live_songs` still offers every slot.
+    Freezing is not — see `freeze_show`.
+    """
+    with closing(open_db(settings.db_path, read_only=True)) as read:
+        show = show_on(read, show_date)
+        if show is None:
+            return None
+        with closing(open_db(settings.live_db_path)) as live:
+            return create_live_show(live, show_date, show["venue_id"])
+
+
 def freeze_show(settings: Settings, scorer, show_date: str) -> str | None:
     """Pre-show: ensure a live_show row exists for `show_date` and freeze its
     bracket. No-op when already frozen, so a night tracked by hand is untouched.
@@ -209,6 +226,11 @@ def freeze_show(settings: Settings, scorer, show_date: str) -> str | None:
     `show_date < ?`, so a bracket built after the show still couldn't see it —
     but "we froze our prediction the next morning" is indefensible the moment any
     of this is published. Freeze early and the claim is airtight.
+
+    Early, though, means the day of the show: nothing ever refreshes a frozen
+    bracket, so freezing a future date hands that night whichever model was
+    loaded today. Only call this for a show that is about to happen; to get a
+    show_id without committing to one, use `resolve_live_show`.
     """
     with closing(open_db(settings.db_path, read_only=True)) as read:
         show = show_on(read, show_date)

@@ -426,9 +426,9 @@ def test_cli_publish_burns_seq_on_failed_post(cli_env, monkeypatch, httpx_mock: 
 
 @pytest.fixture
 def live_show_without_canonical_row(cli_env, monkeypatch):
-    """A live show on a date with no `shows` row. freeze_show would refuse it,
-    so stub the resolver to hand the show back anyway — the guard under test
-    is the one after resolution, which keeps a null showid off the wire."""
+    """A live show on a date with no `shows` row. The resolvers would refuse it,
+    so stub them to hand the show back anyway — the guard under test is the one
+    after resolution, which keeps a null showid off the wire."""
     from phishpicker import publish as mod
     from phishpicker.live import create_live_show
 
@@ -436,6 +436,8 @@ def live_show_without_canonical_row(cli_env, monkeypatch):
     show_id = create_live_show(live, "2026-04-20", venue_id=VENUE_ID)
     live.close()
     monkeypatch.setattr(mod, "freeze_show", lambda _s, _sc, _date: show_id)
+    # The dry-run path resolves without freezing; both must hit the same guard.
+    monkeypatch.setattr(mod, "resolve_live_show", lambda _s, _date: show_id)
     return show_id
 
 
@@ -504,6 +506,42 @@ def test_cli_publish_dry_run_does_not_post_or_record(
         assert live.execute("SELECT COUNT(*) FROM publish_log").fetchone()[0] == 0
     finally:
         live.close()
+
+
+def test_cli_publish_dry_run_does_not_freeze_the_bracket(cli_env, monkeypatch, capsys):
+    """Freezing is a deliberate one-shot: nothing refreshes it. A dry run that
+    froze a future show would hand that night the bracket of whatever model was
+    loaded the day someone checked — which is how 2026-10-02 came to be frozen
+    three weeks early (docs/retros/2026-09-20-rehearsal.md)."""
+    assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE, "--dry-run") == 0
+    assert "slots=18" in capsys.readouterr().out
+
+    live = open_db(cli_env / "live.db")
+    try:
+        frozen = live.execute(
+            "SELECT frozen_bracket FROM live_score_state WHERE show_id IN "
+            "(SELECT show_id FROM live_show WHERE show_date = ?)",
+            (SHOW_DATE,),
+        ).fetchall()
+    finally:
+        live.close()
+    assert [r["frozen_bracket"] for r in frozen if r["frozen_bracket"]] == []
+
+
+def test_cli_publish_for_real_still_freezes(cli_env, monkeypatch, httpx_mock: HTTPXMock):
+    httpx_mock.add_response(url="https://phishvs.test/publish", status_code=200)
+    assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 0
+
+    live = open_db(cli_env / "live.db")
+    try:
+        row = live.execute(
+            "SELECT frozen_bracket FROM live_score_state WHERE show_id IN "
+            "(SELECT show_id FROM live_show WHERE show_date = ?)",
+            (SHOW_DATE,),
+        ).fetchone()
+    finally:
+        live.close()
+    assert row is not None and row["frozen_bracket"]
 
 
 def test_cli_publish_no_show_on_date_exits_nonzero(cli_env, monkeypatch, capsys):
