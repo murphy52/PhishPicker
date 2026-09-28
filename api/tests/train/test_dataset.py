@@ -193,3 +193,34 @@ def test_stratified_uniform_only_zero_negatives_ok(conn):
     )
     for g in groups:
         assert len(g.negative_song_ids) == 2
+
+
+def test_excluded_shows_yield_no_groups(conn):
+    groups = list(
+        iter_training_groups(
+            conn,
+            cutoff_date="2024-12-31",
+            negatives_per_positive=2,
+            seed=0,
+            excluded_show_ids={10},
+        )
+    )
+    assert {g.show_id for g in groups} == {11}
+
+
+def test_msg_retro_run_is_excluded_by_default(conn):
+    # 2026-07-22 MSG, the first of five nights of 1992–96 retro sets.
+    conn.execute(
+        "INSERT INTO shows (show_id, show_date, fetched_at) "
+        "VALUES (1771439218, '2024-03-01', '2024-03-02')"
+    )
+    conn.execute(
+        "INSERT INTO setlist_songs (show_id, set_number, position, song_id) "
+        "VALUES (1771439218, '1', 1, 1)"
+    )
+    conn.commit()
+    groups = list(
+        iter_training_groups(conn, cutoff_date="2024-12-31", negatives_per_positive=2, seed=0)
+    )
+    assert 1771439218 not in {g.show_id for g in groups}
+    assert len(groups) == 5

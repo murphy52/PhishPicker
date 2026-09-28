@@ -15,7 +15,12 @@ import numpy as np
 from phishpicker.model.heuristic import Context
 from phishpicker.model.heuristic import score as heuristic_score
 from phishpicker.model.stats import compute_song_stats
-from phishpicker.train.eval import FoldResult, WalkForwardResult, _build_result
+from phishpicker.train.eval import (
+    FoldResult,
+    WalkForwardResult,
+    _build_result,
+    select_holdout_shows,
+)
 
 Scorer = Callable[
     [sqlite3.Connection, str, str, int | None, list[int], str, list[int]],
@@ -83,19 +88,7 @@ def evaluate_scorer(
     scorer: Scorer,
     n_holdout_shows: int = 20,
 ) -> WalkForwardResult:
-    # Mirror walk_forward_eval — skip future-dated placeholder shows with no
-    # setlist rows yet.
-    holdout = conn.execute(
-        """
-        SELECT s.show_id, s.show_date, s.venue_id
-        FROM shows s
-        WHERE EXISTS (SELECT 1 FROM setlist_songs ss WHERE ss.show_id = s.show_id)
-        ORDER BY s.show_date DESC, s.show_id DESC
-        LIMIT ?
-        """,
-        (n_holdout_shows,),
-    ).fetchall()
-    holdout = list(reversed(holdout))
+    holdout = select_holdout_shows(conn, n_holdout_shows)
     all_song_ids = [r["song_id"] for r in conn.execute("SELECT song_id FROM songs")]
 
     fold_results: list[FoldResult] = []
