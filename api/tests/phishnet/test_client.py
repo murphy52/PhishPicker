@@ -74,3 +74,15 @@ def test_request_error_wrapped_as_phishnet_error(client: PhishNetClient, httpx_m
     )
     with pytest.raises(PhishNetError, match="Request failed"):
         client.fetch_songs()
+
+
+def test_api_key_never_reaches_the_logs(
+    client: PhishNetClient, httpx_mock: HTTPXMock, caplog: pytest.LogCaptureFixture
+):
+    """phish.net takes the key as a query param, and httpx logs every request
+    URL at INFO. The CLI and ingest-cron both log at INFO, so the key landed in
+    the ingest-cron container logs, once per request."""
+    httpx_mock.add_response(json={"error": False, "data": []})
+    with caplog.at_level("INFO"):
+        client.fetch_all_shows()
+    assert not [r for r in caplog.records if "test-key" in r.getMessage()]

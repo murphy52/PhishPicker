@@ -1,4 +1,12 @@
+import logging
+
 import httpx
+
+# phish.net takes the API key as a query param, and httpx logs every request
+# URL at INFO. Every process that talks to phish.net imports this client, and
+# the CLI and ingest-cron both log at INFO, so quiet httpx here or the key is
+# written to the logs once per request.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 class PhishNetError(Exception):
