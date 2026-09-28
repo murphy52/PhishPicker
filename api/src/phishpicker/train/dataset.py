@@ -7,8 +7,10 @@ LambdaRank objective will push down below the positive.
 
 import random
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from dataclasses import dataclass
+
+from phishpicker.train.exclusions import EXCLUDED_SHOW_IDS
 
 
 @dataclass(frozen=True)
@@ -40,8 +42,10 @@ def iter_training_groups(
     freq_negatives: int | None = None,
     uniform_negatives: int | None = None,
     seed: int = 0,
+    excluded_show_ids: Collection[int] = EXCLUDED_SHOW_IDS,
 ) -> Iterator[TrainingGroup]:
-    """Yield one TrainingGroup per slot of every show strictly before cutoff_date.
+    """Yield one TrainingGroup per slot of every show strictly before cutoff_date,
+    skipping `excluded_show_ids` (see train.exclusions).
 
     Two sampling modes:
     - Uniform only: pass `negatives_per_positive`; all negatives are uniform.
@@ -80,6 +84,8 @@ def iter_training_groups(
         (cutoff_date,),
     ).fetchall()
     for sh in shows:
+        if sh["show_id"] in excluded_show_ids:
+            continue
         setlist = conn.execute(
             """
             SELECT set_number, position, song_id, trans_mark

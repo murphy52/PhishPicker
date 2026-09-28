@@ -32,3 +32,17 @@ def test_evaluate_scorer_cutoff_uses_heldout_date(small_train_db):
     assert len(r.fold_results) == 3
     for fold in r.fold_results:
         assert fold.train_cutoff_date == fold.heldout_show_date
+
+
+def test_evaluate_scorer_never_holds_out_msg_retro_run(small_train_db):
+    small_train_db.execute(
+        "INSERT INTO shows (show_id, show_date, fetched_at) "
+        "VALUES (1771439218, '2025-01-01', '2025-01-01')"
+    )
+    small_train_db.execute(
+        "INSERT INTO setlist_songs (show_id, set_number, position, song_id) "
+        "VALUES (1771439218, '1', 1, 5)"
+    )
+    small_train_db.commit()
+    r = evaluate_scorer(small_train_db, random_scorer(seed=0), n_holdout_shows=1)
+    assert r.fold_results[0].heldout_show_id != 1771439218

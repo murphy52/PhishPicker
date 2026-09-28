@@ -1,4 +1,19 @@
-from phishpicker.train.eval import walk_forward_eval
+from phishpicker.train.eval import evaluate_booster, select_holdout_shows, walk_forward_eval
+from phishpicker.train.trainer import train_ranker
+
+MSG_RETRO_SHOW_ID = 1771439218  # 2026-07-22 MSG, 1992–96 retro sets
+
+
+def _add_msg_retro_show(conn, show_date):
+    conn.execute(
+        "INSERT INTO shows (show_id, show_date, fetched_at) VALUES (?, ?, ?)",
+        (MSG_RETRO_SHOW_ID, show_date, show_date),
+    )
+    conn.executemany(
+        "INSERT INTO setlist_songs (show_id, set_number, position, song_id) VALUES (?,?,?,?)",
+        [(MSG_RETRO_SHOW_ID, "1", i, s) for i, s in enumerate((5, 4, 3, 2), start=1)],
+    )
+    conn.commit()
 
 
 def test_walk_forward_runs_one_fold_per_heldout_show(small_train_db):
@@ -99,3 +114,57 @@ def test_walk_forward_reports_ci_and_per_slot(small_train_db):
     assert set(r.by_slot.keys()) == {1, 2, 3, 4}
     for slot_metrics in r.by_slot.values():
         assert 0.0 <= slot_metrics["top1"] <= 1.0
+
+
+def test_holdout_skips_excluded_shows_and_backfills(small_train_db):
+    latest = select_holdout_shows(small_train_db, 3, excluded_show_ids=frozenset())
+    skipped = latest[-1]["show_id"]
+    held = select_holdout_shows(small_train_db, 3, excluded_show_ids={skipped})
+    held_ids = [r["show_id"] for r in held]
+    assert len(held_ids) == 3
+    assert skipped not in held_ids
+    # The two survivors are still there; the gap is filled by the next-oldest show.
+    assert {r["show_id"] for r in latest[:-1]} <= set(held_ids)
+
+
+def test_holdout_is_chronological(small_train_db):
+    held = select_holdout_shows(small_train_db, 5)
+    dates = [r["show_date"] for r in held]
+    assert dates == sorted(dates)
+
+
+def test_walk_forward_never_holds_out_msg_retro_run(small_train_db):
+    _add_msg_retro_show(small_train_db, "2025-01-01")  # the latest show in the DB
+    r = walk_forward_eval(
+        small_train_db,
+        n_holdout_shows=1,
+        negatives_per_positive=3,
+        num_iterations=10,
+        seed=0,
+    )
+    assert r.fold_results[0].heldout_show_id != MSG_RETRO_SHOW_ID
+
+
+def test_evaluate_booster_scores_the_walk_forward_holdout(small_train_db):
+    """A fixed artifact (e.g. the model in prod) is scored on exactly the shows
+    and slots walk-forward holds out, so the two are comparable."""
+    booster, _, _ = train_ranker(
+        small_train_db,
+        cutoff_date="2099-01-01",
+        negatives_per_positive=3,
+        num_iterations=10,
+        seed=0,
+    )
+    wf = walk_forward_eval(
+        small_train_db,
+        n_holdout_shows=3,
+        negatives_per_positive=3,
+        num_iterations=10,
+        seed=0,
+    )
+    r = evaluate_booster(small_train_db, booster, n_holdout_shows=3)
+    assert [f.heldout_show_id for f in r.fold_results] == [
+        f.heldout_show_id for f in wf.fold_results
+    ]
+    assert r.n_slots == wf.n_slots
+    assert 0.0 < r.mrr <= 1.0

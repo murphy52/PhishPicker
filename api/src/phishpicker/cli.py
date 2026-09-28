@@ -92,6 +92,13 @@ def main() -> int:
     )
     p_incl.add_argument("--holdout-days", type=int, default=365)
     p_incl.add_argument("--iterations", type=int, default=300)
+    p_evalm = train_sub.add_parser(
+        "eval-model",
+        help="grade a saved model on the walk-forward holdout (no refitting), "
+        "e.g. the model in prod before promoting a new one",
+    )
+    p_evalm.add_argument("model_path", help="path to a model.lgb (its .meta.json sits beside it)")
+    p_evalm.add_argument("--holdout", type=int, default=20)
     p_ab = train_sub.add_parser("ab-era", help="A/B: era-only vs era+recency weighting")
     p_ab.add_argument("--holdout", type=int, default=20)
     p_ab.add_argument("--negatives", type=int, default=50)
@@ -251,6 +258,42 @@ def main() -> int:
         # keep the console readable — importances go to the artifact meta, not stdout
         result_summary = {k: v for k, v in result.items() if k != "feature_importance_gain"}
         print(json.dumps(result_summary, indent=2))
+        return 0
+
+    if args.cmd == "train" and args.train_cmd == "eval-model":
+        import json
+
+        from phishpicker.model.lightgbm_scorer import LightGBMScorer
+        from phishpicker.train.eval import evaluate_booster
+        from phishpicker.train.features import FEATURE_COLUMNS
+
+        scorer = LightGBMScorer.load(args.model_path)
+        scorer.assert_compatible_with(FEATURE_COLUMNS)
+        conn = open_db(s.db_path, read_only=True)
+        r = evaluate_booster(conn, scorer.booster, n_holdout_shows=args.holdout)
+        print(
+            json.dumps(
+                {
+                    "model_path": args.model_path,
+                    "n_slots": r.n_slots,
+                    "top1": r.top1,
+                    "top5": r.top5,
+                    "top20": r.top20,
+                    "mrr": r.mrr,
+                    "mrr_ci": list(r.mrr_ci),
+                    "shows": [
+                        {
+                            "show_id": f.heldout_show_id,
+                            "show_date": f.heldout_show_date,
+                            "top1": f.top_k_hits[1],
+                            "top5": f.top_k_hits[5],
+                        }
+                        for f in r.fold_results
+                    ],
+                },
+                indent=2,
+            )
+        )
         return 0
 
     if args.cmd == "train" and args.train_cmd == "run":

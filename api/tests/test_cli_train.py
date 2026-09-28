@@ -50,3 +50,38 @@ def test_train_run_writes_model_and_metrics(env_with_db):
     assert "baselines" in metrics
     assert "by_slot" in metrics
     assert len(metrics["feature_columns"]) >= 25
+
+
+def test_train_eval_model_grades_an_artifact_on_the_holdout(env_with_db, capsys):
+    import sys as _sys
+
+    import phishpicker.cli as cli
+
+    _sys.argv = [
+        "phishpicker",
+        "train",
+        "run",
+        "--holdout",
+        "2",
+        "--negatives",
+        "3",
+        "--iterations",
+        "10",
+    ]
+    assert cli.main() == 0
+    capsys.readouterr()
+
+    _sys.argv = [
+        "phishpicker",
+        "train",
+        "eval-model",
+        str(env_with_db / "model.lgb"),
+        "--holdout",
+        "2",
+    ]
+    assert cli.main() == 0
+    out = json.loads(capsys.readouterr().out)
+    trained = json.loads((env_with_db / "metrics.json").read_text())
+    assert out["n_slots"] == trained["n_slots"]
+    assert len(out["shows"]) == 2
+    assert {"top1", "top5", "top20", "mrr", "mrr_ci"} <= out.keys()
