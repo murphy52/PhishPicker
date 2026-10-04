@@ -30,6 +30,9 @@ TOUR_ID = 223
 
 # Frozen vector shared with the phishvs (TypeScript) verifier. Do not change.
 KNOWN_VECTOR_SIG = "89c6c3c39f3e649f2f5a991cb61838b6141c5b49c345be6e4424fa328ef55267"
+# The same, over a body carrying the optional `model` block (also in phishvs).
+MODEL_VECTOR_BODY = b'{"schema_version":1,"model":{"as_of":"2026-10-03"}}'
+MODEL_VECTOR_SIG = "d7c184b58fbd7d63d7a561fb9af73137022e595341610ca7933788f733c34098"
 
 
 def _seed_read_db(conn) -> None:
@@ -123,6 +126,17 @@ def test_sign_headers_known_vector():
         body, key_id="test-key", secret="test-secret", timestamp=1760000000, nonce="00" * 16
     )
     assert h["X-Phishvs-Signature"] == KNOWN_VECTOR_SIG
+
+
+def test_sign_headers_known_vector_with_model():
+    h = sign_headers(
+        MODEL_VECTOR_BODY,
+        key_id="test-key",
+        secret="test-secret",
+        timestamp=1760000000,
+        nonce="00" * 16,
+    )
+    assert h["X-Phishvs-Signature"] == MODEL_VECTOR_SIG
 
 
 def test_sign_headers_defaults_to_now_and_random_nonce():
@@ -553,3 +567,123 @@ def test_cli_publish_unconfigured_is_noop(cli_env, monkeypatch, httpx_mock: HTTP
     monkeypatch.setenv("PHISHVS_PUBLISH_SECRET", "")
     assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 0
     assert httpx_mock.get_requests() == []
+
+
+# --- model stats (the About PhishPicker page) ---------------------------------
+
+METRICS = {
+    "trained_at": "2026-04-26T03:03:46+00:00",
+    "cutoff_date": "2026-04-25",
+    "n_shows_trained_on": 2250,
+    "n_slots": 356,
+    "holdout_shows": 20,
+    "top1": 0.0646,
+    "top5": 0.2022,
+    "top20": 0.4185,
+    "baselines": {"random": {"top1": 0.0, "top5": 0.0056, "top20": 0.0197, "mrr": 0.0075}},
+    "feature_importance_gain": {"bigram_prev_to_this": 60.0, "era": 40.0},
+}
+
+
+def _seed_versus_scorecard(data_dir, show_date: str, picker: int, phish: int) -> None:
+    from phishpicker.live import create_live_show
+
+    live = open_db(data_dir / "live.db")
+    try:
+        show_id = create_live_show(live, show_date, venue_id=VENUE_ID)
+        payload = {"versus": {"picker_total": picker, "phish_total": phish, "leader": "picker"}}
+        live.execute(
+            "INSERT INTO scorecards (show_id, show_date, finalized_at, combined, "
+            "foresight_total, live_total, ppps, max_streak, payload) "
+            "VALUES (?, ?, 'x', 0, 0, 0, 0, 0, ?)",
+            (show_id, show_date, json.dumps(payload)),
+        )
+        live.commit()
+    finally:
+        live.close()
+
+
+def _strict_json(content: bytes) -> dict:
+    """Parse the way phishvs does (JSON.parse): NaN/Infinity are errors."""
+
+    def reject(token: str):
+        raise ValueError(f"non-standard JSON constant {token}")
+
+    return json.loads(content, parse_constant=reject)
+
+
+def test_cli_publish_carries_model_stats(cli_env, monkeypatch, httpx_mock: HTTPXMock):
+    (cli_env / "metrics.json").write_text(json.dumps(METRICS))
+    _seed_versus_scorecard(cli_env, "2026-04-18", 52, 35)
+    httpx_mock.add_response(url="https://phishvs.test/publish", status_code=200)
+    assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 0
+
+    req = httpx_mock.get_request()
+    assert _verify(req.headers, req.content, "s3cret")  # the signature covers `model` too
+    body = _strict_json(req.content)
+    assert body["model"] == {
+        "as_of": "2026-04-18",
+        "about": METRICS,
+        "record": [{"date": "2026-04-18", "picker": 52, "phish": 35}],
+        "signals": [
+            {"feature": "bigram_prev_to_this", "share": 60.0},
+            {"feature": "era", "share": 40.0},
+        ],
+    }
+    # Everything else is the bundle as before.
+    assert body["bundle_seq"] == 1 and len(body["picker_bracket"]) == 18
+
+
+def test_cli_publish_without_metrics_omits_model(
+    cli_env, monkeypatch, httpx_mock: HTTPXMock, caplog
+):
+    """No metrics.json (no training has shipped): the bundle goes out without
+    `model` and phishvs keeps whatever it has."""
+    httpx_mock.add_response(url="https://phishvs.test/publish", status_code=200)
+    with caplog.at_level("WARNING", logger="phishpicker.publish"):
+        assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 0
+    body = _strict_json(httpx_mock.get_request().content)
+    assert "model" not in body and body["bundle_seq"] == 1
+    assert "no metrics.json" in caplog.text
+
+
+def test_publish_goes_out_without_model_when_the_stats_fail(
+    cli_env, monkeypatch, httpx_mock: HTTPXMock, caplog
+):
+    """The stats are a passenger: if building them raises, the bundle still
+    posts (and the failure is logged), never the other way round."""
+    from phishpicker import publish as mod
+
+    def boom(*_a, **_k):
+        raise RuntimeError("scorecards unreadable")
+
+    (cli_env / "metrics.json").write_text(json.dumps(METRICS))
+    monkeypatch.setattr(mod, "model_stats", boom)
+    httpx_mock.add_response(url="https://phishvs.test/publish", status_code=200)
+    with caplog.at_level("ERROR", logger="phishpicker.publish"):
+        assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 0
+    body = _strict_json(httpx_mock.get_request().content)
+    assert "model" not in body and len(body["picker_bracket"]) == 18
+    assert "model stats failed" in caplog.text and "scorecards unreadable" in caplog.text
+
+
+def test_publish_drops_model_stats_that_are_not_strict_json(
+    cli_env, monkeypatch, httpx_mock: HTTPXMock
+):
+    """Python writes NaN into JSON; JSON.parse rejects it, and phishvs would
+    400 the whole body. A NaN in metrics.json must cost the stats, not the bundle."""
+    (cli_env / "metrics.json").write_text(json.dumps({**METRICS, "top1": float("nan")}))
+    httpx_mock.add_response(url="https://phishvs.test/publish", status_code=200)
+    assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 0
+    body = _strict_json(httpx_mock.get_request().content)
+    assert "model" not in body and body["bundle_seq"] == 1
+
+
+@pytest.mark.parametrize(("metrics", "flag"), [(METRICS, "model=yes"), (None, "model=no")])
+def test_cli_publish_dry_run_says_whether_model_stats_ride_along(
+    cli_env, monkeypatch, capsys, metrics, flag
+):
+    if metrics is not None:
+        (cli_env / "metrics.json").write_text(json.dumps(metrics))
+    assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE, "--dry-run") == 0
+    assert flag in capsys.readouterr().out
