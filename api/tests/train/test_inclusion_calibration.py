@@ -2,15 +2,15 @@
 
 import json
 import math
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-from phishpicker.db.connection import apply_schema, open_db
+from phishpicker.db.connection import open_db
 from phishpicker.train.inclusion_calibration import (
     BANDS,
     POINT_LEVELS,
+    PROPOSED_BANDS,
     RELIABILITY_EDGES,
     assign_bands,
     band_table,
@@ -18,9 +18,9 @@ from phishpicker.train.inclusion_calibration import (
     expected_calibration_error,
     expected_points,
     frequency_baseline,
-    isotonic_holdout,
     log_loss,
-    played_earlier_in_run,
+    nested_calibration,
+    per_show_totals,
     reliability_table,
     run_calibration,
     summarize,
@@ -30,6 +30,7 @@ from phishpicker.train.inclusion_features import (
     InclusionHistory,
     build_inclusion_rows,
     build_training_data,
+    played_earlier_in_run,
 )
 
 # ---------------------------------------------------------------- pure parts
@@ -132,6 +133,7 @@ def test_band_table_counts_rates_and_top_pick():
     assert good["ci_low"] == pytest.approx(lo) and good["ci_high"] == pytest.approx(hi)
 
     assert good["top_pick_mean_pred"] == pytest.approx((0.30 + 0.25) / 2)
+    assert good["top_pick_ev"] == pytest.approx(10 * 0.5)
     assert rows["Deep cut"]["n"] == 0
     assert rows["Deep cut"]["actual_rate"] is None
     assert rows["Deep cut"]["songs_per_show"] == 0.0
@@ -147,6 +149,34 @@ def test_band_top_pick_averages_over_tied_top_songs():
     assert good["top_pick_mean_pred"] == pytest.approx(0.20)
 
 
+def test_band_top_pick_breaks_ties_like_the_served_list():
+    # Serving lists tied calibrated chances by the uncalibrated score, so the
+    # player's "top song" is the tied song with the highest tiebreak.
+    p = [0.20, 0.20, 0.20, 0.16]
+    y = [1, 0, 0, 1]
+    good = band_table(p, y, [1, 1, 1, 1], tiebreak=[0.25, 0.30, 0.21, 0.50])[1]
+    assert good["top_pick_rate"] == 0.0
+
+
+def test_proposed_four_band_scheme():
+    assert [(b.name, b.lo, b.points) for b in PROPOSED_BANDS] == [
+        ("Good bet", 0.15, 10),
+        ("Long shot", 0.05, 25),
+        ("Deep cut", 0.01, 60),
+        ("Wild card", 0.0, 150),
+    ]
+    probs = [0.5, 0.15, 0.149, 0.05, 0.01, 0.009]
+    assert assign_bands(probs, PROPOSED_BANDS).tolist() == [0, 0, 1, 1, 2, 3]
+    rows = band_table([0.5, 0.4, 0.1], [1, 0, 1], [1, 1, 1], bands=PROPOSED_BANDS)
+    assert [r["band"] for r in rows] == [b.name for b in PROPOSED_BANDS]
+    good = rows[0]
+    assert good["points"] == 10 and good["hi"] == 1.0
+    assert set(good["ev_by_points"]) == {10, 25, 60, 150}
+    assert good["ev_at_band_points"] == pytest.approx(0.5 * 10)
+    assert good["top_pick_ev"] == pytest.approx(1.0 * 10)  # the .5 song was played
+    assert rows[1]["hi"] == 0.15
+
+
 def test_summarize_reports_overall_metrics():
     p = [0.5, 0.5, 0.02, 0.02]
     y = [1, 0, 0, 0]
@@ -159,93 +189,69 @@ def test_summarize_reports_overall_metrics():
     assert out["log_loss"] == pytest.approx(log_loss(p, y))
     assert out["ece"] == pytest.approx(expected_calibration_error(p, y))
     assert [b["band"] for b in out["bands"]] == [b.name for b in BANDS]
+    assert [b["band"] for b in out["bands_4"]] == [b.name for b in PROPOSED_BANDS]
     assert len(out["reliability"]) == len(RELIABILITY_EDGES) - 1
 
 
-def test_isotonic_holdout_fits_first_half_and_fixes_overconfidence():
-    # The "model" says 2x the true rate. Isotonic fitted on the first half of
-    # the shows should pull the second half back toward honest rates.
-    rng = np.random.default_rng(1)
-    n_shows, per_show = 200, 50
-    shows = np.repeat(np.arange(n_shows), per_show)
-    dates = shows + 700000
-    true = rng.uniform(0.0, 0.3, n_shows * per_show)
-    y = (rng.uniform(0, 1, true.size) < true).astype(int)
-    probs = np.clip(true * 2, 0, 1)
+def test_per_show_totals_compare_summed_chances_with_songs_played():
+    p = [0.5, 0.5, 0.2, 0.3]
+    y = [1, 1, 0, 0]
+    out = per_show_totals(p, y, [1, 1, 2, 2], played_all={1: 3, 2: 1})
+    assert out["n_shows"] == 2
+    assert out["mean_sum_pred"] == pytest.approx(0.75)
+    assert out["mean_played_candidates"] == pytest.approx(1.0)
+    assert out["mean_played_all"] == pytest.approx(2.0)
+    assert out["mean_abs_gap"] == pytest.approx(0.75)
 
-    out = isotonic_holdout(probs, y, shows, dates)
-    assert out["n_fit_shows"] == 100 and out["n_eval_shows"] == 100
-    assert out["fit_through"] < out["eval_from"]
-    assert out["calibrated"]["ece"] < out["raw"]["ece"] / 3
-    assert out["raw"]["n_predictions"] == out["calibrated"]["n_predictions"] == 100 * per_show
+
+def _synthetic_blocks(seed=1):
+    rng = np.random.default_rng(seed)
+    n_shows, per_show = 200, 50
+    show = np.repeat(np.arange(n_shows), per_show)
+    dates = show + 700000
+    true = rng.uniform(0.0, 0.3, show.size)
+    y = (rng.uniform(0, 1, show.size) < true).astype(int)
+    probs = np.clip(true * 2, 0, 1)  # the "model" says twice the true rate
+    block = show // 50
+    starts = [700000, 700050, 700100, 700150]
+    return probs, y, dates, block, starts
+
+
+def test_nested_calibration_fixes_overconfidence_out_of_sample():
+    probs, y, dates, block, starts = _synthetic_blocks()
+    cal, fits = nested_calibration(probs, y, dates, block, starts, 700100, calibration_days=100)
+    ev = dates >= 700100
+    assert np.all(np.isnan(cal[~ev])) and not np.any(np.isnan(cal[ev]))
+    assert (
+        expected_calibration_error(cal[ev], y[ev])
+        < expected_calibration_error(probs[ev], y[ev]) / 3
+    )
+    assert [f["block"] for f in fits] == [2, 3]
+    for f in fits:
+        assert f["fit_through"] < f["start"]
+        assert f["n_predictions"] == 100 * 50
+
+
+def test_nested_calibration_only_sees_the_window_before_each_block():
+    probs, y, dates, block, starts = _synthetic_blocks()
+    base, _ = nested_calibration(probs, y, dates, block, starts, 700100, calibration_days=60)
+    in_block2 = block == 2
+    # Labels from block 2 onward, or older than the 60-day window, can't move block 2.
+    for changed in (dates >= 700100, dates < 700040):
+        y2 = np.where(changed, 1 - y, y)
+        cal2, _ = nested_calibration(probs, y2, dates, block, starts, 700100, calibration_days=60)
+        np.testing.assert_array_equal(base[in_block2], cal2[in_block2])
+    # ...but labels inside the window do.
+    y3 = np.where((dates >= 700040) & (dates < 700100), 1 - y, y)
+    cal3, _ = nested_calibration(probs, y3, dates, block, starts, 700100, calibration_days=60)
+    assert not np.array_equal(base[in_block2], cal3[in_block2])
 
 
 # ------------------------------------------------------- DB-backed helpers
 
 
-def _build_db(path: Path):
-    """24 shows over 2024 on two tours. Tour 1: 12 one-offs at distinct venues
-    (the last at venue 1). Tour 2: three 3-night runs (venues 2, 3, 4), then
-    one-offs at venues 1, 5, 6. A run = same venue + tour (the app's
-    residency). Song 1 every show; song 2 every other show; song 3 only on
-    night 1 of each run; song 4 rarely; song 5 only on the last show."""
-    c = open_db(path)
-    apply_schema(c)
-    c.executescript(
-        """
-        INSERT INTO tours (tour_id, name) VALUES (1, 'Spring'), (2, 'Summer');
-        INSERT INTO songs (song_id, name, first_seen_at, debut_date, original_artist) VALUES
-            (1, 'Staple',   '2019-01-01', '2019-01-01', 'Phish'),
-            (2, 'Frequent', '2019-01-01', '2019-01-01', 'Phish'),
-            (3, 'Opener',   '2019-01-01', '2019-01-01', 'Phish'),
-            (4, 'Rare',     '2019-01-01', '2019-01-01', 'Phish'),
-            (5, 'Debut',    '2024-12-01', '2024-12-01', 'Phish');
-        """
-    )
-    c.executemany(
-        "INSERT INTO venues (venue_id, name) VALUES (?, ?)", [(v, f"V{v}") for v in range(1, 30)]
-    )
-    shows = []
-    # Tour 1: 12 one-off shows, one per week from Jan 6, at venues 10..20 then 1.
-    for i in range(12):
-        venue = 1 if i == 11 else 10 + i
-        shows.append((f"2024-{1 + i // 4:02d}-{6 + 7 * (i % 4):02d}", venue, 1, 1, 1, i + 1))
-    # Tour 2: three 3-night runs at venues 2, 3, 4 (consecutive nights), plus 3 one-offs.
-    pos = 0
-    for venue, start_day in ((2, 1), (3, 8), (4, 15)):
-        for night in range(3):
-            pos += 1
-            shows.append((f"2024-07-{start_day + night:02d}", venue, 2, night + 1, 3, pos))
-    for k, venue in enumerate((1, 5, 6)):
-        pos += 1
-        shows.append((f"2024-08-{10 + k:02d}", venue, 2, 1, 1, pos))
-
-    for idx, (d, venue, tour, rpos, rlen, tpos) in enumerate(shows):
-        show_id = 5000 + idx
-        c.execute(
-            "INSERT INTO shows (show_id, show_date, venue_id, tour_id, run_position, "
-            "run_length, tour_position, fetched_at) VALUES (?,?,?,?,?,?,?,?)",
-            (show_id, d, venue, tour, rpos, rlen, tpos, d),
-        )
-        songs = [1]
-        if idx % 2 == 0:
-            songs.append(2)
-        if rpos == 1:
-            songs.append(3)
-        if idx % 7 == 0:
-            songs.append(4)
-        if idx == len(shows) - 1:
-            songs.append(5)
-        c.executemany(
-            "INSERT INTO setlist_songs (show_id, set_number, position, song_id) VALUES (?,?,?,?)",
-            [(show_id, "1", p + 1, s) for p, s in enumerate(songs)],
-        )
-    c.commit()
-    return c
-
-
-def test_build_inclusion_rows_matches_training_data_and_carries_song_ids(tmp_path):
-    conn = _build_db(tmp_path / "c.db")
+def test_build_inclusion_rows_matches_training_data_and_carries_song_ids(inclusion_runs_db):
+    conn = open_db(inclusion_runs_db)
     hist = InclusionHistory(conn)
     rows = build_inclusion_rows(hist, warmup_shows=3)
     X, y, dates, show_ids = build_training_data(conn, warmup_shows=3)
@@ -258,9 +264,9 @@ def test_build_inclusion_rows_matches_training_data_and_carries_song_ids(tmp_pat
         assert label == (1 if int(song) in hist.played_in_show[int(sid)] else 0)
 
 
-def test_tonights_setlist_never_reaches_tonights_features(tmp_path):
+def test_tonights_setlist_never_reaches_tonights_features(inclusion_runs_db):
     """Changing a show's own setlist must not change its feature rows."""
-    conn = _build_db(tmp_path / "c.db")
+    conn = open_db(inclusion_runs_db)
     last = 5000 + 23
     before = build_inclusion_rows(InclusionHistory(conn), warmup_shows=3)
     conn.execute("DELETE FROM setlist_songs WHERE show_id = ? AND song_id != 1", (last,))
@@ -276,8 +282,8 @@ def test_tonights_setlist_never_reaches_tonights_features(tmp_path):
     assert not np.array_equal(before.y[mb], after.y[ma])  # only the labels moved
 
 
-def test_frequency_baseline_is_trailing_12_month_play_rate(tmp_path):
-    conn = _build_db(tmp_path / "c.db")
+def test_frequency_baseline_is_trailing_12_month_play_rate(inclusion_runs_db):
+    conn = open_db(inclusion_runs_db)
     hist = InclusionHistory(conn)
     rows = build_inclusion_rows(hist, warmup_shows=3)
     base = frequency_baseline(hist, rows)
@@ -294,8 +300,8 @@ def test_frequency_baseline_is_trailing_12_month_play_rate(tmp_path):
     assert np.all((base >= 0) & (base <= 1))
 
 
-def test_played_earlier_in_run_scopes_to_venue_and_tour(tmp_path):
-    conn = _build_db(tmp_path / "c.db")
+def test_played_earlier_in_run_scopes_to_venue_and_tour(inclusion_runs_db):
+    conn = open_db(inclusion_runs_db)
     hist = InclusionHistory(conn)
     rows = build_inclusion_rows(hist, warmup_shows=3)
     flag = played_earlier_in_run(hist, rows.show_ids, rows.song_ids)
@@ -311,6 +317,7 @@ def test_played_earlier_in_run_scopes_to_venue_and_tour(tmp_path):
     assert not by_key[(run1[1], 4)]
     # Night 3: anything from nights 1-2 counts (song 3 opened night 1).
     assert by_key[(run1[2], 3)]
+    assert hist.run_prior_songs(run1[2]) == {1, 2, 3}
     # Tour-1 one-offs never flag.
     tour1 = [5000 + i for i in range(3, 12)]
     assert not any(v for (s, _), v in by_key.items() if s in tour1)
@@ -319,52 +326,64 @@ def test_played_earlier_in_run_scopes_to_venue_and_tour(tmp_path):
     assert int(flag.sum()) > 0
 
 
-def test_run_calibration_end_to_end_writes_json(tmp_path):
-    db = tmp_path / "c.db"
-    _build_db(db).close()
+_PERIOD_KEYS = {"raw", "run_rule", "calibrated", "baseline", "totals", "coverage", "run_slice"}
+
+
+def test_run_calibration_end_to_end_writes_json(inclusion_runs_db, tmp_path):
     out = tmp_path / "out"
-    # Train a stand-in "production artifact" on the same tiny DB.
     from phishpicker.train.inclusion_runner import train_inclusion
 
-    art = tmp_path / "inclusion_model.lgb"
-    train_inclusion(db, art, holdout_days=30, num_boost_round=20, warmup_shows=3)
-
+    art = tmp_path / "art" / "inclusion_model.lgb"
+    train_inclusion(
+        inclusion_runs_db,
+        art,
+        holdout_days=30,
+        num_boost_round=20,
+        warmup_shows=3,
+        calibrate=False,
+    )
     result = run_calibration(
-        db,
-        cutoff="2024-07-01",
+        inclusion_runs_db,
+        cutoff="2024-07-08",
         out_dir=out,
+        recent_from="2024-07-15",
         artifact_path=art,
         artifact_trained_through="2024-07-08",
         num_boost_round=20,
         warmup_shows=3,
+        block_shows=3,
+        calibration_days=200,
     )
     data = json.loads((out / "inclusion_calibration.json").read_text())
     assert data == json.loads(json.dumps(result))  # the file holds every number
-    assert data["config"]["cutoff"] == "2024-07-01"
-    assert data["n_test_shows"] == 12
-    assert data["model"]["n_predictions"] == data["baseline"]["n_predictions"] > 0
-    cov = data["coverage"]
-    assert cov["played_pairs"] >= cov["played_pairs_in_candidates"]
-    assert cov["missed_debuts"] >= 1  # song 5 debuts at the last show
-    # Under 3 years of history: nothing has aged out of the candidate set.
-    assert cov["older_songs_per_show"] == 0.0
-    assert cov["older_song_play_rate"] is None
-    assert data["run_slice"]["model"]["n_predictions"] > 0
-    assert set(data["isotonic"]) >= {"raw", "calibrated", "n_fit_shows", "n_eval_shows"}
+    assert data["config"]["cutoff"] == "2024-07-08"
+    assert data["config"]["block_shows"] == 3
+    full, recent = data["periods"]["full"], data["periods"]["recent"]
+    assert set(full) >= _PERIOD_KEYS and set(recent) >= _PERIOD_KEYS
+    assert full["raw"]["n_shows"] == 9 and recent["raw"]["n_shows"] == 6
+    for period in (full, recent):
+        n = period["raw"]["n_predictions"]
+        assert n > 0
+        assert period["run_rule"]["n_predictions"] == period["calibrated"]["n_predictions"] == n
+        assert set(period["totals"]) == {"raw", "run_rule", "calibrated"}
+        assert len(period["calibrated"]["bands_4"]) == 4
+    # The run rule only ever lowers chances.
+    assert full["run_rule"]["mean_pred"] <= full["raw"]["mean_pred"]
+    for f in data["calibration_fits"]:
+        assert f["fit_through"] < f["start"] and f["start"] >= "2024-07-08"
     prod = data["production_artifact"]
     assert prod["n_shows"] == 8  # shows strictly after 2024-07-08
-    assert prod["artifact"]["n_predictions"] == prod["backtest_model_same_shows"]["n_predictions"]
-    assert set(prod["run_slice"]) >= {"artifact", "backtest_model"}
+    assert prod["artifact"]["n_predictions"] == prod["artifact_run_rule"]["n_predictions"]
     assert "chart" in data  # path or the reason it was skipped
 
 
-def test_cli_eval_inclusion_calibration_needs_no_api_settings(tmp_path, monkeypatch):
+def test_cli_eval_inclusion_calibration_needs_no_api_settings(
+    inclusion_runs_db, tmp_path, monkeypatch
+):
     import sys
 
     import phishpicker.cli as cli
 
-    db = tmp_path / "c.db"
-    _build_db(db).close()
     monkeypatch.delenv("PHISHNET_API_KEY", raising=False)
     monkeypatch.delenv("PHISHPICKER_ADMIN_TOKEN", raising=False)
     monkeypatch.chdir(tmp_path)  # no .env here either
@@ -377,17 +396,23 @@ def test_cli_eval_inclusion_calibration_needs_no_api_settings(tmp_path, monkeypa
             "eval",
             "inclusion-calibration",
             "--db",
-            str(db),
+            str(inclusion_runs_db),
             "--cutoff",
-            "2024-07-01",
+            "2024-07-08",
             "--out",
             str(out),
             "--iterations",
             "20",
             "--warmup-shows",
             "3",
+            "--block-shows",
+            "3",
+            "--calibration-days",
+            "200",
         ],
     )
     assert cli.main() == 0
     data = json.loads((out / "inclusion_calibration.json").read_text())
     assert data["production_artifact"] is None  # no --artifact given
+    # Default: 182 days before the last show, but never before the cutoff.
+    assert data["config"]["recent_from"] == "2024-07-08"

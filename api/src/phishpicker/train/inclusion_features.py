@@ -135,9 +135,27 @@ class InclusionHistory:
                 1 if (art is not None and art not in PHISH_FAMILY_ARTISTS) else 0
             )
         self._album_map = song_album_map(conn, list(self.plays.keys()))
+        self._run_prior: dict[int, frozenset[int]] | None = None
 
     def context_for(self, show_id: int) -> ShowContext:
         return self._ctx_by_show[show_id]
+
+    def run_prior_songs(self, show_id: int) -> frozenset[int]:
+        """Songs played at earlier shows of this show's run — same venue_id +
+        tour_id, the app's residency definition. Empty for night 1, one-offs,
+        and shows without a venue or tour."""
+        if self._run_prior is None:
+            prior: dict[int, frozenset[int]] = {}
+            so_far: dict[tuple[int, int], set[int]] = defaultdict(set)
+            for sh in self.shows:  # chronological
+                ctx = self._ctx_by_show[sh["show_id"]]
+                if ctx.venue_id is None or ctx.tour_id is None:
+                    continue
+                key = (ctx.venue_id, ctx.tour_id)
+                prior[sh["show_id"]] = frozenset(so_far[key])
+                so_far[key] |= self.played_in_show.get(sh["show_id"], set())
+            self._run_prior = prior
+        return self._run_prior.get(show_id, frozenset())
 
     def _count_between(self, sid: int, lo_ord: int, hi_ord: int) -> int:
         arr = self._ords.get(sid)
@@ -261,6 +279,19 @@ def build_inclusion_rows(hist: InclusionHistory, warmup_shows: int = 50) -> Incl
         dates=np.array(dates, dtype=int),
         show_ids=np.array(show_ids, dtype=int),
         song_ids=np.array(song_ids, dtype=int),
+    )
+
+
+def played_earlier_in_run(hist: InclusionHistory, show_ids, song_ids) -> np.ndarray:
+    """Per (show, song) row: was the song already played earlier in the run?"""
+    return np.array(
+        [
+            song in hist.run_prior_songs(show)
+            for show, song in zip(
+                np.asarray(show_ids).tolist(), np.asarray(song_ids).tolist(), strict=True
+            )
+        ],
+        dtype=bool,
     )
 
 

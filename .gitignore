@@ -9,6 +9,9 @@ api/data/metrics.json
 api/data/*.v10-local-backup
 api/data/inclusion_model.lgb
 api/data/inclusion_model.meta.json
+api/data/inclusion_calibration.json
+# locally trained artifacts awaiting a manual ship
+api/artifacts/
 *.db
 *.db-journal
 *.db-wal
