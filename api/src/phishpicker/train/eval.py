@@ -147,14 +147,18 @@ def evaluate_booster(
     conn: sqlite3.Connection,
     booster: lgb.Booster,
     n_holdout_shows: int = 20,
+    show_ids: Collection[int] | None = None,
 ) -> WalkForwardResult:
     """Score one fixed model on the walk-forward holdout, with no refitting.
 
     Use it to grade the model already in prod on the same shows a new
     training run is graded on. Metrics from two different holdouts can't be
-    compared.
+    compared. `show_ids` narrows the holdout to those shows (the ship gate
+    leaves out shows the model trained on).
     """
     holdout = select_holdout_shows(conn, n_holdout_shows)
+    if show_ids is not None:
+        holdout = [sh for sh in holdout if sh["show_id"] in show_ids]
     all_song_ids = [r["song_id"] for r in conn.execute("SELECT song_id FROM songs")]
     all_show_dates = sorted(r[0] for r in conn.execute("SELECT show_date FROM shows"))
     fold_results: list[FoldResult] = []

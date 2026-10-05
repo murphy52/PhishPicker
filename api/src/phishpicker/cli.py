@@ -129,6 +129,13 @@ def main() -> int:
         action="store_true",
         help="ship even if MRR regressed beyond tolerance",
     )
+    p_run.add_argument(
+        "--current-model",
+        default=None,
+        help="the model the ship gate grades on this run's holdout, with its .meta.json "
+        "and metrics.json beside it (default: model.lgb in the data dir, the one "
+        "this run replaces)",
+    )
 
     p_eval = sub.add_parser("eval", help="offline model evaluations (no API settings needed)")
     eval_sub = p_eval.add_subparsers(dest="eval_cmd", required=True)
@@ -383,6 +390,8 @@ def main() -> int:
         return 0
 
     if args.cmd == "train" and args.train_cmd == "run":
+        from pathlib import Path
+
         from phishpicker.train.runner import run_training
 
         conn = open_db(s.db_path, read_only=True)
@@ -398,7 +407,9 @@ def main() -> int:
             half_life_years=args.half_life_years,
             seed=args.seed,
             override_ship_gate=args.override,
+            current_model_path=Path(args.current_model) if args.current_model else None,
         )
+        print(result["ship_gate"]["summary"])
         if not result.get("wrote_artifacts"):
             print(
                 f"Ship gate blocked: new_mrr={result.get('mrr', float('nan')):.3f} "

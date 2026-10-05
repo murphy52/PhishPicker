@@ -168,3 +168,25 @@ def test_evaluate_booster_scores_the_walk_forward_holdout(small_train_db):
     ]
     assert r.n_slots == wf.n_slots
     assert 0.0 < r.mrr <= 1.0
+
+
+def test_evaluate_booster_can_narrow_to_given_shows(small_train_db):
+    """The ship gate grades the current model on exactly the shows it compares,
+    which can be fewer than the full holdout."""
+    booster, _, _ = train_ranker(
+        small_train_db,
+        cutoff_date="2099-01-01",
+        negatives_per_positive=3,
+        num_iterations=10,
+        seed=0,
+    )
+    full = evaluate_booster(small_train_db, booster, n_holdout_shows=3)
+    kept = full.fold_results[1:]
+    r = evaluate_booster(
+        small_train_db,
+        booster,
+        n_holdout_shows=3,
+        show_ids={f.heldout_show_id for f in kept},
+    )
+    assert [f.heldout_show_id for f in r.fold_results] == [f.heldout_show_id for f in kept]
+    assert r.n_slots == sum(len(f.ranks) for f in kept)

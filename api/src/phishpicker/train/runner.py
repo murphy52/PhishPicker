@@ -24,7 +24,7 @@ from phishpicker.train.baselines import (
 )
 from phishpicker.train.eval import WalkForwardResult, walk_forward_eval
 from phishpicker.train.features import FEATURE_COLUMNS
-from phishpicker.train.ship_gate import ship_gate_check
+from phishpicker.train.ship_gate import check_against_current_model
 from phishpicker.train.trainer import train_ranker
 
 MODEL_VERSION = "0.2.0-lightgbm"
@@ -53,9 +53,13 @@ def run_training(
     seed: int = 0,
     override_ship_gate: bool = False,
     n_resamples: int = 1000,
+    current_model_path: Path | None = None,
 ) -> dict:
     """Train, evaluate, and (if gate passes) write artifacts. Returns the
-    metrics dict that was persisted."""
+    metrics dict that was persisted.
+
+    The ship gate grades `current_model_path` (default: model.lgb in
+    `data_dir`, the artifact this run replaces) on the same holdout."""
     if cutoff_date is None:
         # Use the latest show *with a setlist*, not just the latest show — phish.net
         # lists future-dated placeholders with no setlist rows yet.
@@ -130,9 +134,17 @@ def run_training(
     }
     log.info("stage 3/3 done in %.1fs", time.monotonic() - t0)
 
-    # 4. Ship gate.
+    # 4. Ship gate: grade the current model on the same holdout shows.
     metrics_path = Path(data_dir) / "metrics.json"
-    gate_passed = ship_gate_check(new_mrr=wf.mrr, previous_metrics_path=metrics_path)
+    if current_model_path is None:
+        current_model_path = Path(data_dir) / "model.lgb"
+    log.info("ship gate: grading the current model %s on the same holdout", current_model_path)
+    t0 = time.monotonic()
+    gate = check_against_current_model(
+        conn, wf, current_model_path=Path(current_model_path), n_holdout_shows=n_holdout_shows
+    )
+    gate_passed = gate.passed
+    (log.info if gate_passed else log.warning)("%s (%.1fs)", gate.summary, time.monotonic() - t0)
 
     # 5. Build the full metrics dict regardless of gate status so we never
     # throw away hours of compute. On block we write to a staging path for
@@ -168,6 +180,7 @@ def run_training(
         "by_slot": {str(k): v for k, v in wf.by_slot.items()},
         "baselines": baselines,
         "ship_gate_passed": gate_passed,
+        "ship_gate": gate.to_dict(),
         "model_version": MODEL_VERSION,
         "feature_columns": list(FEATURE_COLUMNS),
         "feature_importance_gain": feature_importance,
