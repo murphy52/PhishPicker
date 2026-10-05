@@ -1,5 +1,8 @@
 import json
+import sqlite3
 from pathlib import Path
+
+import pytest
 
 from phishpicker.db.connection import apply_schema, open_db
 from phishpicker.ingest.shows import upsert_setlist_songs, upsert_show
@@ -127,3 +130,124 @@ def test_upsert_setlist_normalizes_encore_to_uppercase(tmp_path: Path):
     )
     row = conn.execute("SELECT set_number FROM setlist_songs WHERE show_id = 999").fetchone()
     assert row["set_number"] == "E"
+
+
+# --- rewrite only what changed, and never expose a half-written setlist (#36) ---
+
+
+def _two_songs(first: int, second: int, mark: str = ",") -> list[dict]:
+    return [
+        {"showid": 42, "set": "1", "position": 1, "songid": first, "song": f"S{first}",
+         "trans_mark": mark},
+        {"showid": 42, "set": "2", "position": 2, "songid": second, "song": f"S{second}",
+         "trans_mark": ","},
+    ]
+
+
+def _seed_show_with_setlist(path: Path) -> None:
+    conn = open_db(path)
+    apply_schema(conn)
+    upsert_show(conn, {"showid": 42, "showdate": "2026-10-04", "venueid": None, "tourid": None})
+    upsert_setlist_songs(conn, _two_songs(1, 2))
+    conn.close()
+
+
+def _song_ids(conn) -> list[int]:
+    return [
+        r[0]
+        for r in conn.execute(
+            "SELECT song_id FROM setlist_songs WHERE show_id = 42 ORDER BY position"
+        )
+    ]
+
+
+def test_upsert_setlist_skips_an_unchanged_setlist(tmp_path: Path):
+    _seed_show_with_setlist(tmp_path / "t.db")
+    conn = open_db(tmp_path / "t.db")
+    statements: list[str] = []
+    conn.set_trace_callback(statements.append)
+
+    written = upsert_setlist_songs(conn, _two_songs(1, 2))
+
+    assert written == 0
+    assert not [s for s in statements if s.lstrip().upper().startswith(("DELETE", "INSERT"))]
+    assert _song_ids(conn) == [1, 2]
+
+
+def test_upsert_setlist_rewrites_a_changed_setlist(tmp_path: Path):
+    _seed_show_with_setlist(tmp_path / "t.db")
+    conn = open_db(tmp_path / "t.db")
+
+    # A trans_mark-only fix counts as a change too.
+    assert upsert_setlist_songs(conn, _two_songs(1, 2, mark=">")) == 2
+    mark = conn.execute(
+        "SELECT trans_mark FROM setlist_songs WHERE show_id = 42 AND position = 1"
+    ).fetchone()[0]
+    assert mark == ">"
+    assert upsert_setlist_songs(conn, _two_songs(1, 3, mark=">")) == 2
+    assert _song_ids(conn) == [1, 3]
+
+
+def test_a_reader_never_sees_the_show_without_its_setlist(tmp_path: Path):
+    """The DELETE and the re-INSERT commit together: a second connection
+    reading mid-rewrite (after the DELETE ran, as the INSERT runs) still sees
+    the old setlist, then the new one — never an empty show."""
+    _seed_show_with_setlist(tmp_path / "t.db")
+    writer = open_db(tmp_path / "t.db")
+    reader = open_db(tmp_path / "t.db", read_only=True)
+    seen_mid_write: list[list[int]] = []
+
+    def peek(sql: str) -> None:
+        if sql.lstrip().startswith("INSERT INTO setlist_songs"):
+            seen_mid_write.append(_song_ids(reader))
+
+    writer.set_trace_callback(peek)
+    upsert_setlist_songs(writer, _two_songs(1, 3))
+    writer.set_trace_callback(None)
+
+    assert seen_mid_write and all(ids == [1, 2] for ids in seen_mid_write)
+    assert _song_ids(reader) == [1, 3]
+
+
+class _InsertFails:
+    """Wraps a connection so the setlist INSERT fails (disk full, say) after
+    the DELETE has already run."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __enter__(self):
+        return self._conn.__enter__()
+
+    def __exit__(self, *exc):
+        return self._conn.__exit__(*exc)
+
+    def _check(self, sql: str) -> None:
+        if sql.lstrip().startswith("INSERT INTO setlist_songs"):
+            raise sqlite3.OperationalError("database or disk is full")
+
+    def execute(self, sql, *args):
+        self._check(sql)
+        return self._conn.execute(sql, *args)
+
+    def executemany(self, sql, *args):
+        self._check(sql)
+        return self._conn.executemany(sql, *args)
+
+
+def test_a_failed_rewrite_keeps_the_old_setlist(tmp_path: Path):
+    _seed_show_with_setlist(tmp_path / "t.db")
+    conn = open_db(tmp_path / "t.db")
+    statements: list[str] = []
+    conn.set_trace_callback(statements.append)
+
+    with pytest.raises(sqlite3.OperationalError):
+        upsert_setlist_songs(_InsertFails(conn), _two_songs(1, 3))
+
+    # The DELETE really did run before the failure; the rollback undid it.
+    assert any(s.lstrip().startswith("DELETE FROM setlist_songs") for s in statements)
+    fresh = open_db(tmp_path / "t.db", read_only=True)
+    assert _song_ids(fresh) == [1, 2]
