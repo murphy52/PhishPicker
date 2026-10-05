@@ -112,14 +112,14 @@ def load_inclusion_calibration(path: Path, model_path: Path) -> InclusionCalibra
     return cal
 
 
-def likely_tonight(
+def inclusion_chances(
     read_conn: sqlite3.Connection,
     show_id: int,
     scorer: LightGBMScorer,
-    top_n: int = 30,
     calibration: InclusionCalibration | None = None,
-) -> list[dict]:
-    """Ranked inclusion predictions for `show_id` (must exist in `shows`)."""
+) -> list[tuple[int, float]]:
+    """(song_id, chance) for every candidate for `show_id`, likeliest first and
+    unrounded. Empty when `show_id` is not in `shows`."""
     hist = InclusionHistory(read_conn)
     try:
         ctx = hist.context_for(show_id)
@@ -135,9 +135,22 @@ def likely_tonight(
     adjusted = apply_run_rule(scorer.score(X), np.array([s in played_this_run for s in kept]))
     shown = calibration.apply(adjusted) if calibration is not None else adjusted
     # Calibration ties songs (it is a step-ish map); the adjusted score breaks ties.
-    order = sorted(range(len(kept)), key=lambda i: (-shown[i], -adjusted[i]))[:top_n]
+    order = sorted(range(len(kept)), key=lambda i: (-shown[i], -adjusted[i]))
+    return [(kept[i], float(shown[i])) for i in order]
 
-    top_ids = [kept[i] for i in order]
+
+def likely_tonight(
+    read_conn: sqlite3.Connection,
+    show_id: int,
+    scorer: LightGBMScorer,
+    top_n: int = 30,
+    calibration: InclusionCalibration | None = None,
+) -> list[dict]:
+    """Ranked inclusion predictions for `show_id` (must exist in `shows`)."""
+    top = inclusion_chances(read_conn, show_id, scorer, calibration)[:top_n]
+    if not top:
+        return []
+    top_ids = [sid for sid, _ in top]
     names = dict(
         read_conn.execute(
             f"SELECT song_id, name FROM songs WHERE song_id IN ({','.join('?' * len(top_ids))})",
@@ -145,10 +158,6 @@ def likely_tonight(
         ).fetchall()
     )
     return [
-        {
-            "song_id": kept[i],
-            "name": names.get(kept[i], str(kept[i])),
-            "probability": round(float(shown[i]), 4),
-        }
-        for i in order
+        {"song_id": sid, "name": names.get(sid, str(sid)), "probability": round(p, 4)}
+        for sid, p in top
     ]

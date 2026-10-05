@@ -125,6 +125,7 @@ from phishpicker.inclusion import (  # noqa: E402
     RUN_REPEAT_CHANCE,
     InclusionCalibration,
     apply_run_rule,
+    inclusion_chances,
     load_inclusion_calibration,
 )
 from phishpicker.train.inclusion_features import (  # noqa: E402
@@ -243,6 +244,25 @@ def test_likely_tonight_applies_calibration_after_the_run_rule(inclusion_runs_db
         assert by_id[sid] == round(float(cal.apply(np.array([adj]))[0]), 4)
     probs = [r["probability"] for r in got]
     assert probs == sorted(probs, reverse=True)
+
+
+def test_inclusion_chances_ranks_every_candidate_unrounded(inclusion_runs_db, tmp_path):
+    """The full list behind Likely Tonight (the bonus pick prices every song):
+    every candidate, unrounded, and likely_tonight is its rounded head."""
+    model = _train(inclusion_runs_db, tmp_path, calibrate=False)
+    scorer = load_inclusion_scorer(model)
+    conn = open_db(inclusion_runs_db)
+    raw, prior = _raw_scores(conn, NIGHT2, scorer)
+    got = inclusion_chances(conn, NIGHT2, scorer)
+    assert [sid for sid, _ in got] == [r["song_id"] for r in likely_tonight(conn, NIGHT2, scorer)]
+    assert dict(got) == pytest.approx(
+        {s: min(float(p), RUN_REPEAT_CHANCE) if s in prior else float(p) for s, p in raw.items()}
+    )
+    head = likely_tonight(conn, NIGHT2, scorer, top_n=2)
+    assert [(r["song_id"], r["probability"]) for r in head] == [
+        (sid, round(p, 4)) for sid, p in got[:2]
+    ]
+    assert inclusion_chances(conn, 999_999, scorer) == []
 
 
 def test_walk_forward_trains_each_block_only_on_earlier_shows(inclusion_runs_db):
