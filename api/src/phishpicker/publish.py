@@ -390,6 +390,8 @@ def record_publish(live_conn: sqlite3.Connection, show_id: str, seq: int) -> Non
 SCHEDULE_LIMIT = 6
 # The show shape before any bundle sets the real one (live_preview's default).
 SCHEDULE_STRUCTURE = [["1", 9], ["2", 7], ["E", 2]]
+# The next show's early read: only what Home's teaser could show.
+SCHEDULE_LIKELY_SONGS = 10
 
 
 def build_schedule(read_conn: sqlite3.Connection, today: str, limit: int = SCHEDULE_LIMIT) -> dict:
@@ -422,7 +424,22 @@ def publish_schedule(settings: Settings, today: str, *, dry_run: bool = False) -
     list, and phishvs reconciles against it."""
     with closing(open_db(settings.db_path, read_only=True)) as read:
         body = build_schedule(read, today)
-    summary = {"shows": len(body["shows"]), "dates": [s["date"] for s in body["shows"]]}
+        # The next show's Likely Tonight chances, as an early read between
+        # shows. Like the bundle's block, never fatal: None leaves it out.
+        if body["shows"]:
+            nxt = body["shows"][0]
+            chances = _chances_block(read, nxt["showid"], settings.data_dir)
+            if chances is not None:
+                body["likely"] = {
+                    "showid": nxt["showid"],
+                    "as_of": chances["as_of"],
+                    "songs": chances["songs"][:SCHEDULE_LIKELY_SONGS],
+                }
+    summary = {
+        "shows": len(body["shows"]),
+        "dates": [s["date"] for s in body["shows"]],
+        "likely": "likely" in body,
+    }
     if dry_run:
         return summary
     publish(

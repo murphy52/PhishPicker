@@ -319,7 +319,8 @@ def main() -> int:
             return 1
         print(
             f"publish-schedule {today}: {'dry-run' if args.dry_run else 'posted'} "
-            f"{result['shows']} shows {' '.join(result['dates'])}"
+            f"{result['shows']} shows {' '.join(result['dates'])} "
+            f"likely={'yes' if result['likely'] else 'no'}"
         )
         return 0
 
