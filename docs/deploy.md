@@ -48,6 +48,25 @@ so the `publish_log` table exists before the first phishvs publish.
 
 Verify: `curl http://127.0.0.1:3000/` from the NAS should return the app HTML.
 
+### live.db backups
+
+`phishpicker.db` can be rebuilt from phish.net; `live.db` (scorecards, frozen
+brackets, `publish_log`, push subscriptions) cannot. `ingest-cron` copies it to
+`live-YYYY-MM-DD.db` at startup and nightly at `LIVE_DB_BACKUP_HOUR` (default
+05:00 in `INGEST_CRON_TZ`), checks each copy with `PRAGMA integrity_check`, and
+keeps the newest `LIVE_DB_BACKUP_KEEP` (default 7). The copies go to
+`PHISHPICKER_BACKUP_HOST`, or `<data>/backups` when that is unset. Each one is a
+single self-contained file. To restore:
+
+```bash
+cd /home/Murphy52/docker/apps/phishpicker
+docker compose stop api ingest-cron
+cp data/live.db data/live.db.before-restore
+cp <backup dir>/live-YYYY-MM-DD.db data/live.db
+rm -f data/live.db-wal data/live.db-shm   # a stale WAL would replay onto the restored file
+docker compose start api ingest-cron
+```
+
 ---
 
 ## 2. Auth — pick ONE architecture
