@@ -4,7 +4,7 @@ import sys
 
 from phishpicker.config import Settings
 from phishpicker.db.connection import apply_live_schema, apply_schema, open_db
-from phishpicker.ingest.pipeline import run_full_ingest
+from phishpicker.ingest.pipeline import run_ingest
 from phishpicker.phishnet.client import PhishNetClient
 
 
@@ -23,13 +23,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="phishpicker")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init-db", help="initialize local sqlite databases")
-    p_ingest = sub.add_parser("ingest", help="full phish.net ingest")
+    p_ingest = sub.add_parser(
+        "ingest",
+        help="phish.net ingest: setlists of new and recent shows, plus a full "
+        "sweep when the last one is a week old",
+    )
     p_ingest.add_argument(
         "--artist-id",
         type=int,
         default=1,
         help="only ingest shows by this artist (1=Phish, 2=Trey Anastasio, "
         "6=Mike Gordon, 7=Jon Fishman, 9=Page McConnell; 0 = all artists)",
+    )
+    p_ingest.add_argument(
+        "--full",
+        action="store_true",
+        help="re-fetch the setlist of every show that has happened, not just "
+        "new and recent ones",
     )
 
     p_replay = sub.add_parser(
@@ -212,7 +222,7 @@ def main() -> int:
         artist = None if args.artist_id == 0 else args.artist_id
         with PhishNetClient(api_key=s.phishnet_api_key, base_url=s.phishnet_base_url) as client:
             conn = open_db(s.db_path)
-            stats = run_full_ingest(conn, client, artist_id=artist)
+            stats = run_ingest(conn, client, artist_id=artist, full=True if args.full else None)
         print(f"Ingest complete (artist_id={artist}): {stats}")
         return 0
 

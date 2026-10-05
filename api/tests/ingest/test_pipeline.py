@@ -4,7 +4,7 @@ from pathlib import Path
 from pytest_httpx import HTTPXMock
 
 from phishpicker.db.connection import open_db
-from phishpicker.ingest.pipeline import run_full_ingest
+from phishpicker.ingest.pipeline import run_ingest
 from phishpicker.phishnet.client import PhishNetClient
 
 
@@ -32,10 +32,21 @@ def test_full_ingest_populates_all_tables(
     conn = open_db(tmp_path / "test.db")
     client = PhishNetClient(api_key="test-key", base_url="https://api.phish.net/v5")
 
-    stats = run_full_ingest(conn, client)
+    stats = run_ingest(conn, client)
 
     # Assert return dict has the expected keys
-    assert set(stats.keys()) == {"songs", "venues", "shows", "setlist_rows"}
+    assert set(stats.keys()) == {
+        "mode",
+        "songs",
+        "venues",
+        "shows",
+        "setlists_fetched",
+        "setlists_changed",
+        "setlist_errors",
+        "setlist_rows",
+    }
+    # A fresh DB has never had a full sweep, so the first run is one.
+    assert stats["mode"] == "full"
 
     # Assert counts
     assert stats["songs"] == 2
@@ -107,7 +118,7 @@ def test_setlist_fetch_failure_does_not_abort_ingest(
 
     conn = open_db(tmp_path / "test.db")
     with PhishNetClient(api_key="test-key", base_url="https://api.phish.net/v5") as client:
-        stats = run_full_ingest(conn, client)
+        stats = run_ingest(conn, client)
 
     # Both shows were processed (ingest didn't abort)
     assert stats["shows"] == 2
@@ -161,7 +172,7 @@ def test_ingest_filters_non_phish_shows_by_default(
 
     conn = open_db(tmp_path / "test.db")
     with PhishNetClient(api_key="test-key", base_url="https://api.phish.net/v5") as client:
-        stats = run_full_ingest(conn, client)
+        stats = run_ingest(conn, client)
 
     # Only the Phish show was ingested.
     assert stats["shows"] == 1
@@ -223,6 +234,6 @@ def test_ingest_artist_id_none_keeps_all_shows(
 
     conn = open_db(tmp_path / "test.db")
     with PhishNetClient(api_key="test-key", base_url="https://api.phish.net/v5") as client:
-        stats = run_full_ingest(conn, client, artist_id=None)
+        stats = run_ingest(conn, client, artist_id=None)
 
     assert stats["shows"] == 2
