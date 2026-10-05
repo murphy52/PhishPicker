@@ -9,6 +9,7 @@ from phishpicker.model.scorer import Scorer
 from phishpicker.model.stats import _find_run_start, compute_song_stats
 from phishpicker.predict import predict_next_stateless
 from phishpicker.train.bigrams import compute_bigram_probs
+from phishpicker.train.build import resolve_tour_id
 from phishpicker.train.extended_stats import compute_extended_stats
 
 # Per-show feature caches (song stats, extended stats, bigram probabilities)
@@ -89,13 +90,16 @@ def _show_feature_caches(
     if cached is not None:
         _feature_cache.move_to_end(key)
         return cached
+    # Tour-scoped like build_feature_rows, so the cached features match what
+    # training computed for the same show (#44).
+    tour_id = resolve_tour_id(read_conn, show_date, venue_id)
     stats = (
-        compute_song_stats(read_conn, show_date, venue_id, song_ids)
+        compute_song_stats(read_conn, show_date, venue_id, song_ids, tour_id=tour_id)
         if scorer_name in ("lightgbm", "heuristic")
         else None
     )
     ext = (
-        compute_extended_stats(read_conn, show_date, venue_id, song_ids)
+        compute_extended_stats(read_conn, show_date, venue_id, song_ids, tour_id=tour_id)
         if scorer_name == "lightgbm"
         else None
     )
@@ -152,22 +156,9 @@ def _played_in_run(
     if venue_id is None:
         return set()
 
-    # Resolve tour_id: prefer the canonical shows row if the live date is
-    # already pre-scheduled; fall back to the tours table by date range.
-    tour_row = read_conn.execute(
-        "SELECT tour_id FROM shows WHERE show_date = ? AND venue_id = ? LIMIT 1",
-        (show_date, venue_id),
-    ).fetchone()
-    if tour_row and tour_row["tour_id"] is not None:
-        tour_id = tour_row["tour_id"]
-    else:
-        fallback = read_conn.execute(
-            "SELECT tour_id FROM tours WHERE start_date <= ? AND end_date >= ? LIMIT 1",
-            (show_date, show_date),
-        ).fetchone()
-        if not fallback or fallback["tour_id"] is None:
-            return set()
-        tour_id = fallback["tour_id"]
+    tour_id = resolve_tour_id(read_conn, show_date, venue_id)
+    if tour_id is None:
+        return set()
 
     run_start = _find_run_start(read_conn, venue_id, show_date, tour_id=tour_id)
     if run_start == show_date:

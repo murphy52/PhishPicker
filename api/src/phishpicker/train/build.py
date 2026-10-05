@@ -21,6 +21,41 @@ SET_NUMBER_TO_INT = {"1": 1, "2": 2, "3": 3, "4": 4, "E": 4}
 SEGUE_MARK_TO_INT = {",": 0, ">": 1, "->": 2}
 
 
+def resolve_tour_id(
+    conn: sqlite3.Connection,
+    show_date: str,
+    venue_id: int | None,
+    show_id: int = 0,
+) -> int | None:
+    """The show's tour, the same way for training and for a live show.
+
+    Training has a show_id, so its shows row answers. A live show has none
+    yet, but phish.net lists upcoming shows with their tour, so the canonical
+    row on the same date and venue answers instead (#44: without this, live
+    times_this_tour was always 0). The tours date range is the last resort;
+    today's rows are stubs with no dates, so it rarely matches.
+    """
+    if show_id:
+        r = conn.execute("SELECT tour_id FROM shows WHERE show_id = ?", (show_id,)).fetchone()
+        if r and r["tour_id"] is not None:
+            return int(r["tour_id"])
+    if venue_id is not None:
+        r = conn.execute(
+            "SELECT tour_id FROM shows WHERE show_date = ? AND venue_id = ? "
+            "AND tour_id IS NOT NULL LIMIT 1",
+            (show_date, venue_id),
+        ).fetchone()
+        if r:
+            return int(r["tour_id"])
+    r = conn.execute(
+        "SELECT tour_id FROM tours "
+        "WHERE start_date IS NOT NULL AND end_date IS NOT NULL "
+        "AND start_date <= ? AND end_date >= ? LIMIT 1",
+        (show_date, show_date),
+    ).fetchone()
+    return int(r["tour_id"]) if r else None
+
+
 def build_feature_rows(
     conn: sqlite3.Connection,
     show_date: str,
@@ -46,24 +81,7 @@ def build_feature_rows(
     all 18 slots — saves ~1.3s per slot at ~18 slots.
     """
     ctx = compute_show_context(conn, show_date=show_date, venue_id=venue_id)
-    # Resolve tour_id: if show_id is populated (training, or a live show whose
-    # row already exists), read shows.tour_id directly. Otherwise fall back to
-    # the date-range match via tours.start_date/end_date (sparse today — stubs
-    # omit dates — but useful once we ingest real tour metadata).
-    tour_id: int | None = None
-    if show_id:
-        r = conn.execute("SELECT tour_id FROM shows WHERE show_id = ?", (show_id,)).fetchone()
-        if r and r["tour_id"] is not None:
-            tour_id = int(r["tour_id"])
-    if tour_id is None:
-        r = conn.execute(
-            "SELECT tour_id FROM tours "
-            "WHERE start_date IS NOT NULL AND end_date IS NOT NULL "
-            "AND start_date <= ? AND end_date >= ? LIMIT 1",
-            (show_date, show_date),
-        ).fetchone()
-        if r:
-            tour_id = int(r["tour_id"])
+    tour_id = resolve_tour_id(conn, show_date, venue_id, show_id=show_id)
 
     stats = (
         stats_cache

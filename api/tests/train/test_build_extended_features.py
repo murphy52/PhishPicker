@@ -673,3 +673,64 @@ def test_extended_stats_collapses_sandwich_repeats(conn):
     # plays_last_6mo: only show 1004 (2024-06-01) is within 6 months of
     # 2024-07-01. One distinct show, sandwich notwithstanding.
     assert stats[2].plays_last_6mo == 1
+
+
+# --- #44: a live show (no show_id yet) gets its tour from the canonical row ---
+
+
+def _stub_tours(conn):
+    """Prod's tours rows are stubs from upsert_tour_stubs: no start/end dates."""
+    conn.execute("UPDATE tours SET start_date = NULL, end_date = NULL")
+    conn.commit()
+
+
+def test_live_show_gets_tour_features_from_canonical_row(conn):
+    """A live show has show_id=0, and the tours rows carry no dates, so the
+    date-range lookup misses. The canonical shows row on that date and venue
+    (phish.net lists upcoming shows with their tour) supplies tour_id, so
+    times_this_tour matches what training sees for the same show."""
+    _stub_tours(conn)
+    rows = build_feature_rows(
+        conn,
+        show_date="2023-10-02",
+        venue_id=100,
+        played_songs=[],
+        current_set="1",
+        candidate_song_ids=[1],
+        show_id=0,
+    )
+    assert rows[0].times_this_tour == 1
+    assert rows[0].shows_since_last_played_this_tour == 0
+
+
+def test_resolve_tour_id(conn):
+    from phishpicker.train.build import resolve_tour_id
+
+    _stub_tours(conn)
+    assert resolve_tour_id(conn, "2023-10-02", 100) == 10
+    assert resolve_tour_id(conn, "2023-10-02", 100, show_id=1002) == 10
+    # No canonical row on that date and venue, and no dated tour: unknown.
+    assert resolve_tour_id(conn, "2023-10-05", 100) is None
+    assert resolve_tour_id(conn, "2023-10-02", None) is None
+    # A canonical show off-tour stays off-tour.
+    assert resolve_tour_id(conn, "2024-06-01", 100) is None
+
+
+def test_resolve_tour_id_falls_back_to_dated_tours(conn):
+    from phishpicker.train.build import resolve_tour_id
+
+    # Fall 2023 is dated in this fixture; 2023-10-05 has no shows row.
+    assert resolve_tour_id(conn, "2023-10-05", 100) == 10
+
+
+def test_preview_feature_cache_carries_tour(conn):
+    """The bracket's per-show cache feeds the same features the live model
+    reads, so it must be tour-scoped too (it used to pass no tour_id)."""
+    from phishpicker.live_preview import _show_feature_caches, clear_feature_cache
+
+    _stub_tours(conn)
+    clear_feature_cache()
+    _, ext, _ = _show_feature_caches(conn, "2023-10-02", 100, [1], "lightgbm")
+    assert ext[1].times_this_tour == 1
+    assert ext[1].shows_since_last_played_this_tour == 0
+    clear_feature_cache()
