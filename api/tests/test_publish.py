@@ -8,12 +8,16 @@ play history to pin the gap math against.
 import hashlib
 import hmac
 import json
+import os
+import shutil
 import sys
+from datetime import datetime, timedelta
 
 import pytest
 from pytest_httpx import HTTPXMock
 
 from phishpicker.db.connection import apply_schema, open_db
+from phishpicker.inclusion import CALIBRATION_FILENAME, RUN_REPEAT_CHANCE
 from phishpicker.model.scorer import HeuristicScorer
 from phishpicker.publish import (
     build_bundle,
@@ -687,3 +691,261 @@ def test_cli_publish_dry_run_says_whether_model_stats_ride_along(
         (cli_env / "metrics.json").write_text(json.dumps(metrics))
     assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE, "--dry-run") == 0
     assert flag in capsys.readouterr().out
+
+
+# --- Likely Tonight chances (the bonus pick) -----------------------------------
+
+# conftest.build_inclusion_runs_db: the first two nights of a 3-night run. Song 1
+# plays every show, so by night 2 it has already been played this run.
+RUN_NIGHT1, RUN_NIGHT2 = 5012, 5013
+STAPLE = 1
+INCLUSION_FILES = ("inclusion_model.lgb", "inclusion_model.meta.json")
+
+
+@pytest.fixture(scope="module")
+def inclusion_model(tmp_path_factory):
+    """A Likely Tonight model (and its calibration) trained on conftest's
+    multi-night-run DB; this module's publish DB is too small to train on.
+    Serving needs only the feature columns to match, so it scores either DB."""
+    from phishpicker.train.inclusion_runner import train_inclusion
+    from tests.conftest import build_inclusion_runs_db
+
+    d = tmp_path_factory.mktemp("inclusion")
+    build_inclusion_runs_db(d / "phishpicker.db")
+    model = d / "inclusion_model.lgb"
+    train_inclusion(
+        d / "phishpicker.db",
+        model,
+        holdout_days=30,
+        num_boost_round=20,
+        warmup_shows=3,
+        block_shows=4,
+    )
+    return model
+
+
+def _install_inclusion(model, data_dir, *, calibration: bool = False) -> None:
+    names = INCLUSION_FILES + ((CALIBRATION_FILENAME,) if calibration else ())
+    for name in names:
+        shutil.copy(model.parent / name, data_dir / name)
+
+
+@pytest.fixture
+def runs_conn(inclusion_runs_db):
+    conn = open_db(inclusion_runs_db)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def test_chances_block_prices_every_candidate_as_likely_tonight_does(
+    inclusion_model, inclusion_runs_db, runs_conn
+):
+    """Every candidate, likeliest first, at the chance the NAS's Likely Tonight
+    page shows (calibration included), so the bonus prices and the page agree."""
+    from phishpicker import publish as mod
+    from phishpicker.inclusion import (
+        likely_tonight,
+        load_inclusion_calibration,
+        load_inclusion_scorer,
+    )
+
+    data = inclusion_runs_db.parent
+    _install_inclusion(inclusion_model, data, calibration=True)
+    block = mod._chances_block(runs_conn, RUN_NIGHT1, data)
+
+    assert set(block) == {"as_of", "songs"}
+    assert datetime.fromisoformat(block["as_of"]).utcoffset() == timedelta(0)
+    assert len(block["as_of"]) <= 64
+    model = data / "inclusion_model.lgb"
+    cal = load_inclusion_calibration(data / CALIBRATION_FILENAME, model)
+    assert cal is not None
+    page = likely_tonight(
+        runs_conn, RUN_NIGHT1, load_inclusion_scorer(model), top_n=1000, calibration=cal
+    )
+    assert [s["song_id"] for s in block["songs"]] == [r["song_id"] for r in page]
+    for song, row in zip(block["songs"], page, strict=True):
+        assert song["chance"] == pytest.approx(row["probability"], abs=1e-4)
+    chances = [s["chance"] for s in block["songs"]]
+    assert chances == sorted(chances, reverse=True)
+    assert all(0 < c <= 1 and round(c, 5) == c for c in chances)
+
+
+def test_chances_block_prices_a_song_played_earlier_in_the_run_at_the_repeat_chance(
+    inclusion_model, inclusion_runs_db, runs_conn
+):
+    from phishpicker import publish as mod
+
+    data = inclusion_runs_db.parent
+    _install_inclusion(inclusion_model, data)
+    night1, night2 = (
+        {s["song_id"]: s["chance"] for s in mod._chances_block(runs_conn, n, data)["songs"]}
+        for n in (RUN_NIGHT1, RUN_NIGHT2)
+    )
+    assert night1[STAPLE] > RUN_REPEAT_CHANCE
+    assert night2[STAPLE] == RUN_REPEAT_CHANCE == 0.002
+
+
+def test_chances_block_applies_the_calibration_only_when_it_matches_the_model(
+    inclusion_model, inclusion_runs_db, runs_conn
+):
+    from phishpicker import publish as mod
+    from phishpicker.inclusion import file_sha256
+
+    data = inclusion_runs_db.parent
+    _install_inclusion(inclusion_model, data)
+    cal = data / CALIBRATION_FILENAME
+    flat = {"x": [0.0, 1.0], "y": [0.25, 0.25]}
+    cal.write_text(json.dumps({**flat, "model_sha256": file_sha256(data / "inclusion_model.lgb")}))
+    block = mod._chances_block(runs_conn, RUN_NIGHT2, data)
+    assert {s["chance"] for s in block["songs"]} == {0.25}
+
+    # Fitted for another model: raw chances again (and the new file is picked up).
+    cal.write_text(json.dumps({**flat, "model_sha256": "another-model"}))
+    block = mod._chances_block(runs_conn, RUN_NIGHT2, data)
+    assert {s["song_id"]: s["chance"] for s in block["songs"]}[STAPLE] == RUN_REPEAT_CHANCE
+
+
+def test_chances_block_loads_the_model_once_until_its_files_change(
+    inclusion_model, inclusion_runs_db, runs_conn, monkeypatch
+):
+    """The sidecar publishes hourly on a show day: load the model once, and
+    again only when a retrain replaces it."""
+    from phishpicker import publish as mod
+
+    data = inclusion_runs_db.parent
+    _install_inclusion(inclusion_model, data)
+    loads = []
+    real_load = mod.load_inclusion_scorer
+
+    def counting_load(path):
+        loads.append(path)
+        return real_load(path)
+
+    monkeypatch.setattr(mod, "load_inclusion_scorer", counting_load)
+    first = mod._chances_block(runs_conn, RUN_NIGHT1, data)
+    assert mod._chances_block(runs_conn, RUN_NIGHT1, data) is not None
+    assert len(loads) == 1
+
+    model = data / "inclusion_model.lgb"
+    st = model.stat()
+    os.utime(model, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+    assert mod._chances_block(runs_conn, RUN_NIGHT1, data)["songs"] == first["songs"]
+    assert len(loads) == 2
+
+
+def test_chances_block_rounds_floors_and_drops_placeholders(
+    inclusion_model, read_conn, tmp_path, monkeypatch
+):
+    """5 places, never 0 (phishvs needs a chance > 0 to price a pick), and no
+    placeholder: the catalog can't name one."""
+    from phishpicker import publish as mod
+
+    _install_inclusion(inclusion_model, tmp_path)
+    monkeypatch.setattr(
+        mod,
+        "inclusion_chances",
+        lambda *_a, **_k: [(3, 0.4321987), (99, 0.2), (7, 0.0000004)],
+    )
+    block = mod._chances_block(read_conn, 6, tmp_path)
+    assert block["songs"] == [{"song_id": 3, "chance": 0.4322}, {"song_id": 7, "chance": 1e-05}]
+
+
+def test_chances_block_keeps_at_most_3000_songs(
+    inclusion_model, read_conn, tmp_path, monkeypatch
+):
+    from phishpicker import publish as mod
+
+    _install_inclusion(inclusion_model, tmp_path)
+    monkeypatch.setattr(
+        mod, "inclusion_chances", lambda *_a, **_k: [(i, 0.5) for i in range(1, 3502)]
+    )
+    songs = mod._chances_block(read_conn, 6, tmp_path)["songs"]
+    # The likeliest 3000, placeholder (99) excluded.
+    assert [s["song_id"] for s in songs] == [i for i in range(1, 3002) if i != 99]
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), 1.5])
+def test_chances_block_is_dropped_when_a_chance_is_not_a_probability(
+    inclusion_model, read_conn, tmp_path, monkeypatch, bad
+):
+    """phishvs ignores a block with a chance outside (0, 1], and a NaN would
+    400 the whole body: drop the block, keep the bundle."""
+    from phishpicker import publish as mod
+
+    _install_inclusion(inclusion_model, tmp_path)
+    monkeypatch.setattr(mod, "inclusion_chances", lambda *_a, **_k: [(1, 0.5), (2, bad)])
+    assert mod._chances_block(read_conn, 6, tmp_path) is None
+
+
+def test_chances_block_is_none_for_a_show_with_no_chances(inclusion_model, read_conn, tmp_path):
+    from phishpicker import publish as mod
+
+    _install_inclusion(inclusion_model, tmp_path)
+    assert mod._chances_block(read_conn, 999_999, tmp_path) is None
+
+
+def test_cli_publish_carries_chances(
+    cli_env, inclusion_model, read_conn, monkeypatch, httpx_mock: HTTPXMock
+):
+    from phishpicker.inclusion import inclusion_chances, load_inclusion_scorer
+
+    _install_inclusion(inclusion_model, cli_env, calibration=True)
+    httpx_mock.add_response(url="https://phishvs.test/publish", status_code=200)
+    assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 0
+
+    req = httpx_mock.get_request()
+    assert _verify(req.headers, req.content, "s3cret")  # the signature covers `chances`
+    body = _strict_json(req.content)
+    ids = [s["song_id"] for s in body["chances"]["songs"]]
+    assert ids and len(set(ids)) == len(ids)
+    # The placeholder (song 99) is a model candidate, but never reaches phishvs.
+    scorer = load_inclusion_scorer(cli_env / "inclusion_model.lgb")
+    assert 99 in dict(inclusion_chances(read_conn, 6, scorer))
+    assert set(ids) <= {c["song_id"] for c in body["catalog"]} and 99 not in ids
+    assert body["bundle_seq"] == 1 and len(body["picker_bracket"]) == 18
+
+
+def test_cli_publish_without_inclusion_model_omits_chances(
+    cli_env, monkeypatch, httpx_mock: HTTPXMock, caplog
+):
+    httpx_mock.add_response(url="https://phishvs.test/publish", status_code=200)
+    with caplog.at_level("WARNING", logger="phishpicker.publish"):
+        assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 0
+    body = _strict_json(httpx_mock.get_request().content)
+    assert "chances" not in body and body["bundle_seq"] == 1
+    assert "no inclusion model" in caplog.text
+
+
+def test_publish_goes_out_without_chances_when_scoring_fails(
+    cli_env, inclusion_model, monkeypatch, httpx_mock: HTTPXMock, caplog
+):
+    from phishpicker import publish as mod
+
+    def boom(*_a, **_k):
+        raise RuntimeError("inclusion features unreadable")
+
+    _install_inclusion(inclusion_model, cli_env)
+    monkeypatch.setattr(mod, "inclusion_chances", boom)
+    httpx_mock.add_response(url="https://phishvs.test/publish", status_code=200)
+    with caplog.at_level("ERROR", logger="phishpicker.publish"):
+        assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE) == 0
+    body = _strict_json(httpx_mock.get_request().content)
+    assert "chances" not in body and len(body["picker_bracket"]) == 18
+    assert "chances failed" in caplog.text and "inclusion features unreadable" in caplog.text
+
+
+@pytest.mark.parametrize(("installed", "flag"), [(True, "chances=yes"), (False, "chances=no")])
+def test_cli_publish_dry_run_says_whether_chances_ride_along(
+    cli_env, inclusion_model, monkeypatch, capsys, installed, flag
+):
+    from phishpicker.config import Settings
+    from phishpicker.publish import publish_show
+
+    if installed:
+        _install_inclusion(inclusion_model, cli_env)
+    assert _run_cli(monkeypatch, "publish", "--date", SHOW_DATE, "--dry-run") == 0
+    assert flag in capsys.readouterr().out
+    summary = publish_show(Settings(), HeuristicScorer(), SHOW_DATE, dry_run=True)
+    assert summary["chances"] is installed

@@ -13,6 +13,11 @@ About PhishPicker page: the walk-forward test, PhishPicker's record against
 Phish, and each signal's share of the model. It is a passenger: if it cannot
 be built, the bundle goes out without it and phishvs keeps its last copy.
 
+Likewise an optional `chances` block for the bonus pick: every candidate's
+chance of being played tonight, from the Likely Tonight (inclusion) model, at
+the same calibrated chances the NAS's Likely Tonight page shows. Without it,
+the bundle still goes out; phishvs just has nothing to price a bonus pick with.
+
 Signature contract (mirrored by the phishvs verifier — do not deviate):
     canonical = f"{schema_version}\\n{key_id}\\n{timestamp}\\n{nonce}\\n{sha256(body).hexdigest()}"
     X-Phishvs-Signature = hex(HMAC-SHA256(secret, canonical))
@@ -48,6 +53,12 @@ from phishpicker.about import model_stats
 from phishpicker.close_out import freeze_show, resolve_live_show, show_on
 from phishpicker.config import Settings
 from phishpicker.db.connection import open_db
+from phishpicker.inclusion import (
+    CALIBRATION_FILENAME,
+    inclusion_chances,
+    load_inclusion_calibration,
+    load_inclusion_scorer,
+)
 from phishpicker.last_show import rollover_today
 from phishpicker.live_preview import build_preview
 from phishpicker.scoring_store import get_score_state
@@ -71,6 +82,12 @@ PUBLISH_RETRY_INTERVAL = timedelta(minutes=30)
 # On a show day with no successful ingest yet, the sidecar retries the ingest
 # this often (a failed 11am ingest would otherwise cost the whole day).
 INGEST_RETRY = timedelta(minutes=30)
+# phishvs ignores a chances block longer than this. The candidate pool is ~1000
+# songs, so nothing is cut in practice; if it ever were, the long shots go.
+MAX_CHANCES = 3000
+# Chances go out to 5 places. One that rounds to 0 is floored here instead:
+# phishvs prices a pick by its chance and requires it to be > 0.
+MIN_CHANCE = 1e-5
 
 
 def sign_headers(
@@ -158,6 +175,15 @@ def _canonical_show(read_conn: sqlite3.Connection, show_date: str) -> sqlite3.Ro
     ).fetchone()
 
 
+def _placeholder_ids(read_conn: sqlite3.Connection) -> set[int]:
+    return {
+        r["song_id"]
+        for r in read_conn.execute(
+            "SELECT song_id FROM songs WHERE is_bustout_placeholder = 1"
+        ).fetchall()
+    }
+
+
 def _show_block(read_conn: sqlite3.Connection, show_date: str, venue_id: int | None) -> dict:
     """Show metadata. The canonical `shows` row may not exist yet for a future
     date; then the ids/tour degrade to None and the rest comes from the venue."""
@@ -200,12 +226,7 @@ def build_bundle(
     # included (a stand-in row for a song phish.net hadn't listed yet). The
     # catalog excludes them, and a candidate the catalog can't name is useless
     # to phishvs, so drop them here and re-rank the remainder.
-    placeholders = {
-        r["song_id"]
-        for r in read_conn.execute(
-            "SELECT song_id FROM songs WHERE is_bustout_placeholder = 1"
-        ).fetchall()
-    }
+    placeholders = _placeholder_ids(read_conn)
 
     slots = []
     picker_bracket = []
@@ -270,6 +291,67 @@ def _model_block(live_conn: sqlite3.Connection, metrics_path: Path) -> dict | No
         return None
 
 
+# The last inclusion model loaded, keyed on its files' (mtime, size). Publish
+# runs in the ingest-cron sidecar, not the API app, so it loads the model itself
+# — hourly on a show day — and reloads only when a retrain replaces the files.
+_inclusion_cache: dict[tuple, tuple] = {}
+
+
+def _file_sig(path: Path) -> tuple[int, int] | None:
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
+def _load_inclusion(data_dir: Path) -> tuple:
+    """(scorer, calibration) from `data_dir`, loaded the way the API app loads
+    them: calibration only when present and fitted for this exact model."""
+    model_path = data_dir / "inclusion_model.lgb"
+    cal_path = data_dir / CALIBRATION_FILENAME
+    key = (str(model_path), _file_sig(model_path), _file_sig(cal_path))
+    cached = _inclusion_cache.get(key)
+    if cached is None:
+        scorer = load_inclusion_scorer(model_path)
+        cached = (scorer, load_inclusion_calibration(cal_path, model_path))
+        _inclusion_cache.clear()
+        _inclusion_cache[key] = cached
+    return cached
+
+
+def _chances_block(read_conn: sqlite3.Connection, show_id: int, data_dir: Path) -> dict | None:
+    """Every candidate's chance of being played tonight (`show_id` is the
+    canonical shows.show_id), likeliest first, for the bonus pick — or None.
+    Never raises, like the model block: any problem drops it (logged)."""
+    try:
+        if not (data_dir / "inclusion_model.lgb").exists():
+            log.warning("publish: no inclusion model; publishing without chances")
+            return None
+        scorer, calibration = _load_inclusion(data_dir)
+        placeholders = _placeholder_ids(read_conn)  # as in build_bundle
+        songs = []
+        for song_id, p in inclusion_chances(read_conn, show_id, scorer, calibration):
+            if song_id in placeholders:
+                continue
+            chance = max(round(p, 5), MIN_CHANCE)
+            if not 0 < chance <= 1:  # NaN fails this too
+                raise ValueError(f"song {song_id}: chance {p!r} is not a probability")
+            songs.append({"song_id": song_id, "chance": chance})
+        if not songs:
+            log.warning("publish: no chances for show %s; publishing without them", show_id)
+            return None
+        block = {
+            "as_of": datetime.now(UTC).isoformat(timespec="seconds"),
+            "songs": songs[:MAX_CHANCES],
+        }
+        json.dumps(block, allow_nan=False)  # strict JSON or nothing, as above
+        return block
+    except Exception:
+        log.exception("publish: chances failed; publishing without them")
+        return None
+
+
 def publish(bundle: dict, *, url: str, key_id: str, secret: str) -> httpx.Response:
     body = json.dumps(bundle, separators=(",", ":")).encode()
     resp = httpx.post(
@@ -328,8 +410,8 @@ def publish_show(
     {"skipped": "no_canonical_show"} when the live show has no canonical
     `shows` row (phishvs 400s a null showid, and the seq is reserved before
     the POST, so trying would only burn seqs); otherwise a summary dict
-    {seq, slots, catalog, model, bytes} (`model`: whether the About-page
-    stats rode along).
+    {seq, slots, catalog, model, chances, bytes} (`model`, `chances`: whether
+    the About-page stats and the bonus-pick chances rode along).
     """
     show_id = (
         resolve_live_show(settings, show_date)
@@ -342,7 +424,8 @@ def publish_show(
         closing(open_db(settings.db_path, read_only=True)) as read,
         closing(open_db(settings.live_db_path)) as live,
     ):
-        if _canonical_show(read, show_date) is None:
+        canon = _canonical_show(read, show_date)
+        if canon is None:
             log.warning("publish: no canonical show row for %s; skipping", show_date)
             return {"skipped": "no_canonical_show"}
         seq = next_bundle_seq(live, show_id)
@@ -352,11 +435,15 @@ def publish_show(
         model = _model_block(live, settings.metrics_path)
         if model is not None:
             bundle["model"] = model
+        chances = _chances_block(read, canon["show_id"], settings.data_dir)
+        if chances is not None:
+            bundle["chances"] = chances
         summary = {
             "seq": seq,
             "slots": len(bundle["slots"]),
             "catalog": len(bundle["catalog"]),
             "model": model is not None,
+            "chances": chances is not None,
             "bytes": len(json.dumps(bundle, separators=(",", ":")).encode()),
         }
         if dry_run:

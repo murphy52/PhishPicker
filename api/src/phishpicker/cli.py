@@ -321,7 +321,7 @@ def main() -> int:
             f"publish {show_date}: {'dry-run' if args.dry_run else 'posted'} "
             f"seq={result['seq']} slots={result['slots']} "
             f"catalog={result['catalog']} model={'yes' if result['model'] else 'no'} "
-            f"bytes={result['bytes']}"
+            f"chances={'yes' if result['chances'] else 'no'} bytes={result['bytes']}"
         )
         return 0
 
