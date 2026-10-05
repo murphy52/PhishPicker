@@ -1032,3 +1032,36 @@ def test_ingest_cron_logs_a_failed_schedule_send_and_carries_on(cli_env, monkeyp
     cron._ingest_and_pass({}, datetime(2026, 4, 24, 15, 0, tzinfo=__import__("zoneinfo").ZoneInfo("UTC")))
     assert "schedule publish failed" in caplog.text
     assert "phishvs down" in caplog.text
+
+
+def test_publish_schedule_carries_the_next_shows_early_read(cli_env, monkeypatch, httpx_mock: HTTPXMock):
+    import phishpicker.publish as pub
+    from phishpicker.config import Settings
+
+    asked = []
+
+    def chances(read_conn, show_id, data_dir):
+        asked.append(show_id)
+        return {"as_of": "2026-04-24T15:00:00+00:00", "songs": [{"song_id": i, "chance": 0.9 - i / 100} for i in range(1, 16)]}
+
+    monkeypatch.setattr(pub, "_chances_block", chances)
+    httpx_mock.add_response(url="https://phishvs.test/schedule", status_code=200, json={"ok": True})
+    pub.publish_schedule(Settings(), "2026-04-24")
+    body = json.loads(httpx_mock.get_request().content)
+    # Only the next show, and only what a teaser could show.
+    assert asked == [7]
+    assert body["likely"]["showid"] == 7
+    assert body["likely"]["as_of"] == "2026-04-24T15:00:00+00:00"
+    assert [s["song_id"] for s in body["likely"]["songs"]] == list(range(1, 11))
+
+
+def test_publish_schedule_without_an_early_read_still_sends(cli_env, monkeypatch, httpx_mock: HTTPXMock):
+    import phishpicker.publish as pub
+    from phishpicker.config import Settings
+
+    monkeypatch.setattr(pub, "_chances_block", lambda *a: None)
+    httpx_mock.add_response(url="https://phishvs.test/schedule", status_code=200, json={"ok": True})
+    pub.publish_schedule(Settings(), "2026-04-24")
+    body = json.loads(httpx_mock.get_request().content)
+    assert "likely" not in body
+    assert len(body["shows"]) == 2
