@@ -112,6 +112,25 @@ def _show_feature_caches(
     return val
 
 
+def resolve_venue_id(
+    read_conn: sqlite3.Connection, show_date: str, venue_id: int | None
+) -> int | None:
+    """The live row's venue_id, backfilled from canonical when it's missing.
+
+    The frontend creates `/live/show` without venue_id in some flows, which
+    short-circuits the run-filter and any per-venue stats. Resolving it
+    benefits the entire prediction pipeline (compute_song_stats,
+    compute_extended_stats, the stats cache), not just the run filter.
+    """
+    if venue_id is not None:
+        return venue_id
+    row = read_conn.execute(
+        "SELECT venue_id FROM shows WHERE show_date = ? LIMIT 1",
+        (show_date,),
+    ).fetchone()
+    return row["venue_id"] if row else None
+
+
 def _played_in_run(
     read_conn: sqlite3.Connection,
     live_conn: sqlite3.Connection,
@@ -267,19 +286,7 @@ def build_preview(
         raise HTTPException(404, "show not found")
     current_set = show["current_set"]
     show_date = show["show_date"]
-    venue_id = show["venue_id"]
-    # Backfill venue_id from canonical when the live row is missing it.
-    # The frontend creates `/live/show` without venue_id in some flows, which
-    # short-circuits the run-filter and any per-venue stats. Resolving here
-    # benefits the entire prediction pipeline (compute_song_stats,
-    # compute_extended_stats, the stats cache), not just the run filter.
-    if venue_id is None:
-        row = read_conn.execute(
-            "SELECT venue_id FROM shows WHERE show_date = ? LIMIT 1",
-            (show_date,),
-        ).fetchone()
-        if row and row["venue_id"] is not None:
-            venue_id = row["venue_id"]
+    venue_id = resolve_venue_id(read_conn, show_date, show["venue_id"])
     meta = live_conn.execute(
         "SELECT set1_size, set2_size, encore_size FROM live_show_meta WHERE show_id = ?",
         (show_id,),
