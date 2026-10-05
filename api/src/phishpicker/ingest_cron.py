@@ -6,6 +6,8 @@ on show days, the phishvs publish (hourly until lock). Lives in its own Docker
 container next to the API so it can write to the shared phishpicker.db without
 depending on host crontab permissions (which Murphy52 doesn't have on the NAS).
 
+It also copies live.db to a dated backup every night; see backup.py.
+
 The schedule function is a pure function isolated from the loop body for
 testing. Run as `python -m phishpicker.ingest_cron`.
 """
@@ -18,6 +20,7 @@ import subprocess
 import sys
 import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
@@ -32,6 +35,10 @@ DEFAULT_HOUR = 11
 # Cadence of the close-out watcher. QUIET_POLLS (2) ticks at this interval is the
 # ~20 minutes of no-edits that means a setlist has gone quiet.
 TICK_SECONDS = 600
+
+# Nightly live.db backup, local time. Late enough that a West Coast show has
+# ended and closed out, early enough to land before the 6am rollover.
+DEFAULT_BACKUP_HOUR = 5
 
 
 def next_run_at(now: datetime, *, hour: int, tz: ZoneInfo) -> datetime:
@@ -91,6 +98,24 @@ def _watch_tick(state: dict) -> None:
             log.info("ingest-cron: closed out %s", closed)
     except Exception:
         log.exception("ingest-cron: watcher tick failed")
+
+
+def _backup_live_db(settings: Settings, now: datetime, *, overwrite: bool = True) -> None:
+    """Dated copy of live.db, the one database phish.net can't rebuild (#35).
+    LIVE_DB_BACKUP_DIR points it at another volume; it defaults to backups/
+    under the data dir. Guards itself like every other step here."""
+    from phishpicker.backup import DEFAULT_KEEP, backup_sqlite
+
+    try:
+        dest = Path(os.environ.get("LIVE_DB_BACKUP_DIR") or settings.data_dir / "backups")
+        keep = int(os.environ.get("LIVE_DB_BACKUP_KEEP", DEFAULT_KEEP))
+        copy = backup_sqlite(
+            settings.live_db_path, dest, day=now.date(), keep=keep, overwrite=overwrite
+        )
+        if copy is not None:
+            log.info("ingest-cron: backed up live.db to %s", copy)
+    except Exception:
+        log.exception("ingest-cron: live.db backup failed")
 
 
 def _ingest_and_pass(publish_state: dict, now: datetime) -> None:
@@ -166,6 +191,7 @@ def main() -> None:
     tz_name = os.environ.get("INGEST_CRON_TZ", DEFAULT_TZ)
     hour = int(os.environ.get("INGEST_CRON_HOUR", DEFAULT_HOUR))
     tick_s = int(os.environ.get("CLOSE_OUT_TICK_SECONDS", TICK_SECONDS))
+    backup_hour = int(os.environ.get("LIVE_DB_BACKUP_HOUR", DEFAULT_BACKUP_HOUR))
     tz = ZoneInfo(tz_name)
     log.info(
         "ingest-cron: daily ingest at %02d:00 %s; close-out watcher and phishvs publish every %ds",
@@ -186,8 +212,13 @@ def main() -> None:
     settings = Settings()
     if not configured(settings):
         log.info("ingest-cron: PHISHVS_PUBLISH_* not set; phishvs publish disabled")
+    # Every deploy gets a copy on disk before anything else runs, but never
+    # replaces the one this morning's nightly run made.
+    log.info("ingest-cron: live.db backup nightly at %02d:00 %s", backup_hour, tz_name)
+    _backup_live_db(settings, datetime.now(tz), overwrite=False)
     _ingest_and_pass(publish_state, datetime.now(UTC))
     next_ingest = next_run_at(datetime.now(tz), hour=hour, tz=tz)
+    next_backup = next_run_at(datetime.now(tz), hour=backup_hour, tz=tz)
 
     # Tick loop rather than sleeping straight through to the next ingest: the
     # close-out watcher has to poll on show nights, which is nowhere near 11am.
@@ -201,6 +232,9 @@ def main() -> None:
                 _ingest_and_pass(publish_state, datetime.now(UTC))
             except Exception:
                 log.exception("ingest-cron: scheduled ingest failed")
+        if now >= next_backup:
+            next_backup = next_run_at(now, hour=backup_hour, tz=tz)
+            _backup_live_db(settings, now)
         _loop_tick(settings, state, publish_state, datetime.now(UTC))
         time.sleep(tick_s)
 

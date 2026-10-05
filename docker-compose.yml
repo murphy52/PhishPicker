@@ -57,9 +57,15 @@ services:
     build: ./api
     volumes:
       - ${PHISHPICKER_DATA_HOST:?PHISHPICKER_DATA_HOST must be set in .env}:/data
+      # Nightly live.db backups (#35). Set PHISHPICKER_BACKUP_HOST in .env to keep
+      # them on a different volume from the data; unset, they go to <data>/backups.
+      - ${PHISHPICKER_BACKUP_HOST:-${PHISHPICKER_DATA_HOST:?PHISHPICKER_DATA_HOST must be set in .env}/backups}:/backups
     environment:
       PHISHPICKER_DATA_DIR: /data
       PHISHNET_API_KEY: ${PHISHNET_API_KEY:?PHISHNET_API_KEY must be set in .env}
+      LIVE_DB_BACKUP_DIR: /backups
+      LIVE_DB_BACKUP_KEEP: ${LIVE_DB_BACKUP_KEEP:-7}
+      LIVE_DB_BACKUP_HOUR: ${LIVE_DB_BACKUP_HOUR:-5}
       # Settings validates ADMIN_TOKEN as required even though the ingest
       # CLI doesn't use it. Pass it through so the sidecar can construct
       # Settings without erroring.
