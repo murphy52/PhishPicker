@@ -65,3 +65,7 @@ class Settings(BaseSettings):
     @property
     def live_db_path(self) -> Path:
         return self.data_dir / "live.db"
+
+    @property
+    def metrics_path(self) -> Path:
+        return self.data_dir / "metrics.json"

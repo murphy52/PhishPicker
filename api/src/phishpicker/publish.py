@@ -8,6 +8,11 @@ morning of a show and then hourly until lock (see ingest_cron). Nothing goes
 out until the day's ingest has succeeded. The 11:00 ingest is the only
 scheduled one; retries happen only after a failed attempt that day.
 
+The bundle also carries an optional `model` block (about.model_stats) for the
+About PhishPicker page: the walk-forward test, PhishPicker's record against
+Phish, and each signal's share of the model. It is a passenger: if it cannot
+be built, the bundle goes out without it and phishvs keeps its last copy.
+
 Signature contract (mirrored by the phishvs verifier — do not deviate):
     canonical = f"{schema_version}\\n{key_id}\\n{timestamp}\\n{nonce}\\n{sha256(body).hexdigest()}"
     X-Phishvs-Signature = hex(HMAC-SHA256(secret, canonical))
@@ -34,10 +39,12 @@ import sqlite3
 import time
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
 
+from phishpicker.about import model_stats
 from phishpicker.close_out import freeze_show, resolve_live_show, show_on
 from phishpicker.config import Settings
 from phishpicker.db.connection import open_db
@@ -246,6 +253,23 @@ def build_bundle(
     }
 
 
+def _model_block(live_conn: sqlite3.Connection, metrics_path: Path) -> dict | None:
+    """The About-page stats for the bundle, or None. Never raises: a publish
+    must not fail over them, so any problem drops them (logged)."""
+    try:
+        model = model_stats(live_conn, metrics_path)
+        if model is None:
+            log.warning("publish: no metrics.json; publishing without model stats")
+            return None
+        # Strict JSON or nothing: json.dumps writes NaN, which JSON.parse
+        # rejects, and phishvs would then 400 the whole body, not just this.
+        json.dumps(model, allow_nan=False)
+        return model
+    except Exception:
+        log.exception("publish: model stats failed; publishing without them")
+        return None
+
+
 def publish(bundle: dict, *, url: str, key_id: str, secret: str) -> httpx.Response:
     body = json.dumps(bundle, separators=(",", ":")).encode()
     resp = httpx.post(
@@ -304,7 +328,8 @@ def publish_show(
     {"skipped": "no_canonical_show"} when the live show has no canonical
     `shows` row (phishvs 400s a null showid, and the seq is reserved before
     the POST, so trying would only burn seqs); otherwise a summary dict
-    {seq, slots, catalog, bytes}.
+    {seq, slots, catalog, model, bytes} (`model`: whether the About-page
+    stats rode along).
     """
     show_id = (
         resolve_live_show(settings, show_date)
@@ -324,10 +349,14 @@ def publish_show(
         bundle = build_bundle(
             read_conn=read, live_conn=live, show_id=show_id, scorer=scorer, bundle_seq=seq
         )
+        model = _model_block(live, settings.metrics_path)
+        if model is not None:
+            bundle["model"] = model
         summary = {
             "seq": seq,
             "slots": len(bundle["slots"]),
             "catalog": len(bundle["catalog"]),
+            "model": model is not None,
             "bytes": len(json.dumps(bundle, separators=(",", ":")).encode()),
         }
         if dry_run:

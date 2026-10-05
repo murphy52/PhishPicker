@@ -1,6 +1,5 @@
 import asyncio
 import hmac
-import json
 import logging
 import sqlite3
 from collections.abc import Iterator
@@ -18,6 +17,7 @@ from fastapi import (
 )
 from pydantic import BaseModel
 
+from phishpicker.about import read_metrics
 from phishpicker.config import Settings
 from phishpicker.db.connection import open_db
 from phishpicker.last_show import rollover_today
@@ -114,7 +114,7 @@ def create_app() -> FastAPI:
 
         app.state.settings = settings
         app.state.model_path = settings.data_dir / "model.lgb"
-        app.state.metrics_path = settings.data_dir / "metrics.json"
+        app.state.metrics_path = settings.metrics_path
         app.state.scorer = load_runtime_scorer(app.state.model_path)
         log.info("loaded scorer: %s", app.state.scorer.name)
         # Optional show-level "Likely Tonight" inclusion model. Absent artifact
@@ -220,13 +220,13 @@ def create_app() -> FastAPI:
 
     @app.get("/about")
     def about(request: Request):
-        path = request.app.state.metrics_path
-        if not path.exists():
+        metrics = read_metrics(request.app.state.metrics_path)
+        if metrics is None:
             raise HTTPException(
                 status_code=503,
                 detail="metrics not yet produced — training has not run",
             )
-        return json.loads(path.read_text())
+        return metrics
 
     @app.get("/songs")
     def songs(conn: sqlite3.Connection = Depends(get_read)):  # noqa: B008
