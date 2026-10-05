@@ -97,13 +97,18 @@ def predict_next(
     scorer: Scorer | None = None,
 ) -> list[dict]:
     """Predict the next song for a live show. Loads played from the live DB
-    and delegates to predict_next_stateless."""
+    and delegates to predict_next_stateless, with the same venue backfill and
+    run filter as the bracket (live_preview.build_preview)."""
+    # live_preview imports this module, so import from it at call time.
+    from phishpicker.live_preview import _played_in_run, resolve_venue_id
+
     show = live_conn.execute(
         "SELECT show_date, venue_id, current_set FROM live_show WHERE show_id = ?",
         (live_show_id,),
     ).fetchone()
     if not show:
         return []
+    venue_id = resolve_venue_id(read_conn, show["show_date"], show["venue_id"])
 
     played = live_conn.execute(
         "SELECT song_id, entered_order, set_number, trans_mark FROM live_songs "
@@ -120,10 +125,11 @@ def predict_next(
         played_songs=[r["song_id"] for r in played],
         current_set=show["current_set"],
         show_date=show["show_date"],
-        venue_id=show["venue_id"],
+        venue_id=venue_id,
         prev_trans_mark=played[-1]["trans_mark"] if played else ",",
         prev_set_number=played[-1]["set_number"] if played else None,
         slots_into_current_set=slots_into_current_set,
         top_n=top_n,
         scorer=scorer,
+        played_in_run=_played_in_run(read_conn, live_conn, show["show_date"], venue_id),
     )
