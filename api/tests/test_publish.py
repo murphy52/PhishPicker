@@ -949,3 +949,86 @@ def test_cli_publish_dry_run_says_whether_chances_ride_along(
     assert flag in capsys.readouterr().out
     summary = publish_show(Settings(), HeuristicScorer(), SHOW_DATE, dry_run=True)
     assert summary["chances"] is installed
+
+
+# --- the schedule (#24): the next few shows, so phishvs can show them between shows ---
+
+
+def test_build_schedule_lists_the_next_shows_with_the_bundle_show_block(read_conn):
+    from phishpicker.publish import build_schedule
+
+    body = build_schedule(read_conn, today="2026-04-23", limit=2)
+    assert body["schema_version"] == 1
+    assert body["structure"] == [["1", 9], ["2", 7], ["E", 2]]
+    assert [s["date"] for s in body["shows"]] == ["2026-04-23", "2026-04-24"]
+    first = body["shows"][0]
+    assert first["showid"] == 6
+    assert first["venue"] == "Boardwalk Hall"
+    assert first["city"] == "Atlantic City" and first["state"] == "NJ"
+    assert first["tz"] == "America/New_York"
+    assert first["tourid"] == TOUR_ID and first["tour_name"] == "2026 Spring Tour"
+    json.dumps(body)
+
+
+def test_build_schedule_skips_past_shows_and_is_empty_past_the_last(read_conn):
+    from phishpicker.publish import build_schedule
+
+    assert [s["date"] for s in build_schedule(read_conn, today="2026-04-25")["shows"]] == ["2026-04-25"]
+    assert build_schedule(read_conn, today="2026-05-01")["shows"] == []
+
+
+def test_schedule_url_sits_beside_the_bundle_route():
+    from phishpicker.publish import schedule_url
+
+    assert schedule_url("https://phishpicker.com/ingest/bundle") == "https://phishpicker.com/ingest/schedule"
+
+
+def test_cli_publish_schedule_posts_signed(cli_env, monkeypatch, httpx_mock: HTTPXMock, capsys):
+    httpx_mock.add_response(url="https://phishvs.test/schedule", status_code=200, json={"ok": True})
+    assert _run_cli(monkeypatch, "publish-schedule", "--today", "2026-04-24") == 0
+    req = httpx_mock.get_request()
+    assert _verify(req.headers, req.content, "s3cret")
+    assert [s["date"] for s in json.loads(req.content)["shows"]] == ["2026-04-24", "2026-04-25"]
+    assert "2 shows" in capsys.readouterr().out
+
+
+def test_cli_publish_schedule_dry_run_does_not_post(cli_env, monkeypatch, httpx_mock: HTTPXMock, capsys):
+    assert _run_cli(monkeypatch, "publish-schedule", "--today", "2026-04-24", "--dry-run") == 0
+    assert httpx_mock.get_requests() == []
+    assert "dry-run" in capsys.readouterr().out
+
+
+def test_ingest_cron_sends_the_schedule_after_a_good_ingest(cli_env, monkeypatch):
+    import phishpicker.ingest_cron as cron
+
+    sent = []
+    monkeypatch.setattr(cron, "_run_ingest", lambda: 0)
+    monkeypatch.setattr(cron, "_daily_pass", lambda **kw: None)
+    monkeypatch.setattr("phishpicker.publish.publish_schedule", lambda settings, today, **kw: sent.append(today) or {"shows": 0})
+    cron._ingest_and_pass({}, datetime(2026, 4, 24, 15, 0, tzinfo=__import__("zoneinfo").ZoneInfo("UTC")))
+    assert sent == ["2026-04-24"]
+
+
+def test_ingest_cron_skips_the_schedule_after_a_failed_ingest(cli_env, monkeypatch):
+    import phishpicker.ingest_cron as cron
+
+    sent = []
+    monkeypatch.setattr(cron, "_run_ingest", lambda: 1)
+    monkeypatch.setattr(cron, "_daily_pass", lambda **kw: None)
+    monkeypatch.setattr("phishpicker.publish.publish_schedule", lambda settings, today, **kw: sent.append(today))
+    cron._ingest_and_pass({}, datetime(2026, 4, 24, 15, 0, tzinfo=__import__("zoneinfo").ZoneInfo("UTC")))
+    assert sent == []
+
+
+def test_ingest_cron_logs_a_failed_schedule_send_and_carries_on(cli_env, monkeypatch, caplog):
+    import phishpicker.ingest_cron as cron
+
+    def boom(settings, today, **kw):
+        raise RuntimeError("phishvs down")
+
+    monkeypatch.setattr(cron, "_run_ingest", lambda: 0)
+    monkeypatch.setattr(cron, "_daily_pass", lambda **kw: None)
+    monkeypatch.setattr("phishpicker.publish.publish_schedule", boom)
+    cron._ingest_and_pass({}, datetime(2026, 4, 24, 15, 0, tzinfo=__import__("zoneinfo").ZoneInfo("UTC")))
+    assert "schedule publish failed" in caplog.text
+    assert "phishvs down" in caplog.text

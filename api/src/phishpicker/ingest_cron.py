@@ -129,7 +129,25 @@ def _ingest_and_pass(publish_state: dict, now: datetime) -> None:
     publish_state["last_ingest_attempt_at"] = now
     if ok:
         mark_ingested(publish_state, now)
+        _publish_schedule(now)
     _daily_pass(freeze_today=ok)
+
+
+def _publish_schedule(now: datetime) -> None:
+    """Tell phishvs the coming shows after each good ingest (#24), so it can
+    show the next one between shows. Never fatal: a miss leaves yesterday's
+    list standing, and tomorrow's ingest sends it again."""
+    from phishpicker.config import Settings
+    from phishpicker.last_show import rollover_today
+    from phishpicker.publish import configured, publish_schedule
+
+    try:
+        settings = Settings()
+        if not configured(settings):
+            return
+        publish_schedule(settings, rollover_today(now))
+    except Exception:
+        log.exception("ingest-cron: schedule publish failed")
 
 
 def _publish_tick(settings: Settings, state: dict, now: datetime) -> None:
