@@ -177,6 +177,26 @@ def test_a_corrupt_copy_is_rejected_and_older_copies_survive(tmp_path):
     assert sorted(p.name for p in dest.iterdir()) == [good.name]
 
 
+def test_an_unreadable_copy_is_a_backup_error_too(live_db, tmp_path, monkeypatch):
+    """Damage bad enough that SQLite can't read the page at all makes
+    integrity_check raise instead of returning rows (#45: the old test hit
+    this by luck, ~1 run in 3). It must still be a BackupError, and still
+    leave the older copies alone."""
+    import phishpicker.backup as backup
+
+    dest = tmp_path / "backups"
+    good = backup_sqlite(live_db, dest, day=DAY, keep=1)
+
+    def junk_copy(src: Path, tmp: Path) -> None:
+        tmp.write_bytes(b"\x00" * 4096)  # no SQLite header: not a database
+
+    monkeypatch.setattr(backup, "_copy", junk_copy)
+    with pytest.raises(BackupError, match="integrity_check"):
+        backup_sqlite(live_db, dest, day=DAY + timedelta(days=1), keep=1)
+
+    assert sorted(p.name for p in dest.iterdir()) == [good.name]
+
+
 def test_keep_below_one_is_rejected(live_db, tmp_path):
     with pytest.raises(ValueError):
         backup_sqlite(live_db, tmp_path / "backups", day=DAY, keep=0)

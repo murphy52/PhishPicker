@@ -85,8 +85,13 @@ def _copy(src: Path, dest: Path) -> None:
 
 
 def _integrity_errors(path: Path) -> list[str]:
-    with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as conn:
-        rows = [row[0] for row in conn.execute("PRAGMA integrity_check")]
+    try:
+        with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as conn:
+            rows = [row[0] for row in conn.execute("PRAGMA integrity_check")]
+    except sqlite3.DatabaseError as e:
+        # Damage SQLite can't read at all ("database disk image is malformed",
+        # "file is not a database") raises instead of returning rows (#45).
+        return [str(e)]
     return [] if rows == ["ok"] else rows
 
 
