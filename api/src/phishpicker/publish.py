@@ -383,6 +383,58 @@ def record_publish(live_conn: sqlite3.Connection, show_id: str, seq: int) -> Non
     live_conn.commit()
 
 
+# --- the schedule (#24) --------------------------------------------------------
+
+# How many coming shows phishvs hears about: a run or two ahead, enough for
+# "next show" and its calendar file between shows.
+SCHEDULE_LIMIT = 6
+# The show shape before any bundle sets the real one (live_preview's default).
+SCHEDULE_STRUCTURE = [["1", 9], ["2", 7], ["E", 2]]
+
+
+def build_schedule(read_conn: sqlite3.Connection, today: str, limit: int = SCHEDULE_LIMIT) -> dict:
+    """The next `limit` shows from `today` on, each in the bundle's show block.
+
+    Ingest already upserts phish.net's future shows into `shows`, so this is
+    read straight from the canonical DB. One show per date: phishvs keys a
+    night on its date."""
+    rows = read_conn.execute(
+        "SELECT show_date, MIN(venue_id) AS venue_id FROM shows "
+        "WHERE show_date >= ? GROUP BY show_date ORDER BY show_date LIMIT ?",
+        (today, limit),
+    ).fetchall()
+    shows = [_show_block(read_conn, r["show_date"], r["venue_id"]) for r in rows]
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "structure": SCHEDULE_STRUCTURE,
+        "shows": [s for s in shows if s["showid"] is not None],
+    }
+
+
+def schedule_url(bundle_url: str) -> str:
+    """phishvs takes the schedule beside the bundle: .../ingest/bundle -> .../ingest/schedule."""
+    return bundle_url.rstrip("/").rsplit("/", 1)[0] + "/schedule"
+
+
+def publish_schedule(settings: Settings, today: str, *, dry_run: bool = False) -> dict:
+    """Build the schedule and POST it (signed like a bundle). Returns
+    {shows, dates}. Unlike a bundle it carries no seq: each send is the whole
+    list, and phishvs reconciles against it."""
+    with closing(open_db(settings.db_path, read_only=True)) as read:
+        body = build_schedule(read, today)
+    summary = {"shows": len(body["shows"]), "dates": [s["date"] for s in body["shows"]]}
+    if dry_run:
+        return summary
+    publish(
+        body,
+        url=schedule_url(settings.phishvs_publish_url),
+        key_id=settings.phishvs_publish_key_id,
+        secret=settings.phishvs_publish_secret,
+    )
+    log.info("publish: schedule sent, %d shows from %s", summary["shows"], today)
+    return summary
+
+
 # --- orchestration (CLI + cron) ----------------------------------------------
 
 

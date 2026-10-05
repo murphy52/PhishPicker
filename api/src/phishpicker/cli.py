@@ -78,6 +78,14 @@ def main() -> int:
         help="re-run a date even if already recorded",
     )
 
+    p_schedule = sub.add_parser(
+        "publish-schedule", help="POST the next few shows to phishvs (it shows the next one between shows)"
+    )
+    p_schedule.add_argument(
+        "--today", type=_iso_date, default=None, help="list from this date (default: today, 6am-ET rollover)"
+    )
+    p_schedule.add_argument("--dry-run", action="store_true", help="print what would be sent; no POST")
+
     p_publish = sub.add_parser(
         "publish", help="POST the show bundle (bracket, top-k, catalog) to phishvs"
     )
@@ -290,6 +298,29 @@ def main() -> int:
             )
             return 0
         print(result["summary"])
+        return 0
+
+    if args.cmd == "publish-schedule":
+        from datetime import UTC, datetime
+
+        import httpx
+
+        from phishpicker.last_show import rollover_today
+        from phishpicker.publish import configured, publish_schedule
+
+        if not args.dry_run and not configured(s):
+            print("publish-schedule: PHISHVS_PUBLISH_* not set; skipping", file=sys.stderr)
+            return 0
+        today = args.today or rollover_today(datetime.now(UTC))
+        try:
+            result = publish_schedule(s, today, dry_run=args.dry_run)
+        except httpx.HTTPError as exc:
+            print(f"publish-schedule failed: {exc}", file=sys.stderr)
+            return 1
+        print(
+            f"publish-schedule {today}: {'dry-run' if args.dry_run else 'posted'} "
+            f"{result['shows']} shows {' '.join(result['dates'])}"
+        )
         return 0
 
     if args.cmd == "publish":
