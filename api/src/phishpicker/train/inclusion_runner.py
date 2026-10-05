@@ -36,6 +36,14 @@ _PARAMS = {
 }
 
 
+def fit_inclusion_booster(
+    X: np.ndarray, y: np.ndarray, num_boost_round: int = 300
+) -> lgb.Booster:
+    """Fit the inclusion model with the production params."""
+    data = lgb.Dataset(X, label=y, feature_name=INCLUSION_FEATURE_COLUMNS)
+    return lgb.train(_PARAMS, data, num_boost_round=num_boost_round)
+
+
 def _recall_at_k(
     scores: np.ndarray, y: np.ndarray, show_ids: np.ndarray, k: int = TOPK
 ) -> float:
@@ -74,10 +82,7 @@ def train_inclusion(
 
     p12_idx = INCLUSION_FEATURE_COLUMNS.index("plays_last_12mo")
 
-    dtrain = lgb.Dataset(
-        X[train_mask], label=y[train_mask], feature_name=INCLUSION_FEATURE_COLUMNS
-    )
-    booster = lgb.train(_PARAMS, dtrain, num_boost_round=num_boost_round)
+    booster = fit_inclusion_booster(X[train_mask], y[train_mask], num_boost_round)
 
     pred = booster.predict(X[test_mask])
     model_recall = _recall_at_k(pred, y[test_mask], show_ids[test_mask])
@@ -86,8 +91,7 @@ def train_inclusion(
     )
 
     # Retrain on ALL data for the shipped artifact (holdout was for eval only).
-    dall = lgb.Dataset(X, label=y, feature_name=INCLUSION_FEATURE_COLUMNS)
-    ship = lgb.train(_PARAMS, dall, num_boost_round=num_boost_round)
+    ship = fit_inclusion_booster(X, y, num_boost_round)
     save_model_artifact(out_path, ship, INCLUSION_FEATURE_COLUMNS)
 
     gain = ship.feature_importance(importance_type="gain")

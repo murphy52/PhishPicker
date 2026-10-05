@@ -225,12 +225,20 @@ class InclusionHistory:
         return np.array(rows, dtype=float), kept
 
 
-def build_training_data(
-    conn: sqlite3.Connection, warmup_shows: int = 50
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Full historical (X, y, show_ordinal_dates, show_ids) for training/holdout."""
-    hist = InclusionHistory(conn)
-    X, y, dates, show_ids = [], [], [], []
+@dataclass(frozen=True)
+class InclusionRows:
+    """One row per (historical show, candidate song), aligned arrays."""
+
+    X: np.ndarray
+    y: np.ndarray
+    dates: np.ndarray  # show date as an ordinal
+    show_ids: np.ndarray
+    song_ids: np.ndarray
+
+
+def build_inclusion_rows(hist: InclusionHistory, warmup_shows: int = 50) -> InclusionRows:
+    """Every (show, candidate) row with its label, for shows that have a setlist."""
+    X, y, dates, show_ids, song_ids = [], [], [], [], []
     for i, sh in enumerate(hist.shows):
         if i < warmup_shows:
             continue
@@ -246,9 +254,19 @@ def build_training_data(
             y.append(1 if sid in actual else 0)
             dates.append(ctx.show_date.toordinal())
             show_ids.append(sh["show_id"])
-    return (
-        np.array(X, dtype=float),
-        np.array(y, dtype=int),
-        np.array(dates, dtype=int),
-        np.array(show_ids, dtype=int),
+            song_ids.append(sid)
+    return InclusionRows(
+        X=np.array(X, dtype=float).reshape(-1, len(INCLUSION_FEATURE_COLUMNS)),
+        y=np.array(y, dtype=int),
+        dates=np.array(dates, dtype=int),
+        show_ids=np.array(show_ids, dtype=int),
+        song_ids=np.array(song_ids, dtype=int),
     )
+
+
+def build_training_data(
+    conn: sqlite3.Connection, warmup_shows: int = 50
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Full historical (X, y, show_ordinal_dates, show_ids) for training/holdout."""
+    rows = build_inclusion_rows(InclusionHistory(conn), warmup_shows=warmup_shows)
+    return rows.X, rows.y, rows.dates, rows.show_ids

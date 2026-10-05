@@ -118,8 +118,54 @@ def main() -> int:
         help="ship even if MRR regressed beyond tolerance",
     )
 
+    p_eval = sub.add_parser("eval", help="offline model evaluations (no API settings needed)")
+    eval_sub = p_eval.add_subparsers(dest="eval_cmd", required=True)
+    p_cal = eval_sub.add_parser(
+        "inclusion-calibration",
+        help="calibration backtest of the 'Likely Tonight' chances by bonus band",
+    )
+    p_cal.add_argument("--db", required=True, help="path to a phishpicker.db (opened read-only)")
+    p_cal.add_argument(
+        "--cutoff",
+        type=_iso_date,
+        default="2025-06-01",
+        help="train on shows before this date, test on shows on/after it",
+    )
+    p_cal.add_argument("--out", required=True, help="directory for the JSON, summary and chart")
+    p_cal.add_argument(
+        "--artifact",
+        default=None,
+        help="a saved inclusion_model.lgb to check out of sample (optional)",
+    )
+    p_cal.add_argument(
+        "--artifact-trained-through",
+        type=_iso_date,
+        default="2026-07-12",
+        help="score the artifact only on shows strictly after this date",
+    )
+    p_cal.add_argument("--iterations", type=int, default=300)
+    p_cal.add_argument("--warmup-shows", type=int, default=50)
+
     args = parser.parse_args()
     _configure_logging()
+
+    if args.cmd == "eval" and args.eval_cmd == "inclusion-calibration":
+        from pathlib import Path
+
+        from phishpicker.train.inclusion_calibration import format_report, run_calibration
+
+        result = run_calibration(
+            Path(args.db),
+            cutoff=args.cutoff,
+            out_dir=Path(args.out),
+            artifact_path=Path(args.artifact) if args.artifact else None,
+            artifact_trained_through=args.artifact_trained_through if args.artifact else None,
+            num_boost_round=args.iterations,
+            warmup_shows=args.warmup_shows,
+        )
+        print(format_report(result), end="")
+        print(f"wrote {Path(args.out) / 'inclusion_calibration.json'}")
+        return 0
 
     s = Settings()  # type: ignore[call-arg]
 
