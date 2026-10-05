@@ -229,3 +229,75 @@ def small_train_db(tmp_path):
         yield c
     finally:
         c.close()
+
+
+def build_inclusion_runs_db(path: Path) -> None:
+    """24 shows over 2024 on two tours. Tour 1: 12 one-offs at distinct venues
+    (the last at venue 1). Tour 2: three 3-night runs (venues 2, 3, 4) on
+    2024-07-01..03, 07-08..10 and 07-15..17, then one-offs at venues 1, 5, 6
+    on 08-10..12. A run = same venue + tour (the app's residency). Show ids are
+    5000 + index. Song 1 every show; song 2 every other show; song 3 only on
+    night 1 of each run; song 4 rarely; song 5 only on the last show."""
+    from phishpicker.db.connection import apply_schema, open_db
+
+    c = open_db(path)
+    apply_schema(c)
+    c.executescript(
+        """
+        INSERT INTO tours (tour_id, name) VALUES (1, 'Spring'), (2, 'Summer');
+        INSERT INTO songs (song_id, name, first_seen_at, debut_date, original_artist) VALUES
+            (1, 'Staple',   '2019-01-01', '2019-01-01', 'Phish'),
+            (2, 'Frequent', '2019-01-01', '2019-01-01', 'Phish'),
+            (3, 'Opener',   '2019-01-01', '2019-01-01', 'Phish'),
+            (4, 'Rare',     '2019-01-01', '2019-01-01', 'Phish'),
+            (5, 'Debut',    '2024-12-01', '2024-12-01', 'Phish');
+        """
+    )
+    c.executemany(
+        "INSERT INTO venues (venue_id, name) VALUES (?, ?)", [(v, f"V{v}") for v in range(1, 30)]
+    )
+    shows = []
+    # Tour 1: 12 one-off shows, one per week from Jan 6, at venues 10..20 then 1.
+    for i in range(12):
+        venue = 1 if i == 11 else 10 + i
+        shows.append((f"2024-{1 + i // 4:02d}-{6 + 7 * (i % 4):02d}", venue, 1, 1, 1, i + 1))
+    # Tour 2: three 3-night runs at venues 2, 3, 4 (consecutive nights), plus 3 one-offs.
+    pos = 0
+    for venue, start_day in ((2, 1), (3, 8), (4, 15)):
+        for night in range(3):
+            pos += 1
+            shows.append((f"2024-07-{start_day + night:02d}", venue, 2, night + 1, 3, pos))
+    for k, venue in enumerate((1, 5, 6)):
+        pos += 1
+        shows.append((f"2024-08-{10 + k:02d}", venue, 2, 1, 1, pos))
+
+    for idx, (d, venue, tour, rpos, rlen, tpos) in enumerate(shows):
+        show_id = 5000 + idx
+        c.execute(
+            "INSERT INTO shows (show_id, show_date, venue_id, tour_id, run_position, "
+            "run_length, tour_position, fetched_at) VALUES (?,?,?,?,?,?,?,?)",
+            (show_id, d, venue, tour, rpos, rlen, tpos, d),
+        )
+        songs = [1]
+        if idx % 2 == 0:
+            songs.append(2)
+        if rpos == 1:
+            songs.append(3)
+        if idx % 7 == 0:
+            songs.append(4)
+        if idx == len(shows) - 1:
+            songs.append(5)
+        c.executemany(
+            "INSERT INTO setlist_songs (show_id, set_number, position, song_id) VALUES (?,?,?,?)",
+            [(show_id, "1", p + 1, s) for p, s in enumerate(songs)],
+        )
+    c.commit()
+    c.close()
+
+
+@pytest.fixture
+def inclusion_runs_db(tmp_path) -> Path:
+    """Path to a small read DB with multi-night runs (see build_inclusion_runs_db)."""
+    path = tmp_path / "phishpicker.db"
+    build_inclusion_runs_db(path)
+    return path

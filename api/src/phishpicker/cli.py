@@ -92,6 +92,18 @@ def main() -> int:
     )
     p_incl.add_argument("--holdout-days", type=int, default=365)
     p_incl.add_argument("--iterations", type=int, default=300)
+    p_incl.add_argument("--warmup-shows", type=int, default=50)
+    p_incl.add_argument("--db", default=None, help="read DB (default: the data dir's)")
+    p_incl.add_argument(
+        "--out-dir", default=None, help="where to write the artifacts (default: the data dir)"
+    )
+    p_incl.add_argument(
+        "--no-calibrate",
+        action="store_true",
+        help="skip the walk-forward calibration (inclusion_calibration.json)",
+    )
+    p_incl.add_argument("--block-shows", type=int, default=10)
+    p_incl.add_argument("--calibration-days", type=int, default=365)
     p_evalm = train_sub.add_parser(
         "eval-model",
         help="grade a saved model on the walk-forward holdout (no refitting), "
@@ -118,8 +130,73 @@ def main() -> int:
         help="ship even if MRR regressed beyond tolerance",
     )
 
+    p_eval = sub.add_parser("eval", help="offline model evaluations (no API settings needed)")
+    eval_sub = p_eval.add_subparsers(dest="eval_cmd", required=True)
+    p_cal = eval_sub.add_parser(
+        "inclusion-calibration",
+        help="calibration backtest of the 'Likely Tonight' chances by bonus band",
+    )
+    p_cal.add_argument("--db", required=True, help="path to a phishpicker.db (opened read-only)")
+    p_cal.add_argument(
+        "--cutoff",
+        type=_iso_date,
+        default="2025-06-01",
+        help="train on shows before this date, test on shows on/after it",
+    )
+    p_cal.add_argument("--out", required=True, help="directory for the JSON, summary and chart")
+    p_cal.add_argument(
+        "--artifact",
+        default=None,
+        help="a saved inclusion_model.lgb to check out of sample (optional)",
+    )
+    p_cal.add_argument(
+        "--artifact-trained-through",
+        type=_iso_date,
+        default="2026-07-12",
+        help="score the artifact only on shows strictly after this date",
+    )
+    p_cal.add_argument(
+        "--recent-from",
+        type=_iso_date,
+        default=None,
+        help="start of the 'recent' slice (default: 182 days before the last show)",
+    )
+    p_cal.add_argument("--iterations", type=int, default=300)
+    p_cal.add_argument("--warmup-shows", type=int, default=50)
+    p_cal.add_argument(
+        "--block-shows", type=int, default=10, help="shows per walk-forward retrain"
+    )
+    p_cal.add_argument(
+        "--calibration-days",
+        type=int,
+        default=365,
+        help="each block's calibration is fitted on the walk-forward chances of this "
+        "many days before it",
+    )
+
     args = parser.parse_args()
     _configure_logging()
+
+    if args.cmd == "eval" and args.eval_cmd == "inclusion-calibration":
+        from pathlib import Path
+
+        from phishpicker.train.inclusion_calibration import format_report, run_calibration
+
+        result = run_calibration(
+            Path(args.db),
+            cutoff=args.cutoff,
+            out_dir=Path(args.out),
+            artifact_path=Path(args.artifact) if args.artifact else None,
+            artifact_trained_through=args.artifact_trained_through if args.artifact else None,
+            recent_from=args.recent_from,
+            num_boost_round=args.iterations,
+            warmup_shows=args.warmup_shows,
+            block_shows=args.block_shows,
+            calibration_days=args.calibration_days,
+        )
+        print(format_report(result), end="")
+        print(f"wrote {Path(args.out) / 'inclusion_calibration.json'}")
+        return 0
 
     s = Settings()  # type: ignore[call-arg]
 
@@ -248,13 +325,21 @@ def main() -> int:
         return 0
 
     if args.cmd == "train" and args.train_cmd == "inclusion":
+        import json
+        from pathlib import Path
+
         from phishpicker.train.inclusion_runner import train_inclusion
 
+        out_dir = Path(args.out_dir) if args.out_dir else s.data_dir
         result = train_inclusion(
-            s.db_path,
-            s.data_dir / "inclusion_model.lgb",
+            Path(args.db) if args.db else s.db_path,
+            out_dir / "inclusion_model.lgb",
             holdout_days=args.holdout_days,
             num_boost_round=args.iterations,
+            warmup_shows=args.warmup_shows,
+            calibrate=not args.no_calibrate,
+            calibration_days=args.calibration_days,
+            block_shows=args.block_shows,
         )
         # keep the console readable — importances go to the artifact meta, not stdout
         result_summary = {k: v for k, v in result.items() if k != "feature_importance_gain"}

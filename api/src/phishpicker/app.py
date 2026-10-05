@@ -121,14 +121,25 @@ def create_app() -> FastAPI:
         # (e.g. not yet trained/deployed) is non-fatal — the endpoint 503s.
         app.state.inclusion_path = settings.data_dir / "inclusion_model.lgb"
         app.state.inclusion_scorer = None
+        app.state.inclusion_calibration = None
         if app.state.inclusion_path.exists():
             try:
-                from phishpicker.inclusion import load_inclusion_scorer
+                from phishpicker.inclusion import (
+                    CALIBRATION_FILENAME,
+                    load_inclusion_calibration,
+                    load_inclusion_scorer,
+                )
 
                 app.state.inclusion_scorer = load_inclusion_scorer(
                     app.state.inclusion_path
                 )
                 log.info("loaded inclusion scorer (Likely Tonight)")
+                # Optional: absent or paired with another model -> raw chances.
+                app.state.inclusion_calibration = load_inclusion_calibration(
+                    settings.data_dir / CALIBRATION_FILENAME, app.state.inclusion_path
+                )
+                if app.state.inclusion_calibration is not None:
+                    log.info("loaded inclusion calibration (Likely Tonight)")
             except Exception:  # noqa: BLE001 - never block startup on the optional model
                 log.exception("failed to load inclusion scorer; Likely Tonight disabled")
         app.state.phishnet_client = PhishNetClient(api_key=settings.phishnet_api_key)
@@ -314,7 +325,12 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=503, detail="inclusion model not available")
         from phishpicker.inclusion import likely_tonight
 
-        return {"candidates": likely_tonight(read, show_id, scorer, top_n=top_n)}
+        calibration = request.app.state.inclusion_calibration
+        return {
+            "candidates": likely_tonight(
+                read, show_id, scorer, top_n=top_n, calibration=calibration
+            )
+        }
 
     @app.get("/last-show")
     def last_show(read: sqlite3.Connection = Depends(get_read)):  # noqa: B008
