@@ -128,6 +128,9 @@ _BAND_ARTISTS = (
     "oysterhead",
 )
 
+# original_artist for folk songs nobody wrote (whole name, any casing): not a cover.
+_TRADITIONAL = "traditional"
+
 _ROLE_FIELDS = (
     "set1_opens",
     "set2_opens",
@@ -232,9 +235,12 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
         entry["album_year"] = int(alb.release_date[:4]) if alb else None
         # A cover names its original artist; the band's own songs aren't covers.
         artist = (r["original_artist"] or "").strip() or None
-        entry["cover_artist"] = (
-            artist if artist and not any(b in artist.lower() for b in _BAND_ARTISTS) else None
+        is_cover = (
+            artist is not None
+            and artist.lower() != _TRADITIONAL
+            and not any(b in artist.lower() for b in _BAND_ARTISTS)
         )
+        entry["cover_artist"] = artist if is_cover else None
         catalog.append(entry)
     return catalog
 

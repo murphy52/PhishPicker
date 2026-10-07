@@ -353,6 +353,23 @@ def test_catalog_album_and_cover_artist(tmp_path):
     assert all(cat[10][k] == 0 for k in _ROLE_FIELDS)
 
 
+def test_catalog_traditional_songs_are_not_covers(tmp_path):
+    conn = _role_db(tmp_path)
+    conn.executescript(
+        """
+        INSERT INTO songs (song_id, name, original_artist, first_seen_at) VALUES
+            (20, 'Amazing Grace', 'Traditional', 'x'),
+            (21, 'Sweet Adeline', ' TRADITIONAL ', 'x'),
+            (22, 'Some Tune', 'Traditional Jazz Band', 'x');
+        """
+    )
+    cat = {c["song_id"]: c for c in _catalog(conn, "2026-04-20")}
+    assert cat[20]["cover_artist"] is None
+    assert cat[21]["cover_artist"] is None  # any casing, trimmed
+    # Only the whole name "Traditional": a band with it in its name is a cover.
+    assert cat[22]["cover_artist"] == "Traditional Jazz Band"
+
+
 def test_build_bundle_sends_twenty_candidates_per_slot(
     read_conn, live_conn, scorer, seeded_live_show
 ):
