@@ -113,6 +113,16 @@ def sign_headers(
     }
 
 
+_ROLE_FIELDS = (
+    "set1_opens",
+    "set2_opens",
+    "encores",
+    "set_closes",
+    "set2_plays",
+    "plays_this_year",
+)
+
+
 def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
     """Every non-placeholder song, with plays/last_played strictly before
     `show_date` and gap = shows strictly between last_played and show_date.
@@ -139,6 +149,42 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
         """,
         (show_date,),
     ).fetchall()
+    # Set-role counts for the picker's browse tiles (phishvs #38), same
+    # strictly-before-show_date window. `position` is show-wide: a set's
+    # first/last song is MIN/MAX within (show, set), never `position = 1`.
+    # Opens/encores/set-2 plays count shows (a sandwich is one); closes count
+    # set endings, so a song closing both sets of one show counts twice.
+    # Soundcheck ('S') counts nowhere.
+    roles = {
+        r["song_id"]: r
+        for r in read_conn.execute(
+            """
+            WITH bounds AS (
+                SELECT show_id, set_number, MIN(position) AS lo, MAX(position) AS hi
+                FROM setlist_songs GROUP BY show_id, set_number
+            )
+            SELECT ss.song_id,
+                   COUNT(DISTINCT CASE WHEN ss.set_number = '1' AND ss.position = b.lo
+                                       THEN ss.show_id END) AS set1_opens,
+                   COUNT(DISTINCT CASE WHEN ss.set_number = '2' AND ss.position = b.lo
+                                       THEN ss.show_id END) AS set2_opens,
+                   COUNT(DISTINCT CASE WHEN ss.set_number LIKE 'E%'
+                                       THEN ss.show_id END) AS encores,
+                   COUNT(CASE WHEN ss.set_number IN ('1', '2') AND ss.position = b.hi
+                              THEN 1 END) AS set_closes,
+                   COUNT(DISTINCT CASE WHEN ss.set_number = '2'
+                                       THEN ss.show_id END) AS set2_plays,
+                   COUNT(DISTINCT CASE WHEN substr(sh.show_date, 1, 4) = substr(?, 1, 4)
+                                       THEN ss.show_id END) AS plays_this_year
+            FROM setlist_songs ss
+            JOIN shows sh ON sh.show_id = ss.show_id AND sh.show_date < ?
+            JOIN bounds b ON b.show_id = ss.show_id AND b.set_number = ss.set_number
+            WHERE ss.set_number <> 'S'
+            GROUP BY ss.song_id
+            """,
+            (show_date, show_date),
+        )
+    }
     # One COUNT per distinct last-played date, not per song — the same
     # memoization as scoring_service._surprise_weights.
     gap_by_date: dict[str, int] = {}
@@ -153,16 +199,17 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
                     (last, show_date),
                 ).fetchone()[0]
             gap = gap_by_date[last]
-        catalog.append(
-            {
-                "song_id": r["song_id"],
-                "name": r["name"],
-                "plays": r["plays"],
-                "last_played": last,
-                "gap": gap,
-                "placeholder": False,
-            }
-        )
+        entry = {
+            "song_id": r["song_id"],
+            "name": r["name"],
+            "plays": r["plays"],
+            "last_played": last,
+            "gap": gap,
+            "placeholder": False,
+        }
+        role = roles.get(r["song_id"])
+        entry.update({k: (role[k] if role else 0) for k in _ROLE_FIELDS})
+        catalog.append(entry)
     return catalog
 
 

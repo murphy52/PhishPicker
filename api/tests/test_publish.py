@@ -20,6 +20,7 @@ from phishpicker.db.connection import apply_schema, open_db
 from phishpicker.inclusion import CALIBRATION_FILENAME, RUN_REPEAT_CHANCE
 from phishpicker.model.scorer import HeuristicScorer
 from phishpicker.publish import (
+    _catalog,
     build_bundle,
     next_bundle_seq,
     publish,
@@ -263,7 +264,8 @@ def test_build_bundle_catalog_gap_and_plays(read_conn, live_conn, scorer, seeded
     )
     cat = {c["song_id"]: c for c in b["catalog"]}
     assert set(cat) == set(range(1, 21))  # 20 real songs, no placeholder
-    assert cat[1] == {
+    original = ("song_id", "name", "plays", "last_played", "gap", "placeholder")
+    assert {k: cat[1][k] for k in original} == {
         "song_id": 1,
         "name": "Song 1",
         "plays": 2,
@@ -275,6 +277,44 @@ def test_build_bundle_catalog_gap_and_plays(read_conn, live_conn, scorer, seeded
     assert cat[20]["last_played"] is None and cat[20]["gap"] is None
     # Every candidate the model offers resolves in the catalog (fans auto-fill from it).
     assert {c["song_id"] for s in b["slots"] for c in s["top_k"]} <= set(cat)
+
+
+def _role_db(tmp_path):
+    """Two shows before 2026-04-20 and one after. Positions are SHOW-WIDE (as
+    phish.net stores them): set 2 starts at position 4, not 1."""
+    conn = open_db(tmp_path / "roles.db")
+    apply_schema(conn)
+    conn.executescript(
+        """
+        INSERT INTO shows (show_id, show_date, fetched_at) VALUES
+            (1, '2025-12-31', 'x'), (2, '2026-04-10', 'x'), (3, '2026-04-25', 'x');
+        INSERT INTO songs (song_id, name, first_seen_at) VALUES
+            (1, 'Opener', 'x'), (2, 'Jam', 'x'), (3, 'Closer', 'x'), (4, 'Encore', 'x');
+        INSERT INTO setlist_songs (show_id, set_number, position, song_id) VALUES
+            (1, '1', 1, 1), (1, '1', 2, 3), (1, '2', 3, 2), (1, '2', 4, 3), (1, 'E', 5, 4),
+            (2, '1', 1, 1), (2, '1', 2, 2), (2, '1', 3, 3), (2, '2', 4, 2), (2, '2', 5, 2),
+            (2, 'E2', 6, 4),
+            (3, '1', 1, 2), (3, '2', 2, 1);
+        """
+    )
+    return conn
+
+
+def test_catalog_role_counts_use_per_set_bounds(tmp_path):
+    conn = _role_db(tmp_path)
+    cat = {c["song_id"]: c for c in _catalog(conn, "2026-04-20")}
+    # Show 3 (after show_date) never counts.
+    assert cat[1]["set1_opens"] == 2 and cat[1]["set2_opens"] == 0
+    # Song 2 opens set 2 at show-wide position 3 (show 1) and 4 (show 2).
+    assert cat[2]["set2_opens"] == 2
+    # Song 2 played twice in show 2's set 2 (a sandwich) is one show.
+    assert cat[2]["set2_plays"] == 2
+    # Closer ends set 1 in both shows and set 2 in show 1.
+    assert cat[3]["set_closes"] == 3
+    # E and E2 both count as encores.
+    assert cat[4]["encores"] == 2
+    # 2026 plays only (show 2), before show_date.
+    assert cat[1]["plays_this_year"] == 1 and cat[4]["plays_this_year"] == 1
 
 
 def test_build_bundle_uses_frozen_bracket_when_present(
