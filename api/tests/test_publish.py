@@ -324,7 +324,12 @@ def test_catalog_album_and_cover_artist(tmp_path):
         INSERT INTO songs (song_id, name, original_artist, first_seen_at) VALUES
             (10, 'Down with Disease', 'Phish', 'x'),
             (11, 'Good Times Bad Times', 'Led Zeppelin', 'x'),
-            (12, 'Money, Love and Change', 'Trey Anastasio', 'x');
+            (12, 'Money, Love and Change', 'Trey Anastasio', 'x'),
+            (13, 'Andelmans Yard', 'Mike Gordon and Leo Kottke', 'x'),
+            (14, 'Dude of Life', 'The Dude of Life (with Phish)', 'x'),
+            (15, 'About to Run', 'Ghosts of the Forest', 'x'),
+            (16, 'Mr. Completely', 'Trey, Mike, and The Benevento/Russo Duo', 'x'),
+            (17, 'Beauty of a Broken Heart', 'Page Mcconnell', 'x');
         """
     )
     cat = {c["song_id"]: c for c in _catalog(conn, "2026-04-20")}
@@ -332,6 +337,8 @@ def test_catalog_album_and_cover_artist(tmp_path):
     assert cat[10]["cover_artist"] is None
     assert cat[11]["cover_artist"] == "Led Zeppelin" and cat[11]["album"] is None
     assert cat[12]["cover_artist"] is None  # Trey's own songs aren't covers
+    # Nor are band members' side projects, whatever the casing.
+    assert all(cat[i]["cover_artist"] is None for i in (13, 14, 15, 16, 17))
 
 
 def test_build_bundle_sends_twenty_candidates_per_slot(

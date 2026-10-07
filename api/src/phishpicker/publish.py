@@ -114,6 +114,17 @@ def sign_headers(
     }
 
 
+# original_artist substrings (lowercase) for Phish and members' side projects.
+_BAND_ARTISTS = (
+    "phish",
+    "anastasio",
+    "trey",
+    "mike gordon",
+    "mcconnell",
+    "fishman",
+    "ghosts of the forest",
+)
+
 _ROLE_FIELDS = (
     "set1_opens",
     "set2_opens",
@@ -215,10 +226,10 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
         alb = albums.get(r["song_id"])
         entry["album"] = alb.name if alb else None
         entry["album_year"] = int(alb.release_date[:4]) if alb else None
-        # A cover names its original artist; Phish and Trey's own songs aren't covers.
+        # A cover names its original artist; the band's own songs aren't covers.
         artist = r["original_artist"]
         entry["cover_artist"] = (
-            artist if artist and artist != "Phish" and "Anastasio" not in artist else None
+            artist if artist and not any(b in artist.lower() for b in _BAND_ARTISTS) else None
         )
         catalog.append(entry)
     return catalog
