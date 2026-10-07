@@ -123,6 +123,9 @@ _BAND_ARTISTS = (
     "mcconnell",
     "fishman",
     "ghosts of the forest",
+    "vida blue",
+    "pork tornado",
+    "oysterhead",
 )
 
 _ROLE_FIELDS = (
@@ -166,7 +169,8 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
     # first/last song is MIN/MAX within (show, set), never `position = 1`.
     # Opens/encores/set-2 plays count shows (a sandwich is one); closes count
     # set endings, so a song closing both sets of one show counts twice.
-    # Soundcheck ('S') counts nowhere.
+    # Soundcheck ('S') counts nowhere. set_closes/set2_opens cover sets 1-2
+    # only (a set 3 counts toward neither), per the design.
     roles = {
         r["song_id"]: r
         for r in read_conn.execute(
@@ -227,7 +231,7 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
         entry["album"] = alb.name if alb else None
         entry["album_year"] = int(alb.release_date[:4]) if alb else None
         # A cover names its original artist; the band's own songs aren't covers.
-        artist = r["original_artist"]
+        artist = (r["original_artist"] or "").strip() or None
         entry["cover_artist"] = (
             artist if artist and not any(b in artist.lower() for b in _BAND_ARTISTS) else None
         )
