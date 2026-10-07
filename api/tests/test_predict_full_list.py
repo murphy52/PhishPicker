@@ -110,3 +110,18 @@ def test_full_list_softmax_is_stable_for_large_scores(tmp_path):
     probs = [c["probability"] for c in out]
     assert all(math.isfinite(p) for p in probs)
     assert math.isclose(sum(probs), 1.0, rel_tol=1e-12)
+
+
+def test_full_list_drops_non_finite_scores(tmp_path):
+    scores = {1: float("nan"), 2: float("inf"), 3: -1.0, 4: float("-inf"), 5: 0.5}
+    out = predict_next_stateless(
+        read_conn=_db(tmp_path, scores),
+        played_songs=[],
+        current_set="1",
+        show_date="2026-07-07",
+        venue_id=None,
+        scorer=FixedScorer(scores),
+        full_list=True,
+    )
+    assert [c["song_id"] for c in out] == [5, 3]
+    assert all(math.isfinite(c["probability"]) for c in out)

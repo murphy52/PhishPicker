@@ -71,8 +71,9 @@ def predict_next_stateless(
     if full_list:
         # apply_post_rules zeroes excluded songs, which only hides them behind
         # the > 0 filter; with negatives kept they must be removed outright.
+        # Non-finite scores go too, as the > 0 filter drops NaN.
         excluded = set(played_songs) | (played_in_run or set())
-        scored = [(sid, s) for sid, s in scored if sid not in excluded]
+        scored = [(sid, s) for sid, s in scored if sid not in excluded and math.isfinite(s)]
     else:
         scored = apply_post_rules(
             scored, played_tonight=set(played_songs), played_in_run=played_in_run

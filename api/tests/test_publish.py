@@ -8,6 +8,7 @@ play history to pin the gap math against.
 import hashlib
 import hmac
 import json
+import math
 import os
 import shutil
 import sys
@@ -20,6 +21,7 @@ from phishpicker.db.connection import apply_schema, open_db
 from phishpicker.inclusion import CALIBRATION_FILENAME, RUN_REPEAT_CHANCE
 from phishpicker.live_preview import build_preview
 from phishpicker.model.scorer import HeuristicScorer
+from phishpicker.predict import FULL_LIST_SOFTMAX_T
 from phishpicker.publish import (
     _ROLE_FIELDS,
     _catalog,
@@ -408,11 +410,7 @@ def test_build_bundle_sends_twenty_candidates_per_slot(
 def test_build_bundle_probs_are_a_softmax_over_the_slot(
     read_conn, live_conn, seeded_live_show, scorer_cls
 ):
-    import math
-
     scorer = scorer_cls()
-
-    from phishpicker.predict import FULL_LIST_SOFTMAX_T
 
     b = build_bundle(
         read_conn=read_conn,
