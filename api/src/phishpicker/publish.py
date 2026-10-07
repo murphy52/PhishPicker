@@ -293,21 +293,28 @@ def build_bundle(
     scorer,
     bundle_seq: int,
     # phishvs shows a slot's whole top_k as its Likely here list (#38); its
-    # Roll still samples only the top band.
+    # Roll still samples only the top band. Every slot fills it: candidates
+    # come from predict_next_stateless's full_list mode.
     top_k: int = 20,
 ) -> dict:
+    # The model's candidate pool is the whole songs table, placeholders
+    # included (a stand-in row for a song phish.net hadn't listed yet). The
+    # catalog excludes them, and a candidate the catalog can't name is useless
+    # to phishvs, so drop them below and re-rank the remainder. Ask for enough
+    # extra that a slot still fills top_k after they go.
+    placeholders = _placeholder_ids(read_conn)
     preview = build_preview(
-        read_conn=read_conn, live_conn=live_conn, show_id=show_id, top_k=top_k, scorer=scorer
+        read_conn=read_conn,
+        live_conn=live_conn,
+        show_id=show_id,
+        top_k=top_k + len(placeholders),
+        scorer=scorer,
+        full_list=True,
     )
     show = live_conn.execute(
         "SELECT show_date, venue_id FROM live_show WHERE show_id = ?", (show_id,)
     ).fetchone()
     show_date = show["show_date"]
-    # The model's candidate pool is the whole songs table, placeholders
-    # included (a stand-in row for a song phish.net hadn't listed yet). The
-    # catalog excludes them, and a candidate the catalog can't name is useless
-    # to phishvs, so drop them here and re-rank the remainder.
-    placeholders = _placeholder_ids(read_conn)
 
     slots = []
     picker_bracket = []
@@ -317,13 +324,15 @@ def build_bundle(
             continue
         set_number, position = s["set_number"], s["position"]
         structure[set_number] = structure.get(set_number, 0) + 1
-        cands = [c for c in s["top_k"] if c["song_id"] not in placeholders]
+        cands = [c for c in s["top_k"] if c["song_id"] not in placeholders][:top_k]
+        # Renormalised over what ships: the same softmax, over these songs.
+        total = sum(c["probability"] for c in cands) or 1.0
         slots.append(
             {
                 "set": set_number,
                 "position": position,
                 "top_k": [
-                    {"song_id": c["song_id"], "prob": c["probability"], "rank": i}
+                    {"song_id": c["song_id"], "prob": c["probability"] / total, "rank": i}
                     for i, c in enumerate(cands, start=1)
                 ],
             }

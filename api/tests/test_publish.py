@@ -18,6 +18,7 @@ from pytest_httpx import HTTPXMock
 
 from phishpicker.db.connection import apply_schema, open_db
 from phishpicker.inclusion import CALIBRATION_FILENAME, RUN_REPEAT_CHANCE
+from phishpicker.live_preview import build_preview
 from phishpicker.model.scorer import HeuristicScorer
 from phishpicker.publish import (
     _ROLE_FIELDS,
@@ -102,6 +103,16 @@ def read_conn(tmp_path):
 @pytest.fixture
 def scorer():
     return HeuristicScorer()
+
+
+class _ShiftedScorer(HeuristicScorer):
+    """The heuristic's scores pushed down so most go negative, as LightGBM's
+    raw scores often do."""
+
+    def score_candidates(self, **kwargs):
+        scored = super().score_candidates(**kwargs)
+        shift = sorted(s for _, s in scored)[len(scored) // 2]
+        return [(sid, s - shift) for sid, s in scored]
 
 
 def _verify(headers: dict[str, str], body: bytes, secret: str) -> bool:
@@ -370,9 +381,11 @@ def test_catalog_traditional_songs_are_not_covers(tmp_path):
     assert cat[22]["cover_artist"] == "Traditional Jazz Band"
 
 
+@pytest.mark.parametrize("scorer_cls", [HeuristicScorer, _ShiftedScorer])
 def test_build_bundle_sends_twenty_candidates_per_slot(
-    read_conn, live_conn, scorer, seeded_live_show
+    read_conn, live_conn, seeded_live_show, scorer_cls
 ):
+    scorer = scorer_cls()
     b = build_bundle(
         read_conn=read_conn,
         live_conn=live_conn,
@@ -380,8 +393,50 @@ def test_build_bundle_sends_twenty_candidates_per_slot(
         scorer=scorer,
         bundle_seq=1,
     )
-    # The fixture has 20 real songs, so a slot can offer more than the old 8.
-    assert max(len(s["top_k"]) for s in b["slots"]) > 8
+    # The fixture has 20 real songs and the bracket chain plays one per slot,
+    # so slot i (0-based) has 20 - i eligible: every one ships, negative raw
+    # scores included, and nothing the chain already played.
+    assert [len(s["top_k"]) for s in b["slots"]] == [20 - i for i in range(18)]
+    chain: list[int] = []
+    for s in b["slots"]:
+        ids = [c["song_id"] for c in s["top_k"]]
+        assert 99 not in ids and not set(chain) & set(ids)
+        chain.append(ids[0])
+
+
+@pytest.mark.parametrize("scorer_cls", [HeuristicScorer, _ShiftedScorer])
+def test_build_bundle_probs_are_a_softmax_over_the_slot(
+    read_conn, live_conn, seeded_live_show, scorer_cls
+):
+    import math
+
+    scorer = scorer_cls()
+
+    from phishpicker.predict import FULL_LIST_SOFTMAX_T
+
+    b = build_bundle(
+        read_conn=read_conn,
+        live_conn=live_conn,
+        show_id=seeded_live_show,
+        scorer=scorer,
+        bundle_seq=1,
+    )
+    preview = build_preview(
+        read_conn=read_conn,
+        live_conn=live_conn,
+        show_id=seeded_live_show,
+        top_k=21,
+        scorer=scorer,
+        full_list=True,
+    )
+    for slot, pslot in zip(b["slots"], preview["slots"], strict=True):
+        probs = [c["prob"] for c in slot["top_k"]]
+        assert math.isclose(sum(probs), 1.0, rel_tol=1e-9)
+        assert all(p > 0 for p in probs) and probs == sorted(probs, reverse=True)
+        score = {c["song_id"]: c["score"] for c in pslot["top_k"]}
+        weights = [math.exp(score[c["song_id"]] / FULL_LIST_SOFTMAX_T) for c in slot["top_k"]]
+        for c, w in zip(slot["top_k"], weights, strict=True):
+            assert math.isclose(c["prob"], w / sum(weights), rel_tol=1e-9)
 
 
 def test_build_bundle_uses_frozen_bracket_when_present(

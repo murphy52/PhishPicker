@@ -268,6 +268,9 @@ def build_preview(
     show_id: str,
     top_k: int,
     scorer,
+    # Predicted slots only (see predict_next_stateless); hit-ranks stay on
+    # the default path. The bundle sets it.
+    full_list: bool = False,
 ) -> dict:
     show = live_conn.execute(
         "SELECT show_date, venue_id, current_set FROM live_show WHERE show_id = ?",
@@ -424,6 +427,7 @@ def build_preview(
                 ext_cache=ext_cache,
                 bigram_cache=bigram_cache,
                 played_in_run=played_in_run,
+                full_list=full_list,
             )
             slots.append(
                 {
@@ -434,6 +438,8 @@ def build_preview(
                     "top_k": [{**c, "rank": i + 1} for i, c in enumerate(cands)],
                 }
             )
+            # full_list leaves cands[0] as is wherever the top score is
+            # positive; it only fills a slot the default path leaves empty.
             if cands:
                 virtual_played = virtual_played + [cands[0]["song_id"]]
                 prev_trans_mark = ","
