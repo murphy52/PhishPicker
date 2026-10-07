@@ -63,6 +63,7 @@ from phishpicker.last_show import rollover_today
 from phishpicker.live_preview import build_preview
 from phishpicker.scoring_store import get_score_state
 from phishpicker.show_meta import resolve_show_meta
+from phishpicker.train.albums import song_album_map
 from phishpicker.venue_tz import tz_for_state
 
 log = logging.getLogger(__name__)
@@ -113,6 +114,33 @@ def sign_headers(
     }
 
 
+# original_artist substrings (lowercase) for Phish and members' side projects.
+_BAND_ARTISTS = (
+    "phish",
+    "anastasio",
+    "trey",
+    "mike gordon",
+    "mcconnell",
+    "fishman",
+    "ghosts of the forest",
+    "vida blue",
+    "pork tornado",
+    "oysterhead",
+)
+
+# original_artist for folk songs nobody wrote (whole name, any casing): not a cover.
+_TRADITIONAL = "traditional"
+
+_ROLE_FIELDS = (
+    "set1_opens",
+    "set2_opens",
+    "encores",
+    "set_closes",
+    "set2_plays",
+    "plays_this_year",
+)
+
+
 def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
     """Every non-placeholder song, with plays/last_played strictly before
     `show_date` and gap = shows strictly between last_played and show_date.
@@ -125,7 +153,7 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
     """
     rows = read_conn.execute(
         """
-        SELECT s.song_id, s.name,
+        SELECT s.song_id, s.name, s.original_artist,
                -- sh is NULL for plays on/after show_date, so counting it
                -- (not ss) keeps those out. DISTINCT: a sandwich is one play.
                COUNT(DISTINCT sh.show_id) AS plays,
@@ -139,6 +167,45 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
         """,
         (show_date,),
     ).fetchall()
+    # Set-role counts for the picker's browse tiles (phishvs #38), same
+    # strictly-before-show_date window. `position` is show-wide: a set's
+    # first/last song is MIN/MAX within (show, set), never `position = 1`.
+    # Opens/encores/set-2 plays count shows (a sandwich is one); closes count
+    # set endings, so a song closing both sets of one show counts twice.
+    # Soundcheck ('S') counts nowhere. set_closes/set2_opens cover sets 1-2
+    # only (a set 3 counts toward neither), per the design.
+    roles = {
+        r["song_id"]: r
+        for r in read_conn.execute(
+            """
+            WITH bounds AS (
+                SELECT show_id, set_number, MIN(position) AS lo, MAX(position) AS hi
+                FROM setlist_songs GROUP BY show_id, set_number
+            )
+            SELECT ss.song_id,
+                   COUNT(DISTINCT CASE WHEN ss.set_number = '1' AND ss.position = b.lo
+                                       THEN ss.show_id END) AS set1_opens,
+                   COUNT(DISTINCT CASE WHEN ss.set_number = '2' AND ss.position = b.lo
+                                       THEN ss.show_id END) AS set2_opens,
+                   COUNT(DISTINCT CASE WHEN ss.set_number LIKE 'E%'
+                                       THEN ss.show_id END) AS encores,
+                   COUNT(CASE WHEN ss.set_number IN ('1', '2') AND ss.position = b.hi
+                              THEN 1 END) AS set_closes,
+                   COUNT(DISTINCT CASE WHEN ss.set_number = '2'
+                                       THEN ss.show_id END) AS set2_plays,
+                   COUNT(DISTINCT CASE WHEN substr(sh.show_date, 1, 4) = substr(?, 1, 4)
+                                       THEN ss.show_id END) AS plays_this_year
+            FROM setlist_songs ss
+            JOIN shows sh ON sh.show_id = ss.show_id AND sh.show_date < ?
+            JOIN bounds b ON b.show_id = ss.show_id AND b.set_number = ss.set_number
+            WHERE ss.set_number <> 'S'
+            GROUP BY ss.song_id
+            """,
+            (show_date, show_date),
+        )
+    }
+    # Studio albums only, matched by exact name (as the model's album features).
+    albums = song_album_map(read_conn, [r["song_id"] for r in rows])
     # One COUNT per distinct last-played date, not per song — the same
     # memoization as scoring_service._surprise_weights.
     gap_by_date: dict[str, int] = {}
@@ -153,16 +220,28 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
                     (last, show_date),
                 ).fetchone()[0]
             gap = gap_by_date[last]
-        catalog.append(
-            {
-                "song_id": r["song_id"],
-                "name": r["name"],
-                "plays": r["plays"],
-                "last_played": last,
-                "gap": gap,
-                "placeholder": False,
-            }
+        entry = {
+            "song_id": r["song_id"],
+            "name": r["name"],
+            "plays": r["plays"],
+            "last_played": last,
+            "gap": gap,
+            "placeholder": False,
+        }
+        role = roles.get(r["song_id"])
+        entry.update({k: (role[k] if role else 0) for k in _ROLE_FIELDS})
+        alb = albums.get(r["song_id"])
+        entry["album"] = alb.name if alb else None
+        entry["album_year"] = int(alb.release_date[:4]) if alb else None
+        # A cover names its original artist; the band's own songs aren't covers.
+        artist = (r["original_artist"] or "").strip() or None
+        is_cover = (
+            artist is not None
+            and artist.lower() != _TRADITIONAL
+            and not any(b in artist.lower() for b in _BAND_ARTISTS)
         )
+        entry["cover_artist"] = artist if is_cover else None
+        catalog.append(entry)
     return catalog
 
 
@@ -213,7 +292,9 @@ def build_bundle(
     show_id: str,
     scorer,
     bundle_seq: int,
-    top_k: int = 8,
+    # phishvs shows a slot's whole top_k as its Likely here list (#38); its
+    # Roll still samples only the top band.
+    top_k: int = 20,
 ) -> dict:
     preview = build_preview(
         read_conn=read_conn, live_conn=live_conn, show_id=show_id, top_k=top_k, scorer=scorer

@@ -20,6 +20,8 @@ from phishpicker.db.connection import apply_schema, open_db
 from phishpicker.inclusion import CALIBRATION_FILENAME, RUN_REPEAT_CHANCE
 from phishpicker.model.scorer import HeuristicScorer
 from phishpicker.publish import (
+    _ROLE_FIELDS,
+    _catalog,
     build_bundle,
     next_bundle_seq,
     publish,
@@ -263,7 +265,8 @@ def test_build_bundle_catalog_gap_and_plays(read_conn, live_conn, scorer, seeded
     )
     cat = {c["song_id"]: c for c in b["catalog"]}
     assert set(cat) == set(range(1, 21))  # 20 real songs, no placeholder
-    assert cat[1] == {
+    original = ("song_id", "name", "plays", "last_played", "gap", "placeholder")
+    assert {k: cat[1][k] for k in original} == {
         "song_id": 1,
         "name": "Song 1",
         "plays": 2,
@@ -275,6 +278,110 @@ def test_build_bundle_catalog_gap_and_plays(read_conn, live_conn, scorer, seeded
     assert cat[20]["last_played"] is None and cat[20]["gap"] is None
     # Every candidate the model offers resolves in the catalog (fans auto-fill from it).
     assert {c["song_id"] for s in b["slots"] for c in s["top_k"]} <= set(cat)
+
+
+def _role_db(tmp_path):
+    """Three shows before 2026-04-20 and one after. Positions are SHOW-WIDE (as
+    phish.net stores them): set 2 starts at position 4, not 1. Show 4 is a
+    soundcheck only, which must move no count; song 5 debuts after show_date."""
+    conn = open_db(tmp_path / "roles.db")
+    apply_schema(conn)
+    conn.executescript(
+        """
+        INSERT INTO shows (show_id, show_date, fetched_at) VALUES
+            (1, '2025-12-31', 'x'), (2, '2026-04-10', 'x'), (3, '2026-04-25', 'x'),
+            (4, '2026-04-15', 'x');
+        INSERT INTO songs (song_id, name, first_seen_at) VALUES
+            (1, 'Opener', 'x'), (2, 'Jam', 'x'), (3, 'Closer', 'x'), (4, 'Encore', 'x'),
+            (5, 'Debut', 'x');
+        INSERT INTO setlist_songs (show_id, set_number, position, song_id) VALUES
+            (1, '1', 1, 1), (1, '1', 2, 3), (1, '2', 3, 2), (1, '2', 4, 3), (1, 'E', 5, 4),
+            (2, '1', 1, 1), (2, '1', 2, 2), (2, '1', 3, 3), (2, '2', 4, 2), (2, '2', 5, 2),
+            (2, 'E2', 6, 4),
+            (3, '1', 1, 2), (3, '2', 2, 1), (3, 'E', 3, 5),
+            (4, 'S', 1, 1);
+        """
+    )
+    return conn
+
+
+def test_catalog_role_counts_use_per_set_bounds(tmp_path):
+    conn = _role_db(tmp_path)
+    cat = {c["song_id"]: c for c in _catalog(conn, "2026-04-20")}
+    # Show 3 (after show_date) never counts; nor does show 4's soundcheck.
+    assert cat[1]["set1_opens"] == 2 and cat[1]["set2_opens"] == 0
+    # Song 2 opens set 2 at show-wide position 3 (show 1) and 4 (show 2).
+    assert cat[2]["set2_opens"] == 2
+    # Song 2 played twice in show 2's set 2 (a sandwich) is one show.
+    assert cat[2]["set2_plays"] == 2
+    # Closer ends set 1 in both shows and set 2 in show 1.
+    assert cat[3]["set_closes"] == 3
+    # E and E2 both count as encores.
+    assert cat[4]["encores"] == 2
+    # 2026 plays only (show 2), before show_date.
+    assert cat[1]["plays_this_year"] == 1 and cat[4]["plays_this_year"] == 1
+    # Played only after show_date: every role count is 0.
+    assert all(cat[5][k] == 0 for k in _ROLE_FIELDS)
+
+
+def test_catalog_album_and_cover_artist(tmp_path):
+    conn = _role_db(tmp_path)
+    conn.executescript(
+        """
+        INSERT INTO songs (song_id, name, original_artist, first_seen_at) VALUES
+            (10, 'Down with Disease', 'Phish', 'x'),
+            (11, 'Good Times Bad Times', 'Led Zeppelin', 'x'),
+            (12, 'Money, Love and Change', 'Trey Anastasio', 'x'),
+            (13, 'Andelmans Yard', 'Mike Gordon and Leo Kottke', 'x'),
+            (14, 'Dude of Life', 'The Dude of Life (with Phish)', 'x'),
+            (15, 'About to Run', 'Ghosts of the Forest', 'x'),
+            (16, 'Mr. Completely', 'Trey, Mike, and The Benevento/Russo Duo', 'x'),
+            (17, 'Beauty of a Broken Heart', 'Page Mcconnell', 'x'),
+            (18, 'Most Events Arent Planned', 'Vida Blue', 'x'),
+            (19, 'Come Together', 'The Beatles ', 'x');
+        """
+    )
+    cat = {c["song_id"]: c for c in _catalog(conn, "2026-04-20")}
+    assert cat[10]["album"] == "Hoist" and cat[10]["album_year"] == 1994
+    assert cat[10]["cover_artist"] is None
+    assert cat[11]["cover_artist"] == "Led Zeppelin" and cat[11]["album"] is None
+    assert cat[12]["cover_artist"] is None  # Trey's own songs aren't covers
+    # Nor are band members' side projects, whatever the casing.
+    assert all(cat[i]["cover_artist"] is None for i in (13, 14, 15, 16, 17, 18))
+    assert cat[19]["cover_artist"] == "The Beatles"  # trimmed
+    # Never played: every role count is 0.
+    assert all(cat[10][k] == 0 for k in _ROLE_FIELDS)
+
+
+def test_catalog_traditional_songs_are_not_covers(tmp_path):
+    conn = _role_db(tmp_path)
+    conn.executescript(
+        """
+        INSERT INTO songs (song_id, name, original_artist, first_seen_at) VALUES
+            (20, 'Amazing Grace', 'Traditional', 'x'),
+            (21, 'Sweet Adeline', ' TRADITIONAL ', 'x'),
+            (22, 'Some Tune', 'Traditional Jazz Band', 'x');
+        """
+    )
+    cat = {c["song_id"]: c for c in _catalog(conn, "2026-04-20")}
+    assert cat[20]["cover_artist"] is None
+    assert cat[21]["cover_artist"] is None  # any casing, trimmed
+    # Only the whole name "Traditional": a band with it in its name is a cover.
+    assert cat[22]["cover_artist"] == "Traditional Jazz Band"
+
+
+def test_build_bundle_sends_twenty_candidates_per_slot(
+    read_conn, live_conn, scorer, seeded_live_show
+):
+    b = build_bundle(
+        read_conn=read_conn,
+        live_conn=live_conn,
+        show_id=seeded_live_show,
+        scorer=scorer,
+        bundle_seq=1,
+    )
+    # The fixture has 20 real songs, so a slot can offer more than the old 8.
+    assert max(len(s["top_k"]) for s in b["slots"]) > 8
 
 
 def test_build_bundle_uses_frozen_bracket_when_present(
