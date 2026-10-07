@@ -63,6 +63,7 @@ from phishpicker.last_show import rollover_today
 from phishpicker.live_preview import build_preview
 from phishpicker.scoring_store import get_score_state
 from phishpicker.show_meta import resolve_show_meta
+from phishpicker.train.albums import song_album_map
 from phishpicker.venue_tz import tz_for_state
 
 log = logging.getLogger(__name__)
@@ -135,7 +136,7 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
     """
     rows = read_conn.execute(
         """
-        SELECT s.song_id, s.name,
+        SELECT s.song_id, s.name, s.original_artist,
                -- sh is NULL for plays on/after show_date, so counting it
                -- (not ss) keeps those out. DISTINCT: a sandwich is one play.
                COUNT(DISTINCT sh.show_id) AS plays,
@@ -185,6 +186,8 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
             (show_date, show_date),
         )
     }
+    # Studio albums only, matched by exact name (as the model's album features).
+    albums = song_album_map(read_conn, [r["song_id"] for r in rows])
     # One COUNT per distinct last-played date, not per song — the same
     # memoization as scoring_service._surprise_weights.
     gap_by_date: dict[str, int] = {}
@@ -209,6 +212,14 @@ def _catalog(read_conn: sqlite3.Connection, show_date: str) -> list[dict]:
         }
         role = roles.get(r["song_id"])
         entry.update({k: (role[k] if role else 0) for k in _ROLE_FIELDS})
+        alb = albums.get(r["song_id"])
+        entry["album"] = alb.name if alb else None
+        entry["album_year"] = int(alb.release_date[:4]) if alb else None
+        # A cover names its original artist; Phish and Trey's own songs aren't covers.
+        artist = r["original_artist"]
+        entry["cover_artist"] = (
+            artist if artist and artist != "Phish" and "Anastasio" not in artist else None
+        )
         catalog.append(entry)
     return catalog
 

@@ -317,6 +317,23 @@ def test_catalog_role_counts_use_per_set_bounds(tmp_path):
     assert cat[1]["plays_this_year"] == 1 and cat[4]["plays_this_year"] == 1
 
 
+def test_catalog_album_and_cover_artist(tmp_path):
+    conn = _role_db(tmp_path)
+    conn.executescript(
+        """
+        INSERT INTO songs (song_id, name, original_artist, first_seen_at) VALUES
+            (10, 'Down with Disease', 'Phish', 'x'),
+            (11, 'Good Times Bad Times', 'Led Zeppelin', 'x'),
+            (12, 'Money, Love and Change', 'Trey Anastasio', 'x');
+        """
+    )
+    cat = {c["song_id"]: c for c in _catalog(conn, "2026-04-20")}
+    assert cat[10]["album"] == "Hoist" and cat[10]["album_year"] == 1994
+    assert cat[10]["cover_artist"] is None
+    assert cat[11]["cover_artist"] == "Led Zeppelin" and cat[11]["album"] is None
+    assert cat[12]["cover_artist"] is None  # Trey's own songs aren't covers
+
+
 def test_build_bundle_uses_frozen_bracket_when_present(
     read_conn, live_conn, scorer, seeded_live_show
 ):
