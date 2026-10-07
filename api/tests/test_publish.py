@@ -334,6 +334,20 @@ def test_catalog_album_and_cover_artist(tmp_path):
     assert cat[12]["cover_artist"] is None  # Trey's own songs aren't covers
 
 
+def test_build_bundle_sends_twenty_candidates_per_slot(
+    read_conn, live_conn, scorer, seeded_live_show
+):
+    b = build_bundle(
+        read_conn=read_conn,
+        live_conn=live_conn,
+        show_id=seeded_live_show,
+        scorer=scorer,
+        bundle_seq=1,
+    )
+    # The fixture has 20 real songs, so a slot can offer more than the old 8.
+    assert max(len(s["top_k"]) for s in b["slots"]) > 8
+
+
 def test_build_bundle_uses_frozen_bracket_when_present(
     read_conn, live_conn, scorer, seeded_live_show
 ):

@@ -271,7 +271,9 @@ def build_bundle(
     show_id: str,
     scorer,
     bundle_seq: int,
-    top_k: int = 8,
+    # phishvs shows a slot's whole top_k as its Likely here list (#38); its
+    # Roll still samples only the top band.
+    top_k: int = 20,
 ) -> dict:
     preview = build_preview(
         read_conn=read_conn, live_conn=live_conn, show_id=show_id, top_k=top_k, scorer=scorer
