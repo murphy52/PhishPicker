@@ -30,7 +30,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 DEFAULT_TZ = "America/New_York"
-DEFAULT_HOUR = 11
+DEFAULT_HOUR = 9
+DEFAULT_MINUTE = 30
 
 # Cadence of the close-out watcher. QUIET_POLLS (2) ticks at this interval is the
 # ~20 minutes of no-edits that means a setlist has gone quiet.
@@ -41,15 +42,15 @@ TICK_SECONDS = 600
 DEFAULT_BACKUP_HOUR = 5
 
 
-def next_run_at(now: datetime, *, hour: int, tz: ZoneInfo) -> datetime:
-    """Return the next datetime at `hour:00:00` in `tz` strictly after `now`.
+def next_run_at(now: datetime, *, hour: int, minute: int = 0, tz: ZoneInfo) -> datetime:
+    """Return the next datetime at `hour:minute:00` in `tz` strictly after `now`.
 
     `now` MUST be timezone-aware. We re-anchor it in `tz` to compute the
-    next local-clock 11:00, which DST-handles automatically because zoneinfo
+    next local-clock run, which DST-handles automatically because zoneinfo
     resolves UTC offsets per-instant.
     """
     local = now.astimezone(tz)
-    target = local.replace(hour=hour, minute=0, second=0, microsecond=0)
+    target = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= local:
         target += timedelta(days=1)
     return target
@@ -208,12 +209,14 @@ def main() -> None:
     )
     tz_name = os.environ.get("INGEST_CRON_TZ", DEFAULT_TZ)
     hour = int(os.environ.get("INGEST_CRON_HOUR", DEFAULT_HOUR))
+    minute = int(os.environ.get("INGEST_CRON_MINUTE", DEFAULT_MINUTE))
     tick_s = int(os.environ.get("CLOSE_OUT_TICK_SECONDS", TICK_SECONDS))
     backup_hour = int(os.environ.get("LIVE_DB_BACKUP_HOUR", DEFAULT_BACKUP_HOUR))
     tz = ZoneInfo(tz_name)
     log.info(
-        "ingest-cron: daily ingest at %02d:00 %s; close-out watcher and phishvs publish every %ds",
+        "ingest-cron: daily ingest at %02d:%02d %s; close-out watcher and phishvs publish every %ds",
         hour,
+        minute,
         tz_name,
         tick_s,
     )
@@ -224,7 +227,7 @@ def main() -> None:
     # `state` (show_date -> fingerprints seen) lives here so quiescence is
     # measured across ticks. `publish_state` (ingested date, last publish
     # time) gates the phishvs publish on this process's own ingest — a restart
-    # after 11am re-ingests here before it publishes anything.
+    # after the daily ingest time re-ingests here before it publishes anything.
     state: dict = {}
     publish_state: dict = {}
     settings = Settings()
@@ -235,17 +238,17 @@ def main() -> None:
     log.info("ingest-cron: live.db backup nightly at %02d:00 %s", backup_hour, tz_name)
     _backup_live_db(settings, datetime.now(tz), overwrite=False)
     _ingest_and_pass(publish_state, datetime.now(UTC))
-    next_ingest = next_run_at(datetime.now(tz), hour=hour, tz=tz)
+    next_ingest = next_run_at(datetime.now(tz), hour=hour, minute=minute, tz=tz)
     next_backup = next_run_at(datetime.now(tz), hour=backup_hour, tz=tz)
 
     # Tick loop rather than sleeping straight through to the next ingest: the
-    # close-out watcher has to poll on show nights, which is nowhere near 11am.
+    # close-out watcher has to poll on show nights, which is nowhere near the morning ingest.
     while True:
         now = datetime.now(tz)
         if now >= next_ingest:
             # Advance the schedule first: an ingest that throws must not leave
             # next_ingest in the past and re-run on every tick after it.
-            next_ingest = next_run_at(now, hour=hour, tz=tz)
+            next_ingest = next_run_at(now, hour=hour, minute=minute, tz=tz)
             try:
                 _ingest_and_pass(publish_state, datetime.now(UTC))
             except Exception:

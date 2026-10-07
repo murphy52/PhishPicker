@@ -5,7 +5,7 @@ structure, the model's per-slot top-k (fans auto-fill from these), the model's
 own top-1 bracket, and a catalog snapshot with rarity stats. The NAS is not
 reachable from the cloud, so phishpicker POSTs an HMAC-signed JSON bundle the
 morning of a show and then hourly until lock (see ingest_cron). Nothing goes
-out until the day's ingest has succeeded. The 11:00 ingest is the only
+out until the day's ingest has succeeded. The 09:30 ingest is the only
 scheduled one; retries happen only after a failed attempt that day.
 
 The bundle also carries an optional `model` block (about.model_stats) for the
@@ -81,7 +81,7 @@ PUBLISH_INTERVAL = timedelta(hours=1)
 # ~50 of those instead of a handful.
 PUBLISH_RETRY_INTERVAL = timedelta(minutes=30)
 # On a show day with no successful ingest yet, the sidecar retries the ingest
-# this often (a failed 11am ingest would otherwise cost the whole day).
+# this often (a failed morning ingest would otherwise cost the whole day).
 INGEST_RETRY = timedelta(minutes=30)
 # phishvs ignores a chances block longer than this. The candidate pool is ~1000
 # songs, so nothing is cut in practice; if it ever were, the long shots go.
@@ -649,7 +649,7 @@ def _attempted_today(state: dict, today: str) -> bool:
 def ingest_retry_due(settings: Settings, state: dict, now: datetime) -> bool:
     """True on a show day when an ingest attempt was made today, none has
     succeeded, and the last attempt is at least INGEST_RETRY old. No attempt
-    today means the 11:00 schedule hasn't fired yet — not a retry. Never on a
+    today means the 09:30 schedule hasn't fired yet — not a retry. Never on a
     non-show day — there is nothing to publish."""
     today = _today(now)
     if state.get("ingested_date") == today or not _attempted_today(state, today):
@@ -672,7 +672,7 @@ def publish_due(
     if show is None:
         return None
     if state.get("ingested_date") != today:
-        # Holding before the 11:00 ingest is every show morning; only a failed
+        # Holding before the 09:30 ingest is every show morning; only a failed
         # attempt today is worth a (single) warning.
         if _attempted_today(state, today) and state.get("held_date") != today:
             log.warning("publish: show on %s but no successful ingest yet; holding", today)

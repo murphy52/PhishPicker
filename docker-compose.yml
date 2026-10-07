@@ -49,7 +49,7 @@ services:
     restart: unless-stopped
 
   ingest-cron:
-    # Daily phish.net ingest (once at container start, then 11am EDT) AND the
+    # Daily phish.net ingest (once at container start, then 9:30am Eastern) AND the
     # post-show close-out watcher, which ticks every 10 min and finalizes a show
     # once its setlist goes quiet — see docs/plans/2026-07-13-automated-close-out.md.
     # Lives here (not host crontab) because Murphy52 doesn't have host cron perms
@@ -71,7 +71,8 @@ services:
       # Settings without erroring.
       PHISHPICKER_ADMIN_TOKEN: ${PHISHPICKER_ADMIN_TOKEN:?PHISHPICKER_ADMIN_TOKEN must be set in .env}
       INGEST_CRON_TZ: ${INGEST_CRON_TZ:-America/New_York}
-      INGEST_CRON_HOUR: ${INGEST_CRON_HOUR:-11}
+      INGEST_CRON_HOUR: ${INGEST_CRON_HOUR:-9}
+      INGEST_CRON_MINUTE: ${INGEST_CRON_MINUTE:-30}
       # The close-out watcher sends the one-per-show summary push from HERE, not
       # from the api container — without these it would silently no-op.
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}

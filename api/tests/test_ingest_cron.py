@@ -1,7 +1,7 @@
 """Schedule logic for the ingest-cron sidecar.
 
 The sidecar runs in a Docker container next to the API and triggers
-`phishpicker ingest` daily at 11am EDT. We test the pure schedule function
+`phishpicker ingest` daily at 9:30am Eastern. We test the pure schedule function
 here; the long-running loop wrapper is exercised by the sidecar itself.
 """
 
@@ -395,3 +395,16 @@ def test_a_fresh_ingest_clears_the_failure_backoff(publish_calls, monkeypatch):
     monkeypatch.setattr(mod, "publish_show", lambda _s, _sc, date, **_k: publish_calls.append(date) or {"seq": 3})
     mark_ingested(state, t0 + timedelta(minutes=10))
     assert publish_tick(settings, load, state, t0 + timedelta(minutes=10)) is True
+
+
+def test_next_run_at_honours_minutes():
+    """9:30 local: before it runs today, at or after it rolls to tomorrow."""
+    assert next_run_at(datetime(2026, 10, 7, 9, 0, tzinfo=EDT), hour=9, minute=30, tz=EDT) == datetime(2026, 10, 7, 9, 30, tzinfo=EDT)
+    assert next_run_at(datetime(2026, 10, 7, 9, 30, tzinfo=EDT), hour=9, minute=30, tz=EDT) == datetime(2026, 10, 8, 9, 30, tzinfo=EDT)
+    assert next_run_at(datetime(2026, 10, 7, 9, 45, tzinfo=EDT), hour=9, minute=30, tz=EDT) == datetime(2026, 10, 8, 9, 30, tzinfo=EDT)
+
+
+def test_default_ingest_time_is_930():
+    from phishpicker.ingest_cron import DEFAULT_HOUR, DEFAULT_MINUTE
+
+    assert (DEFAULT_HOUR, DEFAULT_MINUTE) == (9, 30)
