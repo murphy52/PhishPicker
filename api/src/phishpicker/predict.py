@@ -1,7 +1,13 @@
+import math
 import sqlite3
 
 from phishpicker.model.rules import apply_post_rules
 from phishpicker.model.scorer import HeuristicScorer, Scorer
+
+# Softmax temperature for full_list probabilities. Chosen so the mean top-1
+# probability matches the share-of-positive-sum lists it replaced (0.120 over
+# 28 shows, Oct 2026 spike).
+FULL_LIST_SOFTMAX_T = 1.248
 
 
 def predict_next_stateless(
@@ -22,11 +28,16 @@ def predict_next_stateless(
     ext_cache: dict | None = None,
     bigram_cache: dict | None = None,
     played_in_run: set[int] | None = None,
+    full_list: bool = False,
 ) -> list[dict]:
     """Pure prediction over an explicit played list — no live DB.
 
     The *_cache kwargs let a caller (notably the preview loop) precompute
     per-show artefacts once and reuse them across many slot calls.
+
+    By default only positive raw scores are candidates, each priced as its
+    share of the top_n's sum. full_list (the phishvs bundle) instead keeps the
+    top_n by raw score whatever its sign, priced by softmax(score / T).
     """
     if scorer is None:
         scorer = HeuristicScorer()
@@ -57,17 +68,31 @@ def predict_next_stateless(
         ext_cache=ext_cache,
         bigram_cache=bigram_cache,
     )
-    scored = apply_post_rules(
-        scored, played_tonight=set(played_songs), played_in_run=played_in_run
-    )
-    scored = [(sid, s) for sid, s in scored if s > 0.0]
+    if full_list:
+        # apply_post_rules zeroes excluded songs, which only hides them behind
+        # the > 0 filter; with negatives kept they must be removed outright.
+        # Non-finite scores go too, as the > 0 filter drops NaN.
+        excluded = set(played_songs) | (played_in_run or set())
+        scored = [(sid, s) for sid, s in scored if sid not in excluded and math.isfinite(s)]
+    else:
+        scored = apply_post_rules(
+            scored, played_tonight=set(played_songs), played_in_run=played_in_run
+        )
+        scored = [(sid, s) for sid, s in scored if s > 0.0]
     # Deterministic tiebreak: score desc, then song_id asc — the live
     # next-song call must not flip between identical recomputes.
     scored.sort(key=lambda x: (-x[1], x[0]))
 
     top = scored[:top_n]
-    total = sum(s for _, s in top) or 1.0
-    normalized = [(sid, s, s / total) for sid, s in top]
+    if full_list:
+        # Subtract the max before exponentiating, for numerical stability.
+        hi = top[0][1] if top else 0.0
+        weights = [math.exp((s - hi) / FULL_LIST_SOFTMAX_T) for _, s in top]
+        total = sum(weights)
+        normalized = [(sid, s, w / total) for (sid, s), w in zip(top, weights, strict=True)]
+    else:
+        total = sum(s for _, s in top) or 1.0
+        normalized = [(sid, s, s / total) for sid, s in top]
 
     top_ids = [sid for sid, _, _ in normalized]
     if song_names_cache is not None:
