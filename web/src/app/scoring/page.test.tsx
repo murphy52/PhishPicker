@@ -32,6 +32,11 @@ test("shows the combo multiplier tiers for both the live and foresight combos", 
   expect(screen.getAllByText("×2")).toHaveLength(2);
 });
 
+test("doesn't promise the retired called-it-early badge", () => {
+  render(<ScoringPage />);
+  expect(screen.queryByText(/called it early/i)).not.toBeInTheDocument();
+});
+
 test("explains best-claim-wins", () => {
   render(<ScoringPage />);
   expect(screen.getByText(/best claim wins/i)).toBeInTheDocument();

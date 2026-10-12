@@ -18,8 +18,7 @@ def _snap(after_count, *entries):
 
 def _seed_show(live_conn):
     """4 songs in set 1. Bracket foresaw the opener exactly. Captured calls:
-    i1 right (after a stale duplicate — last-wins), i2 wrong, i3 wrong but
-    placed 2+ slots ahead in an early snapshot (badge)."""
+    i1 right (after a stale duplicate — last-wins), i2 wrong, i3 wrong."""
     show_id = create_live_show(live_conn, "2026-04-23", venue_id=1597)
     for sid in (100, 101, 102, 103):
         append_song(live_conn, show_id, song_id=sid, set_number="1")
@@ -48,9 +47,9 @@ def test_score_live_show_derivations(seeded_read_db, live_conn):
         (None, 0, 0),          # wrong call
     ]
     assert atts[2]["missed"] is True and atts[2]["bustout"] is False
-    # 103 was correctly placed at ("1",4) in the after_count=1 snapshot,
-    # 2+ slots ahead of its reveal at index 3.
-    assert atts[3]["called_early"] is True
+    # The "called it early" badge is gone (#52): snapshots only hold the
+    # next-song call, so a 2+-ahead placement could never be seen.
+    assert all("called_early" not in a for a in atts)
 
     totals = result["totals"]
     assert totals["foresight_total"] == 100

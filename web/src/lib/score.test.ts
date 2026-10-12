@@ -25,7 +25,6 @@ function att(overrides: Partial<Attribution>): Attribution {
     fs_streak: 0,
     fs_mult: null,
     final: 0,
-    called_early: false,
     bustout: false,
     missed: false,
     name: "Song",
@@ -125,11 +124,6 @@ test("bustout celebrates, miss stays quiet", () => {
   ]);
   expect(events[1].kind).toBe("bustout");
   expect(events[0].kind).toBe("miss");
-});
-
-test("called_early flag surfaces on the event", () => {
-  const [e] = buildFeedEvents([att({ called_early: true, missed: true })]);
-  expect(e.calledEarly).toBe(true);
 });
 
 test("correction detected against previous attributions", () => {

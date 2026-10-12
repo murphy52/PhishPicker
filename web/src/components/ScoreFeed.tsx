@@ -149,11 +149,6 @@ function FeedRow({ event: e }: { event: FeedEvent }) {
             ✓ foreseen — streak holds
           </span>
         )}
-        {e.calledEarly && (
-          <span data-testid="early-badge" className="text-neutral-400">
-            🔭 called it early
-          </span>
-        )}
       </div>
     </li>
   );

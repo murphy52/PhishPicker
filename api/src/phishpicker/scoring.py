@@ -274,13 +274,10 @@ def apply_combo(
 def apply_badges(
     attributions: list[dict],
     *,
-    early_called_indices: frozenset | set = frozenset(),
     bustout_song_ids: frozenset | set = frozenset(),
 ) -> list[dict]:
     """Zero-point flags.
 
-    - called_early: the app had this song correctly placed 2+ slots ahead
-      (badge only, no points).
     - bustout: song is a genuine bustout/debut per the EXPLICIT
       bustout_song_ids input (celebrated; excluded from the PPS denominator).
       Never inferred from a whiff.
@@ -293,7 +290,6 @@ def apply_badges(
         out.append(
             {
                 **att,
-                "called_early": att["index"] in early_called_indices,
                 "bustout": bustout,
                 "missed": att["ledger"] is None and not bustout,
             }
@@ -326,7 +322,6 @@ def score_show(
     actual: list[dict],
     next_call_by_index: dict,
     *,
-    early_called_indices: frozenset | set = frozenset(),
     bustout_song_ids: frozenset | set = frozenset(),
 ) -> dict:
     """The whole engine: frozen bracket + normalized actual setlist + captured
@@ -335,7 +330,6 @@ def score_show(
     live = score_live(actual, next_call_by_index)
     attributions = apply_badges(
         apply_combo(actual, resolve_claims(foresight, live, actual), next_call_by_index),
-        early_called_indices=early_called_indices,
         bustout_song_ids=bustout_song_ids,
     )
     return {
