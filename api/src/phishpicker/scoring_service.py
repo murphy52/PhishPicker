@@ -49,25 +49,6 @@ def _next_call_by_index(snapshots: list[dict], n: int) -> dict[int, int]:
     return calls
 
 
-def _early_called_indices(snapshots: list[dict], actual: list[dict]) -> set[int]:
-    """Actual indices the model had correctly placed (exact set+position)
-    in a snapshot made 2+ reveals earlier — the 0-pt lookahead badge."""
-    early: set[int] = set()
-    for i in range(2, len(actual)):
-        row = actual[i]
-        key = (row["set_number"], row["position"], row["song_id"])
-        for snap in snapshots:
-            if snap["after_count"] > i - 2:
-                continue
-            if any(
-                (e["set_number"], e["position"], e["song_id"]) == key
-                for e in snap["remaining"]
-            ):
-                early.add(i)
-                break
-    return early
-
-
 def _surprise_weights(
     read_conn: sqlite3.Connection,
     actual: list[dict],
@@ -145,7 +126,6 @@ def score_live_show(
         bracket,
         actual,
         _next_call_by_index(snapshots, len(actual)),
-        early_called_indices=_early_called_indices(snapshots, actual),
         bustout_song_ids=bustout_song_ids,
     )
     for att in result["attributions"]:

@@ -14,7 +14,6 @@ function event(overrides: Partial<FeedEvent>): FeedEvent {
     sequenceStreak: null,
     beaten: null,
     foreseen: false,
-    calledEarly: false,
     corrected: false,
     ...overrides,
   };
@@ -79,7 +78,7 @@ test("exact-sequence combo shows the 🔥 badge and the ×mult", () => {
   expect(screen.getByText("×1.5")).toBeInTheDocument();
 });
 
-test("badges: foreseen, called-early, corrected", () => {
+test("badges: foreseen, corrected", () => {
   render(
     <ScoreFeed
       events={[
@@ -87,14 +86,12 @@ test("badges: foreseen, called-early, corrected", () => {
           index: 2,
           kind: "foresight",
           foreseen: true,
-          calledEarly: true,
           corrected: true,
         }),
       ]}
     />,
   );
   expect(screen.getByTestId("foreseen-badge")).toBeInTheDocument();
-  expect(screen.getByTestId("early-badge")).toBeInTheDocument();
   expect(screen.getByTestId("corrected-badge")).toBeInTheDocument();
 });
 

@@ -77,6 +77,32 @@ test("always renders all three set headers in order, even when empty", () => {
   expect(headers.map((h) => h.textContent)).toEqual(["Set 1", "Set 2", "Encore"]);
 });
 
+test("renders second and third encores the preview returns, after the encore", () => {
+  const slots: PreviewSlot[] = [
+    slot(1, "1", 1),
+    slot(2, "E", 1),
+    slot(3, "E2", 1, {
+      top_k: [{ song_id: 7, name: "Tweezer Reprise", probability: 0.4, score: 4, rank: 1 }],
+    }),
+    slot(4, "E3", 1),
+  ];
+  renderPreview({ slots, currentSet: "E2" });
+  const headers = screen.getAllByTestId("set-header");
+  expect(headers.map((h) => h.textContent)).toEqual([
+    "Set 1",
+    "Set 2",
+    "Encore",
+    "Encore 2",
+    "Encore 3",
+  ]);
+  expect(screen.getByText("Tweezer Reprise")).toBeInTheDocument();
+  expect(screen.getAllByTestId("slot")).toHaveLength(4);
+  expect(screen.getByRole("button", { name: "Encore 2" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
 test("the active set header is marked aria-pressed=true", () => {
   renderPreview({ slots: [slot(1, "1", 1)], currentSet: "2" });
   const headers = screen.getAllByTestId("set-header");

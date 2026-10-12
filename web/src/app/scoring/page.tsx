@@ -128,12 +128,6 @@ export default function ScoringPage() {
               note="multiplied by the combo meter below"
               points="+30"
             />
-            <LadderRow
-              accent="live"
-              event="🔭 Called it early"
-              note="the app had it placed 2+ slots ahead — badge only"
-              points="+0"
-            />
           </ul>
           <p className="mt-3 text-xs text-neutral-500">
             The opener is never a live event — live calling starts after the

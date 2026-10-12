@@ -41,7 +41,6 @@ def test_full_show():
         BRACKET,
         ACTUAL,
         CALLS,
-        early_called_indices={4},
         bustout_song_ids={99},
     )
     atts = result["attributions"]
@@ -66,7 +65,6 @@ def test_full_show():
     assert atts[2]["beaten_claim"]["reason"] == "right_set"
 
     # Flags
-    assert atts[4]["called_early"] is True
     assert atts[5]["bustout"] is True and atts[5]["missed"] is False
 
     # Totals

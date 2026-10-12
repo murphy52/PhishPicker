@@ -16,7 +16,6 @@ function event(overrides: Partial<FeedEvent>): FeedEvent {
     sequenceStreak: null,
     beaten: null,
     foreseen: false,
-    calledEarly: false,
     corrected: false,
     ...overrides,
   };

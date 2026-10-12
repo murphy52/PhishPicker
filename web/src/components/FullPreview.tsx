@@ -1,7 +1,7 @@
 "use client";
 
 import type { PreviewSlot } from "@/lib/preview";
-import { KIND_EMOJI, type SlotScoreBadge } from "@/lib/score";
+import { KIND_EMOJI, setLabel, type SlotScoreBadge } from "@/lib/score";
 
 interface Props {
   slots: PreviewSlot[];
@@ -14,11 +14,9 @@ interface Props {
   scoreBadges?: Map<string, SlotScoreBadge>;
 }
 
-const SET_ORDER: { key: string; label: string }[] = [
-  { key: "1", label: "Set 1" },
-  { key: "2", label: "Set 2" },
-  { key: "E", label: "Encore" },
-];
+// Always shown, even before any slot of theirs exists. Any other set the
+// preview returns (E2/E3 once a show reaches them) follows in API order.
+const BASE_SETS = ["1", "2", "E"];
 
 const DEFAULT_STRUCTURE: [string, number][] = [
   ["1", 9],
@@ -38,7 +36,9 @@ export function FullPreview({
     return <FullPreviewSkeleton currentSet={currentSet} />;
   }
 
-  const slotsBySet = new Map<string, PreviewSlot[]>();
+  const slotsBySet = new Map<string, PreviewSlot[]>(
+    BASE_SETS.map((key) => [key, []]),
+  );
   for (const s of slots) {
     const list = slotsBySet.get(s.set_number) ?? [];
     list.push(s);
@@ -47,12 +47,11 @@ export function FullPreview({
 
   return (
     <div className="flex flex-col gap-4">
-      {SET_ORDER.map(({ key, label }) => {
-        const setSlots = slotsBySet.get(key) ?? [];
+      {[...slotsBySet].map(([key, setSlots]) => {
         return (
           <section key={key}>
             <SetHeader
-              label={label}
+              label={setLabel(key)}
               active={key === currentSet}
               onClick={() => onSetChange(key)}
             />

@@ -29,7 +29,6 @@ export interface Attribution {
   fs_streak: number;
   fs_mult: number | null;
   final: number;
-  called_early: boolean;
   bustout: boolean;
   missed: boolean;
   name: string;
@@ -90,7 +89,7 @@ export interface ScoreResponse {
 
 const SET_LABEL_ORDER = ["1", "2", "3", "4", "E", "E2", "E3"];
 
-function setLabel(setNumber: string): string {
+export function setLabel(setNumber: string): string {
   if (setNumber === "E") return "Encore";
   if (setNumber.startsWith("E")) return `Encore ${setNumber.slice(1)}`;
   return `Set ${setNumber}`;
@@ -202,7 +201,6 @@ export interface FeedEvent {
   beaten: string | null;
   /** Foresight bank on a correct call — the "✓ foreseen" beat. */
   foreseen: boolean;
-  calledEarly: boolean;
   corrected: boolean;
 }
 
@@ -247,7 +245,6 @@ export function buildFeedEvents(
           a.ledger === "foresight" && (a.fs_mult ?? 0) > 1 ? a.fs_streak : null,
         beaten,
         foreseen: a.ledger === "foresight" && a.called_right === true,
-        calledEarly: a.called_early,
         corrected: prev !== undefined && prev.song_id !== a.song_id,
       };
     })

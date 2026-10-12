@@ -22,23 +22,14 @@ def _row(set_number, position, song_id):
 ACTUAL = [_row("1", p, sid) for p, sid in enumerate([10, 20, 30, 40], 1)]
 
 
-def _atts(calls, bracket=(), early=frozenset(), bustouts=frozenset()):
+def _atts(calls, bracket=(), bustouts=frozenset()):
     foresight, _ = score_foresight(list(bracket), ACTUAL)
     live = score_live(ACTUAL, calls)
     atts = apply_combo(ACTUAL, resolve_claims(foresight, live, ACTUAL), calls)
-    return apply_badges(
-        atts, early_called_indices=early, bustout_song_ids=bustouts
-    )
+    return apply_badges(atts, bustout_song_ids=bustouts)
 
 
 # --- Task 1.6: flags ----------------------------------------------------------
-
-
-def test_called_early_badge_no_points():
-    atts = _atts({}, early={2})
-    assert atts[2]["called_early"] is True
-    assert atts[2]["final"] == 0
-    assert atts[1]["called_early"] is False
 
 
 def test_bustout_flag_only_from_explicit_input():
@@ -78,7 +69,6 @@ def test_ppps_excludes_only_bustouts():
 def test_ppps_denominator_never_zero():
     atts = apply_badges(
         apply_combo([], resolve_claims({}, {}, []), {}),
-        early_called_indices=frozenset(),
         bustout_song_ids=frozenset(),
     )
     assert summarize(atts)["ppps"] == 0

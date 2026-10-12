@@ -18,7 +18,6 @@ function att(overrides: Partial<Attribution>): Attribution {
     fs_streak: 0,
     fs_mult: null,
     final: 0,
-    called_early: false,
     bustout: false,
     missed: false,
     name: "Song",
