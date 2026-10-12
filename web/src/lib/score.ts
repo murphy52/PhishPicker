@@ -90,7 +90,7 @@ export interface ScoreResponse {
 
 const SET_LABEL_ORDER = ["1", "2", "3", "4", "E", "E2", "E3"];
 
-function setLabel(setNumber: string): string {
+export function setLabel(setNumber: string): string {
   if (setNumber === "E") return "Encore";
   if (setNumber.startsWith("E")) return `Encore ${setNumber.slice(1)}`;
   return `Set ${setNumber}`;
